@@ -1,4 +1,7 @@
 /**
  * Platform / Infrastructure Package Entry Point.
- * Browser-specific adapters for persistence, clocks, Web Worker RPC, and telemetry.
+ * Browser-specific adapters for storage and game clock.
  */
+
+export * from './storage.ts';
+export * from './clock.ts';
