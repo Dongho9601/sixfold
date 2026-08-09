@@ -111,9 +111,10 @@ export class AppStore {
   }
 
   tick(deltaSeconds: number) {
-    advanceProductionTime(this.state, deltaSeconds);
-    // Don't auto-save on every frame tick, only notify listeners
-    this.notify(false);
+    const res = advanceProductionTime(this.state, deltaSeconds);
+    if (res.changed) {
+      this.notify(true);
+    }
   }
 
   resetGame() {

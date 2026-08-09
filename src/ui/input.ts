@@ -89,11 +89,17 @@ export class InputController {
       } else {
         // Clicked on empty cell
         const activeSpawnShape = this.hud.getSelectedSpawnShape();
-        if (activeSpawnShape && (state.buffers[activeSpawnShape] || 0) > 0) {
-          // Place shape from buffer
-          const res = this.store.placeBlock(activeSpawnShape, gridPos);
-          if (res.success && res.blockId) {
-            this.store.selectBlock(res.blockId, false);
+        if (activeSpawnShape) {
+          if ((state.buffers[activeSpawnShape] || 0) <= 0) {
+            this.hud.showFeedback(`Buffer empty for ${activeSpawnShape}`, true);
+          } else {
+            const res = this.store.placeBlock(activeSpawnShape, gridPos);
+            if (res.success && res.blockId) {
+              this.store.selectBlock(res.blockId, false);
+              this.hud.showFeedback(`Placed ${activeSpawnShape} Block`);
+            } else if (!res.success && res.error) {
+              this.hud.showFeedback(`Placement failed: ${res.error}`, true);
+            }
           }
         } else {
           // Clear selection or start canvas panning

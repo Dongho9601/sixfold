@@ -9,6 +9,7 @@ import { AppStore } from '../application/store.ts';
 export class InspectorPanel {
   private container: HTMLElement;
   private store: AppStore;
+  private currentActionType: 'bind' | 'submit' | 'none' = 'none';
 
   constructor(container: HTMLElement, store: AppStore) {
     this.container = container;
@@ -144,119 +145,167 @@ export class InspectorPanel {
         }
       </style>
 
-      <div class="rf-inspector" id="inspector-root">
-        <!-- Rendered dynamically -->
+      <div class="rf-inspector">
+        <div class="rf-insp-header">
+          <div class="rf-title">Selection</div>
+          <div class="rf-insp-count" id="insp-header-count">0 Blocks</div>
+        </div>
+
+        <div class="rf-pattern-card" id="insp-empty-msg" style="text-align:center; color:#9ca3af; font-size:13px;">
+          Select Loose Blocks on the Field to Analyze, Bind, or Submit.
+        </div>
+
+        <div class="rf-pattern-card" id="insp-card" style="display:none;">
+          <div class="rf-pattern-name" id="insp-title">Pattern Name</div>
+          <div class="rf-pattern-status" id="insp-status">Status</div>
+          <div id="insp-clue" style="font-size:12px; color:#d1d5db; margin-bottom:8px; line-height:1.4;">
+            Clue description.
+          </div>
+
+          <div class="rf-reward-grid" id="insp-rewards" style="display:none;">
+            <div>
+              <div class="rf-reward-val" style="color:#f97316;" id="reward-ash">+0</div>
+              <div class="rf-reward-lbl">Ash</div>
+            </div>
+            <div>
+              <div class="rf-reward-val" style="color:#38bdf8;" id="reward-shards">+0</div>
+              <div class="rf-reward-lbl">Shards</div>
+            </div>
+            <div>
+              <div class="rf-reward-val" style="color:#c084fc;" id="reward-xp">+0</div>
+              <div class="rf-reward-lbl">Engine XP</div>
+            </div>
+          </div>
+
+          <div id="insp-warning" style="font-size:11px; color:#ef4444; margin-bottom:10px; text-align:center; display:none;">
+            ⚠️ Submitted Loose Blocks will be consumed and removed from Field.
+          </div>
+
+          <button class="rf-action-btn-primary" id="btn-insp-action" style="display:none;">
+            ACTION
+          </button>
+        </div>
       </div>
     `;
+
+    // Attach stable event listener ONCE
+    const actionBtn = this.container.querySelector('#btn-insp-action');
+    actionBtn?.addEventListener('click', () => {
+      if (this.currentActionType === 'bind') {
+        const res = this.store.bindEngine();
+        if (!res.success) {
+          alert(res.error || 'Failed to bind engine.');
+        }
+      } else if (this.currentActionType === 'submit') {
+        const res = this.store.submitRecipe();
+        if (!res.success) {
+          alert(res.error || 'Failed to submit recipe.');
+        }
+      }
+    });
   }
 
   update(): void {
-    const root = this.container.querySelector('#inspector-root');
-    if (!root) return;
-
     const state = this.store.getState();
-    const selectedCount = state.selectedBlockIds.length;
-    const analysis = state.lastAnalysis;
-
-    if (selectedCount === 0) {
-      root.innerHTML = `
-        <div class="rf-insp-header">
-          <div class="rf-title">Selection</div>
-          <div class="rf-insp-count">0 Blocks</div>
-        </div>
-        <div class="rf-pattern-card" style="text-align:center; color:#9ca3af; font-size:13px;">
-          Select Loose Blocks on the Field to Analyze, Bind, or Submit.
-        </div>
-      `;
-      return;
-    }
-
     const selectedLooseBlocks = state.selectedBlockIds
       .map(id => state.blocks[id])
       .filter((b): b is Block => Boolean(b) && b.state === 'Loose');
 
     const looseCount = selectedLooseBlocks.length;
+    const analysis = state.lastAnalysis;
 
-    let contentHTML = `
-      <div class="rf-insp-header">
-        <div class="rf-title">Selection</div>
-        <div class="rf-insp-count">${looseCount} Loose Blocks</div>
-      </div>
-    `;
+    const countEl = this.container.querySelector('#insp-header-count');
+    const emptyMsgEl = this.container.querySelector('#insp-empty-msg') as HTMLElement | null;
+    const cardEl = this.container.querySelector('#insp-card') as HTMLElement | null;
+    const titleEl = this.container.querySelector('#insp-title');
+    const statusEl = this.container.querySelector('#insp-status');
+    const clueEl = this.container.querySelector('#insp-clue');
+    const rewardsEl = this.container.querySelector('#insp-rewards') as HTMLElement | null;
+    const warningEl = this.container.querySelector('#insp-warning') as HTMLElement | null;
+    const actionBtn = this.container.querySelector('#btn-insp-action') as HTMLButtonElement | null;
 
-    if (!analysis || !analysis.isValid) {
-      const clue = analysis?.nearMatchReason || 'No valid pattern recognized.';
-      contentHTML += `
-        <div class="rf-pattern-card">
-          <div class="rf-pattern-name" style="color:#f59e0b;">Near-Match Clue</div>
-          <div class="rf-pattern-status rf-pattern-nearmatch">INVALID ARRANGEMENT</div>
-          <div style="font-size:13px; line-height:1.4; color:#d1d5db;">
-            ${clue}
-          </div>
-        </div>
-      `;
-    } else if (analysis.patternId === 'heart_seal') {
-      contentHTML += `
-        <div class="rf-pattern-card" style="border-color:#a855f7;">
-          <div class="rf-pattern-name" style="color:#c084fc;">Pattern Detected</div>
-          <div style="font-size:18px; font-weight:800; color:#f3f4f6; margin-bottom:4px;">HEART SEAL</div>
-          <div class="rf-pattern-status" style="color:#c084fc;">OPENING ENGINE BIND</div>
-          <div style="font-size:12px; color:#9ca3af; margin-bottom:12px;">
-            Arrangement occupies all 16 Cradle cells. Binding crystallizes starter blocks into the persistent Heart Engine generator.
-          </div>
-          <button class="rf-action-btn-primary rf-btn-bind" id="btn-bind-action">
-            BIND HEART SEAL
-          </button>
-        </div>
-      `;
-    } else if (analysis.patternId === 'compression_press' || analysis.patternId === 'twin_stars') {
-      const rewards = calculateRecipeReward(selectedLooseBlocks, analysis.quality);
-      contentHTML += `
-        <div class="rf-pattern-card">
-          <div class="rf-pattern-name">${analysis.patternName}</div>
-          <div class="rf-pattern-status">${rewards.qualityTier.toUpperCase()} QUALITY (${Math.round(analysis.quality * 100)}%)</div>
-          
-          <div class="rf-reward-grid">
-            <div>
-              <div class="rf-reward-val" style="color:#f97316;">+${rewards.ash}</div>
-              <div class="rf-reward-lbl">Ash</div>
-            </div>
-            <div>
-              <div class="rf-reward-val" style="color:#38bdf8;">+${rewards.shards}</div>
-              <div class="rf-reward-lbl">Shards</div>
-            </div>
-            <div>
-              <div class="rf-reward-val" style="color:#c084fc;">+${rewards.engineXp}</div>
-              <div class="rf-reward-lbl">Engine XP</div>
-            </div>
-          </div>
+    if (countEl) countEl.textContent = `${looseCount} Loose Blocks`;
 
-          <div style="font-size:11px; color:#ef4444; margin-bottom:10px; text-align:center;">
-            ⚠️ Submitted Loose Blocks will be consumed and removed from Field.
-          </div>
-
-          <button class="rf-action-btn-primary rf-btn-submit" id="btn-submit-action">
-            SUBMIT ${looseCount} BLOCKS
-          </button>
-        </div>
-      `;
+    if (looseCount === 0 || !cardEl || !emptyMsgEl) {
+      if (emptyMsgEl) emptyMsgEl.style.display = 'block';
+      if (cardEl) cardEl.style.display = 'none';
+      this.currentActionType = 'none';
+      return;
     }
 
-    root.innerHTML = contentHTML;
+    emptyMsgEl.style.display = 'none';
+    cardEl.style.display = 'block';
 
-    // Attach Action Listeners
-    root.querySelector('#btn-bind-action')?.addEventListener('click', () => {
-      const res = this.store.bindEngine();
-      if (!res.success) {
-        alert(res.error || 'Failed to bind engine.');
+    if (!analysis || !analysis.isValid) {
+      this.currentActionType = 'none';
+      if (titleEl) {
+        titleEl.textContent = 'Near-Match Clue';
+        titleEl.setAttribute('style', 'color:#f59e0b;');
       }
-    });
+      if (statusEl) {
+        statusEl.textContent = 'INVALID ARRANGEMENT';
+        statusEl.className = 'rf-pattern-status rf-pattern-nearmatch';
+      }
+      if (clueEl) {
+        clueEl.textContent = analysis?.nearMatchReason || 'No valid pattern recognized.';
+      }
+      if (rewardsEl) rewardsEl.style.display = 'none';
+      if (warningEl) warningEl.style.display = 'none';
+      if (actionBtn) actionBtn.style.display = 'none';
+    } else if (analysis.patternId === 'heart_seal') {
+      this.currentActionType = 'bind';
+      if (titleEl) {
+        titleEl.textContent = 'HEART SEAL';
+        titleEl.setAttribute('style', 'color:#c084fc;');
+      }
+      if (statusEl) {
+        statusEl.textContent = 'OPENING ENGINE BIND';
+        statusEl.className = 'rf-pattern-status';
+        statusEl.setAttribute('style', 'color:#c084fc;');
+      }
+      if (clueEl) {
+        clueEl.textContent = 'Arrangement occupies all 16 Cradle cells. Binding crystallizes starter blocks into the persistent Heart Engine generator.';
+      }
+      if (rewardsEl) rewardsEl.style.display = 'none';
+      if (warningEl) warningEl.style.display = 'none';
+      if (actionBtn) {
+        actionBtn.style.display = 'block';
+        actionBtn.textContent = 'BIND HEART SEAL';
+        actionBtn.className = 'rf-action-btn-primary rf-btn-bind';
+      }
+    } else if (analysis.patternId === 'compression_press' || analysis.patternId === 'twin_stars') {
+      this.currentActionType = 'submit';
+      const rewards = calculateRecipeReward(selectedLooseBlocks, analysis.quality);
 
-    root.querySelector('#btn-submit-action')?.addEventListener('click', () => {
-      const res = this.store.submitRecipe();
-      if (!res.success) {
-        alert(res.error || 'Failed to submit recipe.');
+      if (titleEl) {
+        titleEl.textContent = analysis.patternName;
+        titleEl.setAttribute('style', 'color:#38bdf8;');
       }
-    });
+      if (statusEl) {
+        statusEl.textContent = `${rewards.qualityTier.toUpperCase()} QUALITY (${Math.round(analysis.quality * 100)}%)`;
+        statusEl.className = 'rf-pattern-status';
+        statusEl.setAttribute('style', 'color:#22c55e;');
+      }
+      if (clueEl) {
+        clueEl.textContent = 'Consumptive Recipe submission. Selected blocks will be permanently removed.';
+      }
+
+      const ashVal = this.container.querySelector('#reward-ash');
+      const shardsVal = this.container.querySelector('#reward-shards');
+      const xpVal = this.container.querySelector('#reward-xp');
+
+      if (ashVal) ashVal.textContent = `+${rewards.ash}`;
+      if (shardsVal) shardsVal.textContent = `+${rewards.shards}`;
+      if (xpVal) xpVal.textContent = `+${rewards.engineXp}`;
+
+      if (rewardsEl) rewardsEl.style.display = 'grid';
+      if (warningEl) warningEl.style.display = 'block';
+
+      if (actionBtn) {
+        actionBtn.style.display = 'block';
+        actionBtn.textContent = `SUBMIT ${looseCount} BLOCKS`;
+        actionBtn.className = 'rf-action-btn-primary rf-btn-submit';
+      }
+    }
   }
 }

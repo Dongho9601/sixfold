@@ -90,6 +90,9 @@ export function moveBlock(
   }
 
   block.position = newPosition;
+  if (state.selectedBlockIds.includes(blockId)) {
+    analyzeSelection(state);
+  }
   return { success: true };
 }
 
@@ -109,6 +112,9 @@ export function rotateBlock(
   }
 
   block.rotation = nextRotation;
+  if (state.selectedBlockIds.includes(blockId)) {
+    analyzeSelection(state);
+  }
   return { success: true, newRotation: nextRotation };
 }
 
@@ -256,10 +262,20 @@ export function submitRecipe(state: GameState): { success: boolean; reward?: Rec
   return { success: true, reward };
 }
 
-export function advanceProductionTime(state: GameState, deltaSeconds: number): void {
-  if (!state.isHeartEngineBound || !state.heartEngine) return;
+export function advanceProductionTime(
+  state: GameState,
+  deltaSeconds: number
+): { generatedShapes: ShapeType[]; changed: boolean } {
+  if (!state.isHeartEngineBound || !state.heartEngine) {
+    return { generatedShapes: [], changed: false };
+  }
 
   const result = advanceEngineProduction(state.heartEngine, state.buffers, deltaSeconds);
   state.heartEngine = result.engine;
   state.buffers = result.buffers;
+
+  return {
+    generatedShapes: result.generatedShapes,
+    changed: result.generatedShapes.length > 0,
+  };
 }

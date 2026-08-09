@@ -1,6 +1,6 @@
 /**
  * HUD Overlay controller for HL;BM — Rune Foundry.
- * Renders HTML overlays for currencies, Heart Engine status, shape buffers palette, and field action buttons.
+ * Renders stable HTML overlays for currencies, Heart Engine status, shape buffers palette, and field action buttons.
  */
 
 import { ShapeType } from '../core/index.ts';
@@ -10,6 +10,7 @@ export class HUD {
   private container: HTMLElement;
   private store: AppStore;
   private selectedSpawnShape: ShapeType | null = 'I';
+  private statusTimeoutId: number | null = null;
 
   constructor(container: HTMLElement, store: AppStore) {
     this.container = container;
@@ -24,6 +25,24 @@ export class HUD {
   setSelectedSpawnShape(shape: ShapeType | null): void {
     this.selectedSpawnShape = shape;
     this.update();
+  }
+
+  showFeedback(message: string, isError: boolean = false): void {
+    const banner = this.container.querySelector('#hud-status-banner') as HTMLElement;
+    if (!banner) return;
+
+    if (this.statusTimeoutId !== null) {
+      clearTimeout(this.statusTimeoutId);
+    }
+
+    banner.textContent = message;
+    banner.style.color = isError ? '#f87171' : '#38bdf8';
+    banner.style.opacity = '1';
+
+    this.statusTimeoutId = window.setTimeout(() => {
+      banner.style.opacity = '0';
+      this.statusTimeoutId = null;
+    }, 3000);
   }
 
   private initDOM(): void {
@@ -80,6 +99,19 @@ export class HUD {
           border: 1px solid rgba(107, 114, 128, 0.3);
         }
 
+        .rf-status-banner {
+          align-self: center;
+          background: rgba(17, 24, 39, 0.9);
+          border: 1px solid rgba(75, 85, 99, 0.5);
+          border-radius: 20px;
+          padding: 6px 16px;
+          font-size: 13px;
+          font-weight: 600;
+          transition: opacity 0.3s ease;
+          opacity: 0;
+          pointer-events: none;
+        }
+
         .rf-bottom-bar {
           display: flex;
           justify-content: space-between;
@@ -104,8 +136,8 @@ export class HUD {
           flex-direction: column;
           align-items: center;
           justify-content: center;
-          width: 52px;
-          height: 52px;
+          width: 54px;
+          height: 54px;
           border-radius: 8px;
           border: 2px solid rgba(75, 85, 99, 0.5);
           background: rgba(31, 41, 55, 0.8);
@@ -122,8 +154,8 @@ export class HUD {
 
         .rf-shape-btn.active {
           border-color: #38bdf8;
-          background: rgba(56, 189, 248, 0.2);
-          box-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
+          background: rgba(56, 189, 248, 0.25);
+          box-shadow: 0 0 14px rgba(56, 189, 248, 0.5);
         }
 
         .rf-shape-btn:disabled {
@@ -132,8 +164,8 @@ export class HUD {
         }
 
         .rf-shape-count {
-          font-size: 11px;
-          font-weight: 400;
+          font-size: 10px;
+          font-weight: 500;
           color: #9ca3af;
           margin-top: 2px;
         }
@@ -176,9 +208,26 @@ export class HUD {
           <div class="rf-engine-status" id="hud-engine">Engine: Unbound</div>
         </div>
 
+        <div class="rf-status-banner" id="hud-status-banner">Ready</div>
+
         <div class="rf-bottom-bar">
           <div class="rf-palette" id="hud-palette">
-            <!-- Shape spawn buttons dynamically rendered -->
+            <button class="rf-shape-btn" id="btn-shape-I" data-shape="I">
+              <span>I</span>
+              <span class="rf-shape-count" id="count-shape-I">0 in buf</span>
+            </button>
+            <button class="rf-shape-btn" id="btn-shape-O" data-shape="O">
+              <span>O</span>
+              <span class="rf-shape-count" id="count-shape-O">0 in buf</span>
+            </button>
+            <button class="rf-shape-btn" id="btn-shape-L" data-shape="L">
+              <span>L</span>
+              <span class="rf-shape-count" id="count-shape-L">0 in buf</span>
+            </button>
+            <button class="rf-shape-btn" id="btn-shape-J" data-shape="J">
+              <span>J</span>
+              <span class="rf-shape-count" id="count-shape-J">0 in buf</span>
+            </button>
           </div>
           <div class="rf-actions-bar">
             <button class="rf-btn" id="btn-select-all">Select All</button>
@@ -191,7 +240,28 @@ export class HUD {
       </div>
     `;
 
-    // Attach event listeners
+    // Attach stable event listeners to shape buttons
+    const shapes: ShapeType[] = ['I', 'O', 'L', 'J'];
+    for (const shape of shapes) {
+      const btn = this.container.querySelector(`#btn-shape-${shape}`);
+      btn?.addEventListener('click', () => {
+        const state = this.store.getState();
+        if (state.buffers[shape] > 0) {
+          // Toggle behavior: clicking active shape deselects it to allow panning
+          if (this.selectedSpawnShape === shape) {
+            this.setSelectedSpawnShape(null);
+            this.showFeedback('Selection mode: Panning');
+          } else {
+            this.setSelectedSpawnShape(shape);
+            this.showFeedback(`Selected ${shape} for placement`);
+          }
+        } else {
+          this.showFeedback(`Buffer empty for ${shape}`, true);
+        }
+      });
+    }
+
+    // Attach stable event listeners to action buttons
     this.container.querySelector('#btn-select-all')?.addEventListener('click', () => {
       this.store.selectAllLooseBlocks();
     });
@@ -218,6 +288,8 @@ export class HUD {
     this.container.querySelector('#btn-reset')?.addEventListener('click', () => {
       if (confirm('Reset game state and start fresh?')) {
         this.store.resetGame();
+        this.selectedSpawnShape = 'I';
+        this.showFeedback('Game reset');
       }
     });
   }
@@ -242,33 +314,22 @@ export class HUD {
       }
     }
 
-    // 3. Buffer Palette
-    const paletteEl = this.container.querySelector('#hud-palette');
-    if (paletteEl) {
-      const shapes: ShapeType[] = ['I', 'O', 'L', 'J'];
-      paletteEl.innerHTML = shapes
-        .map(shape => {
-          const count = state.buffers[shape] || 0;
-          const isActive = this.selectedSpawnShape === shape;
-          const isDisabled = count <= 0;
-          return `
-            <button class="rf-shape-btn ${isActive ? 'active' : ''}" 
-                    data-shape="${shape}" ${isDisabled ? 'disabled' : ''}>
-              <span>${shape}</span>
-              <span class="rf-shape-count">${count} in buf</span>
-            </button>
-          `;
-        })
-        .join('');
+    // 3. Buffer Palette Elements
+    const shapes: ShapeType[] = ['I', 'O', 'L', 'J'];
+    for (const shape of shapes) {
+      const btn = this.container.querySelector(`#btn-shape-${shape}`) as HTMLButtonElement | null;
+      const countEl = this.container.querySelector(`#count-shape-${shape}`);
+      if (btn && countEl) {
+        const count = state.buffers[shape] || 0;
+        countEl.textContent = `${count} in buf`;
+        btn.disabled = count <= 0;
+        btn.classList.toggle('active', this.selectedSpawnShape === shape);
 
-      paletteEl.querySelectorAll('.rf-shape-btn').forEach(btn => {
-        btn.addEventListener('click', e => {
-          const shape = (e.currentTarget as HTMLElement).getAttribute('data-shape') as ShapeType;
-          if (shape && state.buffers[shape] > 0) {
-            this.setSelectedSpawnShape(shape);
-          }
-        });
-      });
+        // Auto-deselect shape if count drops to 0
+        if (count <= 0 && this.selectedSpawnShape === shape) {
+          this.selectedSpawnShape = null;
+        }
+      }
     }
   }
 }

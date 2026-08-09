@@ -24,6 +24,14 @@ function main(): void {
     saveGameState(state);
   });
 
+  // Save on page hide / unload / visibility change
+  const saveNow = () => saveGameState(store.getState());
+  window.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') saveNow();
+  });
+  window.addEventListener('pagehide', saveNow);
+  window.addEventListener('beforeunload', saveNow);
+
   // 3. Start game clock for engine production ticks
   const clock = new GameClock(deltaSeconds => {
     store.tick(deltaSeconds);
