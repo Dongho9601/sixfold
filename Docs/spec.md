@@ -19,10 +19,10 @@ The Field contains two distinct structural states:
 - **Persistent Engines:** Bound structures that remain on the grid and continuously generate new Blocks.
 - **Temporary Constructions:** Loose Block arrangements assembled, optimized, submitted, and consumed.
 
-### 1.2 Target Scope & Platform
-- **Platform:** Browser-first TypeScript application (Canvas 2D renderer).
-- **Session Length:** 5–20 minutes active sessions; offline buffer generation up to 8 hours.
-- **Campaign Arc:** 10–15 hours of active play to an authored ending, followed by endless Sector expansion.
+### 1.2 Product Vision & Platform
+- **Platform:** Browser-first TypeScript application using a Canvas 2D renderer.
+- **Session Length:** 5–20 minute active sessions.
+- **Campaign Structure:** Authored progression leading to a story ending, followed by endless Field expansion.
 - **Tone:** Dark, tactile, restrained, and mysterious.
 - **Relationship to HL;BM:** Shares tetromino shapes, Rune lore, and visual aesthetic. The Foundry is the subterranean factory that manufactures the Runes used by Delvers.
 
@@ -37,7 +37,7 @@ Engines generate Blocks into Buffers
   → First valid copy can be Bound into a persistent Engine
   → Later valid copies are Submitted to a Recipe
   → Submitted Loose Blocks are consumed and disappear from the Field
-  → Player earns Ash bursts, Shards, Engine XP, and Shape Mastery
+  → Player earns Ash bursts, Shards, and Engine XP
   → Upgraded and new Engines generate faster and unlock new Shapes
   → Larger and more complex spatial constructions become possible
 ```
@@ -53,9 +53,9 @@ The primary player choices center on geometry:
 ## 3. Field and Blocks
 
 ### 3.1 The Field
-- **Sparse Grid:** Stored as chunked coordinates (`x, y`), expanding as new Sectors are surveyed.
+- **Sparse Grid:** Stored using a simple sparse coordinate representation (`x, y`), expanding as new Sectors are surveyed. (Chunking or complex indexing introduced only if profiling demonstrates a real need).
 - **Opening Cradle:** The game begins in an illuminated 4×4 Cradle.
-- **Cell Occupancy:** Each cell independently holds open terrain, an Engine cell, a Loose Block cell, a Blueprint Slot, a void/wall, or a Fracture marker.
+- **Cell Occupancy:** Each cell independently holds open terrain, an Engine cell, a Loose Block cell, a Blueprint Slot, a void/wall, or a Fracture Weakpoint.
 
 ### 3.2 Block Definition
 A Block is a single tetromino piece occupying four orthogonally connected cells.
@@ -78,7 +78,7 @@ Increasing a shape's Grade doubles the material value and Submission payout of a
 ### 4.1 Geometry-Based Discovery
 Patterns are discovered through spatial experimentation rather than reading a static technology tree.
 - **Analyzer:** Selecting a group of Loose Blocks and triggering **Analyze** tests the selection against authored geometry predicates (component count, edge contact, bounding density, holes, symmetry, distance, landmarks).
-- **Discovery Result:** Valid undiscovered arrangements unlock the Pattern, add it to the Codex, and grant Insight.
+- **Discovery Result:** Valid undiscovered arrangements unlock the Pattern and add it to the Codex.
 - **Near-Match Clues:** Invalid or partial arrangements return precise spatial feedback (e.g., *"Requires 1 more shared edge"*, *"Inner void is unsealed"*).
 
 ### 4.2 Codex & Hints
@@ -96,18 +96,18 @@ Patterns are discovered through spatial experimentation rather than reading a st
 
 ### 5.2 Engine Output & Production
 - Bound Engines generate specific tetromino Blocks into the player's Shape buffers at regular intervals.
-$$\text{BlocksPerMinute} = \text{BaseRate} \times (0.75 + 0.50 \times Q_{\text{bind}}) \times 1.28^{\text{Level} - 1} \times \text{MasteryMult}$$
+$$\text{BlocksPerMinute} = \text{BaseRate} \times (0.75 + 0.50 \times Q_{\text{bind}}) \times 1.28^{\text{Level} - 1}$$
 - $Q_{\text{bind}}$ is the Quality score of the arrangement at the moment of Binding.
 
 ### 5.3 Engine Trait Adjacency
-Engines occupy real grid space and have spatial preferences:
-- *Cohesive Engines* gain output bonuses when adjacent to other Engine cells.
-- *Isolated Engines* gain bonuses when kept clear of other Engines.
-- *Landmark Engines* amplify nearby Sector features or Fractures.
+Engines occupy real grid space and have restrained spatial preferences:
+- *Cohesive Engines* gain output speed when adjacent to other Engine cells.
+- *Isolated Engines* gain output speed when kept clear of other Engines.
+- *Landmark Engines* amplify nearby Sector features or Weakpoints.
 
 ### 5.4 Engine Levels & Rebinding
 - Engines gain XP when the player submits Recipes associated with that Engine shape family.
-- Engine level-ups increase output speed and unlock evolution choices.
+- Engine level-ups increase output speed and unlock focused spatial evolution choices.
 - **Rebinding:** Players can rebuild an existing Engine with a higher-Quality layout to permanently upgrade its base production rate.
 
 ---
@@ -121,21 +121,18 @@ Submission is irreversible. Selected Loose Blocks vanish, freeing up grid space 
 
 ### 6.2 Recipe Structure
 Every Recipe defines:
-- **Material Requirements:** Required shape counts, minimum Grade, or specific affinities.
+- **Material Requirements:** Required shape counts or minimum Grade.
 - **Topology Profile:** Cohesion, Separation, Spine, Ring, Mirror, Bridge, or Hybrid constraints.
 - **Quality Score ($Q \in [0.0, 1.0]$):** Evaluates how closely the selection satisfies the topology ideal.
-- **Rewards:** Ash burst, Shards, Engine XP, Shape Mastery, and optional special effects.
+- **Rewards:** Ash burst, Shards, Engine XP, and optional spatial effects.
 
 ### 6.3 Submission Preview & Multipliers
 Before confirming, the preview explicitly displays:
 - Exact Loose Block IDs to be consumed.
 - Quality Tier (Valid, Strong, Masterwork, Perfect).
 - Calculated payout:
-$$\text{SubmissionPower} = \left(\sum \text{BlockValue}_i\right) \times N^{0.30} \times (1 + 1.75 \times Q^2) \times \text{DemandMult}$$
+$$\text{SubmissionPower} = \left(\sum \text{BlockValue}_i\right) \times N^{0.30} \times (1 + 1.75 \times Q^2)$$
 $$\text{AshBurst} = \text{round}(60 \times \text{SubmissionPower})$$
-
-### 6.4 Commissions
-The player receives up to 3 active Commissions offering temporary reward multipliers ($\times 1.25$ to $\times 3.00$) for submitting specific Recipes with requested variations.
 
 ---
 
@@ -152,24 +149,21 @@ Progression systematically unlocks richer spatial concepts:
 | **Symmetry** | Reflective or rotational balance across an axis | Jaccard overlap under geometric mirror transform |
 | **Constellation** | Multiple separated components at target distances | Equal component sizes & Gaussian distance score |
 | **Bridges** | Efficient connected path between two anchors | Path length efficiency between target landmarks |
-| **Fracture Core** | Covering or enclosing visible grid Weakpoints | Weakpoint cell coverage & matching affinity |
+| **Fracture Core** | Covering or enclosing visible grid Weakpoints | Weakpoint cell coverage & shape match |
 | **Grand Patterns** | Combining multiple spatial rules in one large construction | Weighted geometric mean of sub-profile scores |
 
 ---
 
 ## 8. Progression
 
-### 8.1 Currencies & Resources
+### 8.1 Currencies & Progression Resources
 - **Ash:** Primary spendable currency earned from live Loose Block output and Submission bursts. Used for Engine upgrades, buffer expansions, and Surveying.
 - **Shards:** Upgrade currency earned from Submissions and Fractures. Used for Engine evolutions, Grade increases, and automation unlocks.
 - **Proofs:** Prestige currency earned upon Recast. Used for permanent campaign perks.
 
-### 8.2 Shape Mastery
-Each of the 7 tetromino shapes has a dedicated Mastery track advanced by submitting that shape. Mastery unlocks higher buffer caps, faster production, auto-fill priority, and shape-specific passive perks.
-
-### 8.3 Sectors and Fractures
+### 8.2 Sectors and Fractures
 - **Sectors:** The Field expands by unlocking new Sectors containing open grid cells, voids, and landmarks.
-- **Fractures (Weakpoints):** Marked cell patterns on the Field. Placing matching Blocks over Fractures and Submitting clears the Weakpoint, granting bonus Shards and unlocking adjacent Sectors.
+- **Fractures (Weakpoints):** Marked spatial cell patterns on the Field. Placing matching Blocks over Fractures and Submitting clears the Weakpoint, granting bonus Shards and unlocking adjacent Sectors.
 
 ---
 
@@ -181,7 +175,7 @@ A **Stencil** is a saved Blueprint layout created from a discovered Pattern or c
 - **Auto-Fill:** Generated Blocks in buffers automatically fill active Blueprint Slots based on player-set priorities.
 
 ### 9.2 Offline Production
-- Offline time simulates Engine Block production and Stencil auto-filling up to an offline cap (default: 8 hours).
+- Offline time simulates Engine Block production and Stencil auto-filling up to an offline cap.
 - **Locked Rule:** *Offline progress and automation NEVER auto-discover new Patterns, auto-bind Engines, or place Blocks outside player-approved Stencils.*
 
 ---
@@ -191,11 +185,11 @@ A **Stencil** is a saved Blueprint layout created from a discovered Pattern or c
 ### 10.1 Recast (Prestige)
 - **Unlock:** Unlocked after reaching mid-game milestones (all 7 shapes unlocked, multiple Engines bound, Grand Pattern completed).
 - **Effect:** Archives the current Field layout and resets Loose Blocks, Engines, and Ash. Grants **Proofs** based on unique discovered Patterns and total Engine levels.
-- **Preserved:** Codex discoveries, Shape Masteries, Block Grades, and Proof upgrades persist across Recasts.
+- **Preserved:** Codex discoveries, Block Grades, and Proof upgrades persist across Recasts.
 
 ### 10.2 Authored Ending & Endless Play
 - **Ending:** The campaign culminates in a final Grand Pattern requiring a multi-Sector spatial construction. Submitting it reveals the narrative climax: the Foundry's output powers the Delver's Runes in HL;BM.
-- **Endless Mode:** Post-ending play unlocks procedural infinite Sectors, daily seed challenges, and high-difficulty Masterwork Recipes.
+- **Endless Mode:** After the authored ending, the player may continue expanding the Field and pursuing advanced Patterns.
 
 ---
 
@@ -288,4 +282,7 @@ Representative starter Recipes illustrating spatial progression:
 - *Exact Engine production intervals:* To be tuned during Pass 2 playtesting for optimal pacing.
 - *Analyze auto-prompt threshold:* Whether obvious Patterns auto-highlight or require manual Analyze clicks.
 - *Perfect Quality threshold:* Whether $Q \ge 0.95$ or $Q \ge 0.90$ feels more achievable and satisfying.
-- *Commission rotation frequency:* Calibrating how often active Commissions refresh to prevent player fatigue.
+
+### 15.4 Post-Launch Possibilities
+- Public Pattern sharing codes.
+- Additional Sector themes and extended endgame challenge sets.

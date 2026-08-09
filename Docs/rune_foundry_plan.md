@@ -21,7 +21,7 @@ Implement the production software architecture and playable core loop so the gam
 
 ### Major Deliverables
 1. **Core Domain Model (`src/core/`):**
-   - Sparse 2D coordinate grid & chunk representation.
+   - Simple sparse 2D coordinate grid representation (`Map<string, Cell>`).
    - Tetromino shape matrices (`I`, `O`, `L`, `J`), rotations, and cell offsets.
    - Loose Block state, placed cells, and Shape buffers.
    - Pure geometry resolver computing Cohesion, component count, and edge contact.
@@ -90,12 +90,12 @@ Implement all remaining intended product systems, spatial pattern families, and 
 1. **Full Shape & Pattern Expansion (`src/content/`):**
    - Add remaining 3 tetromino shapes (`T`, `S`, `Z`).
    - Implement all spatial pattern profiles: Spines, Hollow Rings, Symmetry, Bridges, Fractures, and Grand Patterns.
-2. **Engines, Evolutions & Mastery:**
-   - Engine leveling, Rebinding, and evolution trait choices.
-   - Persistent Shape Mastery tracks and Block Grade upgrades.
+2. **Engines, Evolutions & Block Grades:**
+   - Engine leveling, Rebinding, and focused evolution trait choices.
+   - Persistent Block Grade upgrades and Shard spending.
 3. **Field Expansion & Weakpoints:**
-   - Procedural Sector masks, voids, landmarks, and Survey gates.
-   - Fracture resolution mechanics (Point, Line, Hook, Core Weakpoints).
+   - Sector expansion, voids, landmarks, and Survey gates.
+   - Fracture resolution mechanics (Point, Line, Hook, Fork, Core Weakpoints).
 4. **Automation & Stencils:**
    - Stencil saving from preview or selection.
    - Stencil auto-fill from buffers and offline production resolver.
@@ -104,7 +104,7 @@ Implement all remaining intended product systems, spatial pattern families, and 
    - Climax Grand Pattern, authored ending sequence, and post-game Endless mode.
 
 ### Exit Criteria
-- Full 10–15 hour campaign arc is playable end-to-end from opening Cradle to authored ending.
+- Full campaign arc is playable end-to-end from opening Cradle to authored ending.
 - Stencils successfully refill after Submission without auto-discovering or placing outside player design.
 - Recast smoothly resets Field state while retaining Codex and Proof upgrades.
 
@@ -125,7 +125,7 @@ Apply final audiovisual polish, accessibility compliance, performance profiling,
    - Mobile browser UI responsive pass.
 3. **Quality & Performance:**
    - Canvas 2D viewport culling and rendering optimizations.
-   - Edge-case save corruption recovery and schema migration tests.
+   - Edge-case save corruption recovery tests.
    - Lightweight telemetry event dispatching (`src/platform/analytics/`).
 4. **Release Deployment:**
    - Production Vite bundle build validation (`npm run build`).
