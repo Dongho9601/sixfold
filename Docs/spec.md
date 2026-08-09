@@ -58,11 +58,13 @@ Rune Foundry does **not** reproduce the mobile game's combat loop, stage-bag eco
 Expected companion files after acceptance:
 
 - `Docs/rune_foundry_plan.md` — implementation phases and task breakdown.
-- `Docs/Balance/rune_foundry_balance.ts` — deterministic economy and pacing simulator.
-- `Docs/Balance/rune_foundry_geometry.ts` — topology metrics and Pattern validator.
-- `Docs/Balance/rune_foundry_targets.json` — milestone targets and tolerance bands.
+- `tools/balance-sim/` — executable deterministic economy and pacing simulator tool (imports canonical formulas from `src/core/`).
+- `tools/pattern-validator/` — executable topology metrics and Pattern validator tool (imports canonical formulas from `src/core/`).
+- `Docs/Balance/` — milestone targets, tolerance bands, results, and methodology documentation/data (e.g. `rune_foundry_targets.json`).
 - `Docs/ArtBible/RuneFoundry/` — Field, Block, Engine, discovery, and Submission presentation rules.
 - `Docs/rune_foundry_analytics.md` — event schema and experiment contracts.
+
+> **Canonical Formula Location:** Executable balance/geometry tooling lives under `tools/`, while canonical formulas themselves live under `src/core/`. Tooling reuses production core modules to guarantee zero formula duplication or drift. `Docs/Balance/` is reserved for documentation, target datasets, and simulation analysis.
 
 ---
 
@@ -2278,52 +2280,53 @@ Recommended:
 
 - TypeScript;
 - Vite;
-- Canvas 2D or WebGL renderer with deterministic model independent of renderer;
+- Canvas 2D renderer for Phase A (WebGL evaluated in Phase B+ only if measured rendering performance requires it);
 - IndexedDB primary save with localStorage recovery metadata;
-- Web Worker for geometry analysis and long offline simulation;
+- Web Worker background entry points for offline simulation and heavy analysis when profiling demonstrates need;
 - no mandatory server for core play.
 
-### 24.2 Package Boundaries
+### 24.2 Dependency Direction & Package Boundaries
+
+Canonical dependency rules:
 
 ```text
-/core
-  coordinates
-  shapes
-  blocks
-  engines
-  field
-  topology
-  patterns
-  recipes
-  submission
-  progression
-  economy
-  offline
-  save
+                 content
+                    │
+                    ▼
+core ◄──────── application ◄──────── ui
+                    ▲
+                    │
+                 platform
 
-/content
-  sectors
-  fractures
-  patterns
-  recipes
-  commissions
-  progression
+tools ────────────► core/content
+```
 
-/ui
-  renderer
-  camera
-  input
-  overlays
-  codex
-  recipe-panel
-  submission-preview
-  accessibility
+Future Workers:
+```text
+workers ──────────► core/content
+```
 
-/tools
-  balance-sim
-  pattern-validator
-  sector-validator
-  save-migrator
+- `core` → pure deterministic domain; imports nothing outside core; knows nothing about storage, clocks, analytics, Worker RPC, DOM, or browser infrastructure;
+- `content` → may import core types/contracts; does not depend on UI/platform;
+- `application` → orchestrates domain operations; defines side-effect ports/interfaces when needed; may import core + content;
+- `ui` → dispatches application actions and renders state; may import application and core types; must not implement game rules;
+- `platform` → implements application-side ports using browser APIs; owns browser side effects; is NOT a parent or child layer of UI;
+- `main.ts` → composition root that wires application, platform, and UI together;
+- `workers` → alternate execution environments (not architectural layers) calling canonical core/content algorithms; materialized when offloading/offline features are implemented;
+- `tools` → may import core + content; executable balance/geometry tooling lives in `tools/` and reuses canonical `src/core` algorithms;
+- `tests` → may exercise any relevant production module.
+
+Target Architecture Map:
+
+```text
+src/core/       (coordinates, shapes, blocks, engines, field, topology, patterns, recipes, submission, progression, economy, offline, save)
+src/content/    (sectors, fractures, patterns, recipes, commissions, progression)
+src/application/(actions, state)
+src/platform/   (storage, clock, worker-adapter, analytics)
+src/workers/    (geometry-analysis.worker.ts, offline-simulation.worker.ts — materialized when implemented)
+src/ui/         (renderer [Canvas 2D], camera, input, overlays, codex, recipe-panel, submission-preview, accessibility, styles)
+tools/          (balance-sim, pattern-validator, sector-validator, save-migrator)
+tests/          (unit, property, content, actions, persistence, equivalence, integration)
 ```
 
 ### 24.3 Pure Actions
