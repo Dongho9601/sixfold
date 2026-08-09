@@ -218,13 +218,13 @@ workers ──────────► core/content
 
 ## 5. Development Phasing Roadmap
 
-The directory structure is designed to remain stable as development progresses from Phase A prototype through Phase D distribution:
+The directory structure is designed to remain stable as development progresses across the four production passes:
 
-- **Phase A (Core Fun Prototype):**
-  Uses `src/core` (coordinates, shapes, blocks, engines, field, topology, recipes, submission, save), `src/content` (starter recipes A.1–A.2), `src/application` (basic actions, state), `src/platform` (localStorage/IndexedDB), and `src/ui` (Canvas 2D grid renderer, submission preview, basic HUD).
-- **Phase B (Public Vertical Slice):**
-  Fills `src/content/fractures`, `src/content/sectors`, `src/content/commissions`, expands `src/core/offline`, materializes `src/workers` for offline processing, and expands `src/ui/codex`.
-- **Phase C (First-Ending Campaign):**
-  Expands `src/core/progression` (Recast mechanics, Proofs), `src/content/recipes` (Grand Recipes A.11–A.12), `tools/balance-sim`, and `src/ui/codex` (ending sequences, archived field gallery).
-- **Phase D (Monetization & Distribution):**
-  Adds `src/platform/analytics` integrations, optional rewarded ad wrappers, portal SDK adapters, and export code sharing in `src/ui/codex`.
+- **Pass 1 (Complete Playable Core):**
+  Uses `src/core` (coordinates, shapes, blocks, engines, field, topology, recipes, submission, save), `src/content` (starter recipes & opening Cradle), `src/application` (actions, state), `src/platform` (IndexedDB / localStorage), and `src/ui` (Canvas 2D renderer, submission preview, HUD).
+- **Pass 2 (Gameplay and UX Iteration):**
+  Refines `src/ui` (camera, touch/drag controls, quality feedback, near-match clues) and `src/core` (pacing formulas & balance parameters).
+- **Pass 3 (Full Progression and Content):**
+  Expands `src/content` (all 7 shapes, full spatial pattern catalog, Fractures, Sectors), `src/core` (stencils, offline progress, Recast mechanics, ending), and `src/ui/codex`.
+- **Pass 4 (Polish and Release):**
+  Adds `src/platform/analytics` integrations, audiovisual polish, performance culling, accessibility controls, and build verification.

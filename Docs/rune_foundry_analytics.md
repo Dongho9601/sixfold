@@ -1,6 +1,6 @@
 # HL;BM — Rune Foundry Analytics Event Schema
 
-> **Status:** Event contracts definition — see `Docs/spec.md` §25.5.
+> **Status:** Event contracts definition — see `Docs/spec.md`.
 
 ## Telemetry Events
 - `first_block_placed`
