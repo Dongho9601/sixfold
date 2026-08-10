@@ -49,38 +49,57 @@ $$\text{Core Math \& Domain} \longrightarrow \text{Application Actions} \longrig
 ### Exit Criteria
 - The game runs in the browser via `npm run dev`.
 - Player can place starter Blocks in the 4×4 Cradle to discover and Bind the Heart Engine.
-- Heart and ordinary Engines generate independent deterministic randomized 7-bags into uncapped inventory.
+- Heart and ordinary Engines generate independent deterministic randomized 7-bags into Shape buffers; Pass 2 adds the shared Stock backpressure rule.
 - Player can Bind Compression/Twin Stars, Submit ordinary Engines for Shards, and upgrade Shape Grades.
 - **Submitted Engine constituents are consumed and disappear from the board.**
 - Game state persists across browser reloads.
 
 ---
 
-## Pass 2 — Gameplay and UX Iteration
+## Pass 2 — Core Progression Redesign
 
 ### Goal
-Play the live browser game, evaluate feel, and fix weaknesses in loop pacing, spatial legibility, and player feedback.
+Revise the live core loop so spatial production, Power connectivity, resource pacing, and authored progression create meaningful Keep-versus-Submit decisions.
 
 ### Major Deliverables
-1. **Core Loop Revision:**
-   - Replace buffer balancing/caps with persisted per-Engine shuffled 7-bags.
-   - Support the foundational non-submittable Heart plus 0..N submittable ordinary Engines.
-2. **Core Interaction Contract:**
+1. **Limited Field and Expansion:**
+   - Replace unlimited placement with a set of unlocked 4×4 chunks.
+   - Start with roughly an 8×8 opening field around the Heart Cradle.
+   - Add Frontier Seal activation as the authored expansion path; allow non-rectangular unlocked layouts.
+2. **Heart-Rooted Power:**
+   - Make the Heart Engine the Power root and gate ordinary production on orthogonal Bound-cell reachability.
+   - Preserve partial progress while unpowered without disconnected-time backlog or catch-up.
+   - Keep numerical Power capacity deferred.
+3. **Production and Stock Pacing:**
+   - Retain deterministic per-Engine shuffled 7-bags.
+   - Lower BaseRate to about 3.5 Blocks/minute so the initial Heart produces roughly one Block every 12–16 seconds.
+   - Add a global Buffered Block Stock capacity of about 12 with explicit full-stock pausing.
+4. **Directed Progression and Economy:**
+   - Add authored NOW/NEXT Foundry Directives.
+   - Keep Shards for repeatable Shape Grades and add Core only for milestone progression.
+   - Author the early Heart → Compression → Submit → Grade → Powered Engine → Core → Frontier → Twin Stars sequence.
+5. **Core Interaction Contract:**
    - Physical `Digit1..Digit7`/Numpad codes activate a snapping grid ghost; `KeyR` rotates; repeat activation toggles placement off.
    - Remove ordinary left-drag movement from gameplay. Right/middle/Space+left pan, the wheel zooms, and a 450 ms Loose Block hold Returns it.
    - Keep click/Shift+click and add empty-Field rectangle selection; Engine cells are excluded.
-3. **Field-First Spatial Feedback:**
+6. **Field-First Spatial Feedback:**
    - Evaluate bounded local candidates automatically after placement/Return.
    - Highlight missing geometry and trace valid Patterns on the Field.
    - Distinguish Loose tetromino silhouettes from crystallized Bound Engine structures.
-   - Show each Engine's actual next random Shape and progress locally; remove full/blocked state.
+   - Show each Engine's actual next random Shape, Power state, and local progress.
+   - Show locked frontier cells, valid expansion targets, and Stock-full pause state.
    - Surface Pattern Bind and selected-Engine Submit with exact consumption and payout.
-4. **Board Presentation:**
+7. **Board Presentation and Asset Reuse:**
    - Refine camera pan/zoom and establish the two-finger mobile contract.
    - Keep a larger minimal resource/Shape HUD and add a quiet Recipe/onboarding/Grade sidebar.
+   - Reuse copied HLBM visual language for Shards, Core, Heart, Power, Frontier, and Directives while keeping board geometry procedural.
 
 ### Exit Criteria
 - Playability testing confirms that new players understand that **Bind creates production** while **Submit sacrifices an Engine for Grade progression**.
+- The opening 8×8 field has a deterministic, buildable Frontier Seal route to a chosen adjacent 4×4 chunk.
+- A kept ordinary Engine produces only when Heart-connected; submitting a bridge visibly disconnects downstream Engines without catch-up output.
+- Heart production lands at roughly one Block every 12–16 seconds and pauses cleanly at Stock 12.
+- NOW/NEXT Directives provide an obvious goal through the first expansion and Twin Stars milestone.
 - Connected vs. separated topology choices feel distinct and visually intuitive.
 - Early game loop (5–30 minutes) is engaging, clear, and free of editor-like placement friction.
 
@@ -97,7 +116,7 @@ Implement all remaining intended product systems, spatial pattern families, and 
 2. **Engine Evolutions:**
    - Evaluate Rebinding and focused Engine trait choices only if they create distinct decisions.
 3. **Field Expansion & Weakpoints:**
-   - Sector expansion, voids, landmarks, and Survey gates.
+   - Extend Frontier chunk expansion beyond the first Seal, then add Sector masks, voids, landmarks, and Survey gates.
    - Fracture resolution mechanics (Point, Line, Hook, Fork, Core Weakpoints).
 4. **Automation & Stencils:**
    - Stencil saving from preview or selection.
