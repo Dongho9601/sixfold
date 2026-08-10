@@ -1,15 +1,17 @@
-/**
- * Application state store container for HL;BM — Rune Foundry.
- * Manages game state, dispatches actions, and notifies listeners.
- */
+/** Observable application store and presentation-event boundary. */
 
-import { Position, RecipeReward, ShapeType } from '../core/types.ts';
+import { EngineState, Position, RecipeReward, ShapeType } from '../core/types.ts';
 import { createInitialState, GameState, normalizeGameState } from './state.ts';
 import {
   advanceProductionTime,
-  bindHeartSeal,
+  bindPattern,
   clearSelection,
-  getSubmissionPreview,
+  extractEngine,
+  getEngineExtractionPreview,
+  getEngineIdForBlock,
+  getLooseBlockIdsIntersectingRect,
+  getPatternActionPreview,
+  GridSelectionRect,
   moveBlock,
   placeBlockFromBuffer,
   refreshFieldPattern,
@@ -17,7 +19,10 @@ import {
   rotateBlock,
   selectAllLooseBlocks,
   selectBlock,
+  selectEngine,
+  selectLooseBlocks,
   submitRecipe,
+  upgradeShapeGrade,
 } from './actions.ts';
 
 export type Listener = (state: GameState) => void;
@@ -33,13 +38,31 @@ export type VisualEvent =
   | { type: 'place'; block: VisualBlockEvent }
   | { type: 'return'; block: VisualBlockEvent }
   | { type: 'submit'; blocks: VisualBlockEvent[]; reward: RecipeReward }
-  | { type: 'bind'; blocks: VisualBlockEvent[] }
-  | { type: 'production'; shapes: ShapeType[] }
+  | { type: 'bind'; blocks: VisualBlockEvent[]; engineId: string }
+  | { type: 'extract'; blocks: VisualBlockEvent[]; engineId: string; shards: number }
+  | { type: 'production'; outputs: Array<{ engineId: string; shape: ShapeType }> }
+  | { type: 'grade-up'; shape: ShapeType; grade: number }
   | { type: 'reset' };
+
+export interface EngineInspectionView {
+  id: string;
+  name: string;
+  sourcePatternName: string;
+  foundational: boolean;
+  extractable: boolean;
+  quality: number;
+  nextShape: ShapeType;
+  shards: number;
+  error?: string;
+}
+
+function visualBlock(block: { id: string; shape: ShapeType; position: Position | null; rotation: number }): VisualBlockEvent | null {
+  return block.position ? { id: block.id, shape: block.shape, position: { ...block.position }, rotation: block.rotation } : null;
+}
 
 export class AppStore {
   private state: GameState;
-  private listeners: Set<Listener> = new Set();
+  private listeners = new Set<Listener>();
   private saveCallback: ((state: GameState) => void) | null = null;
   private visualEvents: VisualEvent[] = [];
 
@@ -50,12 +73,31 @@ export class AppStore {
     }
   }
 
-  getState(): GameState {
-    return this.state;
+  getState(): GameState { return this.state; }
+
+  getPatternActionPreview(blockIds?: readonly string[]) {
+    return getPatternActionPreview(this.state, blockIds);
   }
 
-  getSubmissionPreview() {
-    return getSubmissionPreview(this.state);
+  getSubmissionPreview(blockIds?: readonly string[]) {
+    return getPatternActionPreview(this.state, blockIds);
+  }
+
+  getEngineInspection(engineId: string | null = this.state.selectedEngineId): EngineInspectionView | null {
+    if (!engineId) return null;
+    const preview = getEngineExtractionPreview(this.state, engineId);
+    if (!preview) return null;
+    return {
+      id: preview.engine.id,
+      name: preview.engine.name,
+      sourcePatternName: preview.engine.sourcePatternName,
+      foundational: preview.engine.foundational,
+      extractable: preview.engine.extractable,
+      quality: preview.engine.quality,
+      nextShape: preview.engine.nextShape,
+      shards: preview.shards,
+      error: preview.error,
+    };
   }
 
   setState(newState: GameState): void {
@@ -69,125 +111,142 @@ export class AppStore {
     return events;
   }
 
-  private enqueueVisualEvent(event: VisualEvent): void {
-    this.visualEvents.push(event);
-  }
-
-  onSave(callback: (state: GameState) => void): void {
-    this.saveCallback = callback;
-  }
+  onSave(callback: (state: GameState) => void): void { this.saveCallback = callback; }
 
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
+    return () => this.listeners.delete(listener);
   }
 
   private notify(save: boolean = true): void {
-    if (save && this.saveCallback) {
-      this.saveCallback(this.state);
-    }
-    for (const listener of this.listeners) {
-      listener(this.state);
-    }
+    if (save && this.saveCallback) this.saveCallback(this.state);
+    for (const listener of this.listeners) listener(this.state);
   }
 
-  // Wrapped Actions
   placeBlock(shape: ShapeType, position: Position, rotation?: number) {
-    const res = placeBlockFromBuffer(this.state, shape, position, rotation);
-    if (res.success && res.blockId) {
-      const block = this.state.blocks[res.blockId];
-      this.enqueueVisualEvent({
-        type: 'place',
-        block: { id: res.blockId, shape, position: { ...position }, rotation: block?.rotation || 0 },
-      });
+    const result = placeBlockFromBuffer(this.state, shape, position, rotation);
+    if (result.success && result.blockId) {
+      const snapshot = visualBlock(this.state.blocks[result.blockId]);
+      if (snapshot) this.visualEvents.push({ type: 'place', block: snapshot });
       this.notify(true);
     }
-    return res;
+    return result;
   }
 
   moveBlock(blockId: string, newPosition: Position) {
-    // Retained for Pass 1/core compatibility; InputController never exposes this as gameplay input.
-    const res = moveBlock(this.state, blockId, newPosition);
-    if (res.success) this.notify(true);
-    return res;
+    const result = moveBlock(this.state, blockId, newPosition);
+    if (result.success) this.notify(true);
+    return result;
   }
 
   rotateBlock(blockId: string) {
-    const res = rotateBlock(this.state, blockId);
-    if (res.success) this.notify(true);
-    return res;
+    const result = rotateBlock(this.state, blockId);
+    if (result.success) this.notify(true);
+    return result;
   }
 
   returnBlock(blockId: string) {
-    const block = this.state.blocks[blockId];
-    const visualBlock = block?.position
-      ? { id: block.id, shape: block.shape, position: { ...block.position }, rotation: block.rotation }
-      : null;
-    const res = returnBlockToBuffer(this.state, blockId);
-    if (res.success) {
-      if (visualBlock) this.enqueueVisualEvent({ type: 'return', block: visualBlock });
+    const snapshot = this.state.blocks[blockId] ? visualBlock(this.state.blocks[blockId]) : null;
+    const result = returnBlockToBuffer(this.state, blockId);
+    if (result.success) {
+      if (snapshot) this.visualEvents.push({ type: 'return', block: snapshot });
       this.notify(true);
     }
-    return res;
+    return result;
   }
 
-  selectBlock(blockId: string, toggle?: boolean) {
+  selectBlock(blockId: string, toggle: boolean = false): void {
     selectBlock(this.state, blockId, toggle);
     this.notify(false);
   }
 
-  selectAllLooseBlocks() {
+  selectBlocks(blockIds: readonly string[], additive: boolean = false): void {
+    selectLooseBlocks(this.state, blockIds, additive);
+    this.notify(false);
+  }
+
+  selectBlocksInRect(rect: GridSelectionRect, additive: boolean = false): string[] {
+    const ids = getLooseBlockIdsIntersectingRect(this.state, rect);
+    selectLooseBlocks(this.state, ids, additive);
+    this.notify(false);
+    return ids;
+  }
+
+  selectAllLooseBlocks(): void {
     selectAllLooseBlocks(this.state);
     this.notify(false);
   }
 
-  clearSelection() {
+  clearSelection(): void {
     clearSelection(this.state);
     this.notify(false);
   }
 
+  selectEngineByBlockId(blockId: string): EngineState | null {
+    const engineId = getEngineIdForBlock(this.state, blockId);
+    selectEngine(this.state, engineId);
+    this.notify(false);
+    return engineId ? this.state.engines[engineId] : null;
+  }
+
+  clearEngineSelection(): void {
+    selectEngine(this.state, null);
+    this.notify(false);
+  }
+
   bindEngine() {
-    const candidateIds = this.state.fieldCandidateBlockIds.length > 0
-      ? this.state.fieldCandidateBlockIds
-      : this.state.selectedBlockIds;
-    const bindBlocks = candidateIds
-      .map(id => this.state.blocks[id])
-      .filter(block => Boolean(block?.position))
-      .map(block => ({ id: block.id, shape: block.shape, position: { ...block.position! }, rotation: block.rotation }));
-    const res = bindHeartSeal(this.state);
-    if (res.success) {
-      this.enqueueVisualEvent({ type: 'bind', blocks: bindBlocks });
+    const preview = this.getPatternActionPreview();
+    const snapshots = preview.blocks.map(visualBlock).filter((block): block is VisualBlockEvent => Boolean(block));
+    const result = bindPattern(this.state);
+    if (result.success && result.engine) {
+      this.visualEvents.push({ type: 'bind', blocks: snapshots, engineId: result.engine.id });
       this.notify(true);
     }
-    return res;
+    return result;
   }
 
   submitRecipe() {
-    const submitBlocks = this.state.selectedBlockIds
-      .map(id => this.state.blocks[id])
-      .filter(block => Boolean(block?.position))
-      .map(block => ({ id: block.id, shape: block.shape, position: { ...block.position! }, rotation: block.rotation }));
-    const res = submitRecipe(this.state);
-    if (res.success && res.reward) {
-      this.enqueueVisualEvent({ type: 'submit', blocks: submitBlocks, reward: res.reward });
+    const preview = this.getPatternActionPreview();
+    const snapshots = preview.blocks.map(visualBlock).filter((block): block is VisualBlockEvent => Boolean(block));
+    const result = submitRecipe(this.state);
+    if (result.success && result.reward) {
+      this.visualEvents.push({ type: 'submit', blocks: snapshots, reward: result.reward });
       this.notify(true);
     }
-    return res;
+    return result;
   }
 
-  tick(deltaSeconds: number) {
-    const res = advanceProductionTime(this.state, deltaSeconds);
-    if (res.changed) {
-      this.enqueueVisualEvent({ type: 'production', shapes: res.generatedShapes });
+  extractEngine(engineId: string = this.state.selectedEngineId || '') {
+    const preview = getEngineExtractionPreview(this.state, engineId);
+    const snapshots = preview?.blocks.map(visualBlock).filter((block): block is VisualBlockEvent => Boolean(block)) || [];
+    const result = extractEngine(this.state, engineId);
+    if (result.success && result.shards !== undefined) {
+      this.visualEvents.push({ type: 'extract', blocks: snapshots, engineId, shards: result.shards });
+      this.notify(true);
+    }
+    return result;
+  }
+
+  upgradeShape(shape: ShapeType) {
+    const result = upgradeShapeGrade(this.state, shape);
+    if (result.success && result.grade) {
+      this.visualEvents.push({ type: 'grade-up', shape, grade: result.grade });
+      this.notify(true);
+    }
+    return result;
+  }
+
+  tick(deltaSeconds: number): void {
+    const result = advanceProductionTime(this.state, deltaSeconds);
+    if (result.changed) {
+      this.visualEvents.push({ type: 'production', outputs: result.outputs });
       this.notify(true);
     }
   }
 
-  resetGame() {
+  resetGame(): void {
     this.state = createInitialState();
-    this.enqueueVisualEvent({ type: 'reset' });
+    this.visualEvents.push({ type: 'reset' });
     this.notify(true);
   }
 }

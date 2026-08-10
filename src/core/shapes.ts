@@ -1,6 +1,5 @@
 /**
- * Tetromino shapes math and geometry offsets for I, O, L, J.
- * Designed to easily support T, S, Z in future passes.
+ * Canonical tetromino geometry for all seven Shapes.
  */
 
 import { Position, ShapeType } from './types.ts';
@@ -9,8 +8,11 @@ export type { ShapeType };
 export const BASE_SHAPE_OFFSETS: Record<ShapeType, Position[]> = {
   I: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 3, y: 0 }],
   O: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }],
+  T: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 1, y: 1 }],
   L: [{ x: 0, y: 0 }, { x: 0, y: 1 }, { x: 0, y: 2 }, { x: 1, y: 2 }],
   J: [{ x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 2 }, { x: 1, y: 2 }],
+  S: [{ x: 1, y: 0 }, { x: 2, y: 0 }, { x: 0, y: 1 }, { x: 1, y: 1 }],
+  Z: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 2, y: 1 }],
 };
 
 export function rotateAndNormalizeOffsets(baseOffsets: Position[], rotation: number): Position[] {

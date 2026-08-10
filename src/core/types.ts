@@ -3,7 +3,8 @@
  * Pure deterministic types with no DOM or UI dependencies.
  */
 
-export type ShapeType = 'I' | 'O' | 'L' | 'J';
+export const SHAPE_TYPES = ['I', 'O', 'T', 'L', 'J', 'S', 'Z'] as const;
+export type ShapeType = typeof SHAPE_TYPES[number];
 
 export interface Position {
   x: number;
@@ -27,14 +28,19 @@ export interface CellOccupancy {
   isEngine: boolean; // true if Bound engine cell, false if Loose block cell
 }
 
-export interface HeartEngineState {
+export interface EngineState {
   id: string;
   name: string;
-  level: number;
-  xp: number;
+  sourcePatternId: string;
+  sourcePatternName: string;
+  foundational: boolean;
+  extractable: boolean;
   quality: number;
   accumulatedTimeSec: number;
   constituentBlockIds: string[];
+  rngState: number;
+  productionBag: ShapeType[];
+  nextShape: ShapeType;
 }
 
 export interface Currencies {
@@ -42,12 +48,9 @@ export interface Currencies {
   shards: number;
 }
 
-export interface BufferCounts {
-  I: number;
-  O: number;
-  L: number;
-  J: number;
-}
+export type ShapeNumbers = Record<ShapeType, number>;
+export type BufferCounts = ShapeNumbers;
+export type ShapeGrades = ShapeNumbers;
 
 export interface PatternMetrics {
   blockCount: number;
@@ -73,8 +76,13 @@ export interface PatternAnalysisResult {
 
 export interface RecipeReward {
   ash: number;
-  shards: number;
-  engineXp: number;
   submissionPower: number;
   qualityTier: 'Valid' | 'Strong' | 'Masterwork' | 'Perfect';
+}
+
+export interface LearnedActions {
+  bind: boolean;
+  submit: boolean;
+  extract: boolean;
+  upgrade: boolean;
 }

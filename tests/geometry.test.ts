@@ -4,6 +4,7 @@ import {
   calculateInterBlockSharedEdges,
   evaluatePattern,
   findConnectedComponents,
+  findNearestValidPlacement,
 } from '../src/core/geometry.ts';
 
 describe('Pure Geometry Resolver', () => {
@@ -41,8 +42,7 @@ describe('Pure Geometry Resolver', () => {
     expect(result.nearMatchReason).toContain('16 cells');
   });
 
-  it('should evaluate Compression Press connected cohesion', () => {
-    // 2 touching blocks forming 1 connected component outside cradle
+  it('should reject Compression Press below its 4-Block minimum', () => {
     const blocks: Block[] = [
       { id: 'b1', shape: 'O', state: 'Loose', grade: 1, position: { x: 10, y: 10 }, rotation: 0 },
       { id: 'b2', shape: 'O', state: 'Loose', grade: 1, position: { x: 12, y: 10 }, rotation: 0 },
@@ -55,9 +55,50 @@ describe('Pure Geometry Resolver', () => {
     expect(sharedEdges).toBeGreaterThan(0);
 
     const result = evaluatePattern(blocks);
+    expect(result.isValid).toBe(false);
+    expect(result.patternId).toBe('compression_press');
+    expect(result.nearMatchReason).toBe('2 / 4');
+
+    const threeBlocks = [...blocks, {
+      id: 'b3', shape: 'O' as const, state: 'Loose' as const, grade: 1,
+      position: { x: 14, y: 10 }, rotation: 0,
+    }];
+    const threeResult = evaluatePattern(threeBlocks);
+    expect(threeResult.isValid).toBe(false);
+    expect(threeResult.nearMatchReason).toBe('3 / 4');
+  });
+
+  it('should recognize Compression Press only for 4–10 connected Blocks', () => {
+    const blocks: Block[] = Array.from({ length: 4 }, (_, index) => ({
+      id: `b${index + 1}`,
+      shape: 'O' as const,
+      state: 'Loose' as const,
+      grade: 1,
+      position: { x: 10 + index * 2, y: 10 },
+      rotation: 0,
+    }));
+
+    const result = evaluatePattern(blocks);
     expect(result.isValid).toBe(true);
     expect(result.patternId).toBe('compression_press');
+    expect(result.metrics.blockCount).toBe(4);
     expect(result.quality).toBeGreaterThan(0.5);
+  });
+
+  it('should reject Compression Press above its 10-Block maximum', () => {
+    const blocks: Block[] = Array.from({ length: 11 }, (_, index) => ({
+      id: `b${index + 1}`,
+      shape: 'O' as const,
+      state: 'Loose' as const,
+      grade: 1,
+      position: { x: 10 + index * 2, y: 10 },
+      rotation: 0,
+    }));
+
+    const result = evaluatePattern(blocks);
+    expect(result.isValid).toBe(false);
+    expect(result.patternId).toBe('compression_press');
+    expect(result.nearMatchReason).toBe('11 / 10');
   });
 
   it('should evaluate Twin Stars twin component requirement & balance', () => {
@@ -84,15 +125,23 @@ describe('Pure Geometry Resolver', () => {
   });
 
   it('should be translation invariant for recipes', () => {
-    const patternA: Block[] = [
-      { id: 'b1', shape: 'O', state: 'Loose', grade: 1, position: { x: 10, y: 10 }, rotation: 0 },
-      { id: 'b2', shape: 'O', state: 'Loose', grade: 1, position: { x: 12, y: 10 }, rotation: 0 },
-    ];
+    const patternA: Block[] = Array.from({ length: 4 }, (_, index) => ({
+      id: `b${index + 1}`,
+      shape: 'O' as const,
+      state: 'Loose' as const,
+      grade: 1,
+      position: { x: 10 + index * 2, y: 10 },
+      rotation: 0,
+    }));
 
-    const patternB: Block[] = [
-      { id: 'b1', shape: 'O', state: 'Loose', grade: 1, position: { x: 50, y: -20 }, rotation: 0 },
-      { id: 'b2', shape: 'O', state: 'Loose', grade: 1, position: { x: 52, y: -20 }, rotation: 0 },
-    ];
+    const patternB: Block[] = Array.from({ length: 4 }, (_, index) => ({
+      id: `b${index + 1}`,
+      shape: 'O' as const,
+      state: 'Loose' as const,
+      grade: 1,
+      position: { x: 50 + index * 2, y: -20 },
+      rotation: 0,
+    }));
 
     const resA = evaluatePattern(patternA);
     const resB = evaluatePattern(patternB);
@@ -101,5 +150,29 @@ describe('Pure Geometry Resolver', () => {
     expect(resA.isValid).toBe(true);
     expect(resB.isValid).toBe(true);
     expect(resA.quality).toBe(resB.quality);
+  });
+});
+
+describe('Nearest valid placement resolver', () => {
+  it('uses the exact desired origin when legal', () => {
+    expect(findNearestValidPlacement('L', 0, { x: 5, y: 5 }, new Set<string>(), 3)).toEqual({ x: 5, y: 5 });
+  });
+
+  it('snaps to the nearest legal origin with deterministic y/x tie-breaking', () => {
+    const occupied = new Set(['1,0']);
+    expect(findNearestValidPlacement('O', 0, { x: 0, y: 0 }, occupied, 2)).toEqual({ x: -1, y: 0 });
+    expect(findNearestValidPlacement('O', 0, { x: 0, y: 0 }, occupied, 2)).toEqual({ x: -1, y: 0 });
+  });
+
+  it('does not jump beyond the configured radius', () => {
+    const occupied = new Set<string>();
+    for (let y = -2; y <= 2; y += 1) for (let x = -2; x <= 5; x += 1) occupied.add(`${x},${y}`);
+    expect(findNearestValidPlacement('I', 0, { x: 0, y: 0 }, occupied, 2)).toBeNull();
+  });
+
+  it('resolves blocked asymmetric J and L placements nearby', () => {
+    const occupied = new Set(['0,1', '1,1']);
+    expect(findNearestValidPlacement('J', 0, { x: 0, y: 0 }, occupied, 3)).toEqual({ x: 1, y: 0 });
+    expect(findNearestValidPlacement('L', 0, { x: 0, y: 0 }, occupied, 3)).toEqual({ x: -1, y: 0 });
   });
 });

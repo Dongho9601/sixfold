@@ -3,11 +3,11 @@
  * Resources and Shape buffers stay visible; engine and Pattern detail live on the Field.
  */
 
-import { getBlockOccupiedCells, ShapeType } from '../core/index.ts';
+import { getBlockOccupiedCells, SHAPE_TYPES, ShapeType } from '../core/index.ts';
 import { AppStore } from '../application/store.ts';
 
-const AVAILABLE_SHAPES: ShapeType[] = ['I', 'O', 'L', 'J'];
-const SHAPE_HOTKEYS: Record<ShapeType, string> = { I: '1', O: '2', L: '4', J: '5' };
+const AVAILABLE_SHAPES: readonly ShapeType[] = SHAPE_TYPES;
+const SHAPE_HOTKEYS: Record<ShapeType, string> = { I: '1', O: '2', T: '3', L: '4', J: '5', S: '6', Z: '7' };
 
 export class HUD {
   private container: HTMLElement;
@@ -62,53 +62,47 @@ export class HUD {
           left: 16px;
           display: flex;
           align-items: center;
-          gap: 16px;
-          min-height: 32px;
-          padding: 4px 10px;
+          gap: 20px;
+          min-height: 40px;
+          padding: 5px 12px;
           background: rgba(10, 10, 10, 0.78);
           border-bottom: 1px solid rgba(94, 90, 84, 0.58);
           pointer-events: auto;
         }
 
-        .rf-mark {
-          color: #e3b53c;
-          font-size: 12px;
-          letter-spacing: 0.14em;
-        }
-
         .rf-resource {
           display: inline-flex;
           align-items: center;
-          gap: 6px;
+          gap: 8px;
           color: #b7b4ae;
-          font-size: 14px;
+          font-size: 18px;
           font-weight: 700;
           line-height: 20px;
         }
 
         .rf-ash-icon {
           color: #dc8151;
-          font-size: 16px;
+          font-size: 24px;
           line-height: 1;
         }
 
         .rf-resource-icon {
-          width: 19px;
-          height: 19px;
+          width: 24px;
+          height: 24px;
           object-fit: contain;
           image-rendering: pixelated;
         }
 
         .rf-reset {
-          width: 24px;
-          height: 24px;
+          width: 30px;
+          height: 30px;
           margin-left: 2px;
           padding: 0;
           color: #5e5a54;
           background: transparent;
           border: 0;
           font: inherit;
-          font-size: 16px;
+          font-size: 20px;
           cursor: pointer;
         }
 
@@ -117,12 +111,12 @@ export class HUD {
         .rf-palette {
           position: absolute;
           left: 50%;
-          bottom: 16px;
+          bottom: 18px;
           display: flex;
           align-items: end;
-          gap: 5px;
+          gap: 7px;
           transform: translateX(-50%);
-          padding: 5px 7px;
+          padding: 7px 9px;
           background: rgba(10, 10, 10, 0.8);
           border-top: 1px solid rgba(94, 90, 84, 0.58);
           pointer-events: auto;
@@ -132,9 +126,9 @@ export class HUD {
           position: relative;
           display: grid;
           place-items: center;
-          width: 48px;
-          height: 46px;
-          padding: 3px 3px 6px;
+          width: 62px;
+          height: 60px;
+          padding: 4px 4px 9px;
           color: #b7b4ae;
           background: transparent;
           border: 1px solid transparent;
@@ -150,8 +144,8 @@ export class HUD {
           right: 3px;
           bottom: 1px;
           color: #5e5a54;
-          font-size: 9px;
-          line-height: 10px;
+          font-size: 11px;
+          line-height: 12px;
         }
 
         .rf-shape-count {
@@ -159,35 +153,38 @@ export class HUD {
           left: 4px;
           bottom: 1px;
           color: #b7b4ae;
-          font-size: 9px;
-          line-height: 10px;
+          font-size: 13px;
+          line-height: 14px;
         }
 
         .rf-shape-glyph {
           display: grid;
-          grid-template-columns: repeat(4, 6px);
-          grid-template-rows: repeat(4, 6px);
+          grid-template-columns: repeat(4, 8px);
+          grid-template-rows: repeat(4, 8px);
           gap: 1px;
-          width: 27px;
-          height: 27px;
+          width: 35px;
+          height: 35px;
           color: #e3b53c;
         }
 
         .rf-shape-glyph i {
           display: block;
-          width: 6px;
-          height: 6px;
+          width: 8px;
+          height: 8px;
           background: currentColor;
         }
 
         .rf-shape-btn[data-shape="I"] .rf-shape-glyph { color: #8bbbc2; }
         .rf-shape-btn[data-shape="O"] .rf-shape-glyph { color: #e3b53c; }
+        .rf-shape-btn[data-shape="T"] .rf-shape-glyph { color: #b78dbc; }
         .rf-shape-btn[data-shape="L"] .rf-shape-glyph { color: #dc8151; }
         .rf-shape-btn[data-shape="J"] .rf-shape-glyph { color: #91a7cb; }
+        .rf-shape-btn[data-shape="S"] .rf-shape-glyph { color: #8fac72; }
+        .rf-shape-btn[data-shape="Z"] .rf-shape-glyph { color: #d56e5f; }
 
         .rf-feedback {
           position: absolute;
-          top: 58px;
+          top: 66px;
           left: 50%;
           min-width: 18px;
           padding: 3px 7px;
@@ -195,7 +192,7 @@ export class HUD {
           background: rgba(10, 10, 10, 0.84);
           border-bottom: 1px solid rgba(94, 90, 84, 0.5);
           text-align: center;
-          font-size: 12px;
+          font-size: 14px;
           font-weight: 700;
           opacity: 0;
           transform: translateX(-50%);
@@ -203,16 +200,15 @@ export class HUD {
           pointer-events: none;
         }
 
-        @media (max-width: 560px) {
+        @media (max-width: 760px) {
           .rf-resource-strip { top: 8px; left: 8px; gap: 9px; }
-          .rf-palette { bottom: 8px; }
-          .rf-shape-btn { width: 44px; }
+          .rf-palette { bottom: 8px; gap: 2px; padding: 4px; }
+          .rf-shape-btn { width: 40px; height: 52px; }
         }
       </style>
 
       <div class="rf-hud">
         <div class="rf-resource-strip" aria-label="Resources">
-          <span class="rf-mark">RF</span>
           <span class="rf-resource" title="Ash"><span class="rf-ash-icon" aria-hidden="true">✦</span><span id="hud-ash">0</span></span>
           <span class="rf-resource" title="Shards"><img class="rf-resource-icon" src="/assets/hlbm/icon_gem.png" alt="" /><span id="hud-shards">0</span></span>
           <button class="rf-reset" id="btn-reset" type="button" title="Reset" aria-label="Reset">↺</button>
@@ -246,6 +242,7 @@ export class HUD {
         } else {
           this.selectedSpawnShape = shape;
           this.store.clearSelection();
+          this.store.clearEngineSelection();
         }
         this.update();
       });

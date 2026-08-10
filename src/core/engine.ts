@@ -1,105 +1,122 @@
-/**
- * Heart Engine production logic for HL;BM — Rune Foundry.
- * Accumulates elapsed time, generates blocks into shape buffers, and respects buffer caps.
- */
+/** Pure deterministic 7-bag production owned independently by each Engine. */
 
-import { BufferCounts, HeartEngineState, ShapeType } from './types.ts';
+import { BufferCounts, EngineState, SHAPE_TYPES, ShapeType } from './types.ts';
 import { calculateBlocksPerMinute } from './economy.ts';
 
-export const DEFAULT_BASE_PRODUCTION_RATE = 10; // Blocks per minute
-export const DEFAULT_MAX_BUFFER_PER_SHAPE = 3;  // Buffer capacity per shape
+export const DEFAULT_BASE_PRODUCTION_RATE = 10;
+export const DEFAULT_ENGINE_SEED = 0x6d2b79f5;
 
 export interface EngineTickResult {
-  engine: HeartEngineState;
+  engine: EngineState;
   buffers: BufferCounts;
   generatedShapes: ShapeType[];
 }
 
 export interface EngineProductionView {
-  nextShape: ShapeType | null;
+  nextShape: ShapeType;
   progress: number;
-  isBlocked: boolean;
   intervalSec: number;
 }
 
-export const PRODUCTION_SHAPE_ORDER: ShapeType[] = ['I', 'O', 'L', 'J'];
+function nonZeroSeed(seed: number): number {
+  const normalized = seed >>> 0;
+  return normalized === 0 ? DEFAULT_ENGINE_SEED : normalized;
+}
 
-export function getNextProductionShape(
-  buffers: BufferCounts,
-  maxPerShape: number = DEFAULT_MAX_BUFFER_PER_SHAPE,
-): ShapeType | null {
-  const availableShapes = PRODUCTION_SHAPE_ORDER.filter(shape => buffers[shape] < maxPerShape);
-  if (availableShapes.length === 0) return null;
+/** xorshift32: compact, deterministic, and fully represented by one persisted uint32. */
+export function nextRngUint32(state: number): { value: number; state: number } {
+  let next = nonZeroSeed(state);
+  next ^= next << 13;
+  next ^= next >>> 17;
+  next ^= next << 5;
+  next >>>= 0;
+  return { value: next, state: nonZeroSeed(next) };
+}
 
-  let targetShape = availableShapes[0];
-  let minCount = buffers[targetShape];
-
-  for (const shape of availableShapes) {
-    if (buffers[shape] < minCount) {
-      minCount = buffers[shape];
-      targetShape = shape;
-    }
+export function shuffleShapeBag(rngState: number): { bag: ShapeType[]; rngState: number } {
+  const bag = [...SHAPE_TYPES];
+  let state = nonZeroSeed(rngState);
+  for (let index = bag.length - 1; index > 0; index -= 1) {
+    const random = nextRngUint32(state);
+    state = random.state;
+    const swapIndex = random.value % (index + 1);
+    [bag[index], bag[swapIndex]] = [bag[swapIndex], bag[index]];
   }
+  return { bag, rngState: state };
+}
 
-  return targetShape;
+export function createProductionBag(seed: number): Pick<EngineState, 'rngState' | 'productionBag' | 'nextShape'> {
+  const shuffled = shuffleShapeBag(seed);
+  return {
+    rngState: shuffled.rngState,
+    productionBag: shuffled.bag,
+    nextShape: shuffled.bag[0],
+  };
+}
+
+export function stableEngineSeed(engineId: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < engineId.length; index += 1) {
+    hash ^= engineId.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return nonZeroSeed(hash);
 }
 
 export function getProductionIntervalSec(
-  engine: HeartEngineState,
+  engine: EngineState,
   baseRate: number = DEFAULT_BASE_PRODUCTION_RATE,
 ): number {
-  const bpm = calculateBlocksPerMinute(baseRate, engine.quality, engine.level);
-  return 60 / bpm;
+  return 60 / calculateBlocksPerMinute(baseRate, engine.quality);
 }
 
 export function getEngineProductionView(
-  engine: HeartEngineState,
-  buffers: BufferCounts,
+  engine: EngineState,
   baseRate: number = DEFAULT_BASE_PRODUCTION_RATE,
-  maxPerShape: number = DEFAULT_MAX_BUFFER_PER_SHAPE,
 ): EngineProductionView {
   const intervalSec = getProductionIntervalSec(engine, baseRate);
-  const nextShape = getNextProductionShape(buffers, maxPerShape);
-
   return {
-    nextShape,
+    nextShape: engine.nextShape,
     progress: Math.min(1, Math.max(0, engine.accumulatedTimeSec / intervalSec)),
-    isBlocked: nextShape === null,
     intervalSec,
   };
 }
 
+function normalizeBag(engine: EngineState): EngineState {
+  if (engine.productionBag.length > 0 && engine.productionBag[0] === engine.nextShape) return engine;
+  const refill = createProductionBag(engine.rngState);
+  return { ...engine, ...refill };
+}
+
 export function advanceEngineProduction(
-  engine: HeartEngineState,
+  sourceEngine: EngineState,
   buffers: BufferCounts,
   deltaSeconds: number,
   baseRate: number = DEFAULT_BASE_PRODUCTION_RATE,
-  maxPerShape: number = DEFAULT_MAX_BUFFER_PER_SHAPE
 ): EngineTickResult {
+  let engine = normalizeBag({ ...sourceEngine, productionBag: [...sourceEngine.productionBag] });
   const intervalSec = getProductionIntervalSec(engine, baseRate);
-
-  let accTime = engine.accumulatedTimeSec + deltaSeconds;
+  let accumulatedTimeSec = engine.accumulatedTimeSec + Math.max(0, deltaSeconds);
   const generatedShapes: ShapeType[] = [];
   const updatedBuffers = { ...buffers };
 
-  while (accTime >= intervalSec) {
-    const targetShape = getNextProductionShape(updatedBuffers, maxPerShape);
-    if (!targetShape) {
-      // Buffers full - cap accumulated time so production resumes immediately when space opens
-      accTime = Math.min(accTime, intervalSec);
-      break;
-    }
+  while (accumulatedTimeSec + 1e-9 >= intervalSec) {
+    const output = engine.nextShape;
+    updatedBuffers[output] += 1;
+    generatedShapes.push(output);
+    accumulatedTimeSec = Math.max(0, accumulatedTimeSec - intervalSec);
 
-    updatedBuffers[targetShape] += 1;
-    generatedShapes.push(targetShape);
-    accTime -= intervalSec;
+    const remaining = engine.productionBag.slice(1);
+    if (remaining.length > 0) {
+      engine = { ...engine, productionBag: remaining, nextShape: remaining[0] };
+    } else {
+      const refill = createProductionBag(engine.rngState);
+      engine = { ...engine, ...refill };
+    }
   }
 
   return {
-    engine: {
-      ...engine,
-      accumulatedTimeSec: accTime,
-    },
+    engine: { ...engine, accumulatedTimeSec },
     buffers: updatedBuffers,
     generatedShapes,
   };

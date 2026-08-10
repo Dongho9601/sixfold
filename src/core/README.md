@@ -6,13 +6,13 @@ The `core` directory contains the pure, deterministic game model for **HL;BM —
 - **`coordinates`**: Sparse coordinate grid math (`x, y`), cell bounds, vector translation/rotation helpers.
 - **`shapes`**: Tetromino definitions (`I`, `O`, `T`, `L`, `J`, `S`, `Z`), orientation matrices, cell masks.
 - **`blocks`**: Loose Block state, Grade power scaling (`BlockValue`), per-Shape buffers.
-- **`engines`**: Bound Engine state, production rate formulas, Level XP thresholds, evolution traits, rebinding.
+- **`engines`**: Multiple Bound Engine instances, persisted deterministic shuffled 7-bags, and production rates.
 - **`field`**: Sparse Field state, cell layers (terrain, engine, loose block, blueprint, overlay), Field Load limits.
 - **`topology`**: Canonical geometry resolver (connected components, inter-Block shared edges, Cohesion, bounding density, symmetry, holes, distance, aspect ratio, bridges).
 - **`patterns`**: Spatial pattern evaluation predicates, motif definitions, candidate selection, silhouette canonicalization.
 - **`recipes`**: Recipe validity predicates, Quality tier formulas (`0..1`).
-- **`submission`**: Atomic submission transaction rules, material power, Ash bursts, Shard gains.
-- **`progression`**: Engine levels, Block Grades, Recast mechanics, Proof gain formulas, milestones, ending criteria.
+- **`submission`**: Atomic Bind, Loose Submit/Ash, and ordinary Engine Extract/Shard rules.
+- **`progression`**: Shape Grade spending and BlockValue scaling; broader campaign progression is deferred.
 - **`economy`**: Pure currency math for Ash, Shards, Proofs.
 - **`offline`**: Deterministic event-driven offline progress resolution and cap handling.
 - **`save`**: Save envelope schema definitions, serialization contracts, transaction ledger, atomic checksums.

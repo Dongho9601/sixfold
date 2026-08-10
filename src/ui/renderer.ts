@@ -2,11 +2,12 @@
  * Field-first Canvas renderer for HL;BM — Rune Foundry.
  *
  * The Field carries the hierarchy: a quiet ink grid, bright Loose silhouettes,
- * and one darker crystallized Engine with its production state attached to it.
+ * and darker crystallized Engines with local production state attached.
  */
 
 import {
   findConnectedComponents,
+  EngineState,
   getBlockOccupiedCells,
   getEngineProductionView,
   isCradleCell,
@@ -22,8 +23,11 @@ import { CRADLE_BOUNDS } from '../core/field.ts';
 export const SHAPE_COLORS: Record<ShapeType, { fill: string; stroke: string; glow: string }> = {
   I: { fill: '#3d5d67', stroke: '#8bbbc2', glow: '#9acbd1' },
   O: { fill: '#80672d', stroke: '#e3b53c', glow: '#f1cc66' },
+  T: { fill: '#594563', stroke: '#b78dbc', glow: '#d9b3df' },
   L: { fill: '#84422c', stroke: '#dc8151', glow: '#ed9b6b' },
   J: { fill: '#465372', stroke: '#91a7cb', glow: '#b0c4e4' },
+  S: { fill: '#506047', stroke: '#8fac72', glow: '#b8cf9e' },
+  Z: { fill: '#702f2b', stroke: '#d56e5f', glow: '#e9a59c' },
 };
 
 export interface PlacementPreviewState {
@@ -42,12 +46,18 @@ export interface HoldPreviewState {
   progress: number;
 }
 
+export interface SelectionPreviewState {
+  start: Position;
+  end: Position;
+}
+
 interface TransientBlockEvent {
-  type: 'place' | 'return' | 'submit' | 'bind';
+  type: 'place' | 'return' | 'submit' | 'bind' | 'extract';
   blocks: VisualBlockEvent[];
   startedAt: number;
   duration: number;
   reward?: RecipeReward;
+  shards?: number;
 }
 
 const INK = '#0a0a0a';
@@ -63,7 +73,7 @@ const COLD_STEEL = '#53666d';
 export class FieldRenderer {
   private ctx: CanvasRenderingContext2D;
   private transientEvents: TransientBlockEvent[] = [];
-  private enginePulseUntil = 0;
+  private enginePulseUntil = new Map<string, number>();
 
   constructor(ctx: CanvasRenderingContext2D) {
     this.ctx = ctx;
@@ -104,14 +114,21 @@ export class FieldRenderer {
             startedAt: now,
             duration: 620,
           });
-          this.enginePulseUntil = Math.max(this.enginePulseUntil, now + 460);
+          this.enginePulseUntil.set(event.engineId, now + 460);
+          break;
+        case 'extract':
+          this.transientEvents.push({
+            type: 'extract', blocks: event.blocks, startedAt: now, duration: 560, shards: event.shards,
+          });
           break;
         case 'production':
-          this.enginePulseUntil = Math.max(this.enginePulseUntil, now + 460);
+          for (const output of event.outputs) this.enginePulseUntil.set(output.engineId, now + 460);
+          break;
+        case 'grade-up':
           break;
         case 'reset':
           this.transientEvents = [];
-          this.enginePulseUntil = 0;
+          this.enginePulseUntil.clear();
           break;
       }
     }
@@ -124,7 +141,9 @@ export class FieldRenderer {
     screenHeight: number,
     placementPreview: PlacementPreviewState | null = null,
     holdPreview: HoldPreviewState | null = null,
+    selectionPreview: SelectionPreviewState | null = null,
     now: number = performance.now(),
+    consumptionPreviewBlockIds: readonly string[] = [],
   ): void {
     const ctx = this.ctx;
     const currentCellSize = camera.cellSize * camera.zoom;
@@ -140,15 +159,26 @@ export class FieldRenderer {
     const activeBlocks = Object.values(state.blocks).filter(block =>
       (block.state === 'Loose' || block.state === 'Bound') && block.position,
     );
-    const engineBlocks = activeBlocks.filter(block => block.state === 'Bound');
     const looseBlocks = activeBlocks.filter(block => block.state === 'Loose');
 
-    if (engineBlocks.length > 0) {
-      this.drawEngine(state, engineBlocks, camera, currentCellSize, now);
+    for (const engine of Object.values(state.engines)) {
+      const engineBlocks = engine.constituentBlockIds
+        .map(id => state.blocks[id])
+        .filter(block => Boolean(block?.position) && block.state === 'Bound');
+      if (engineBlocks.length > 0) this.drawEngine(state, engine, engineBlocks, camera, currentCellSize, now);
     }
 
     for (const block of looseBlocks) {
-      this.drawLooseBlock(state, block.id, block.shape, block.position!, block.rotation, camera, currentCellSize);
+      this.drawLooseBlock(
+        state,
+        block.id,
+        block.shape,
+        block.position!,
+        block.rotation,
+        camera,
+        currentCellSize,
+        consumptionPreviewBlockIds.includes(block.id),
+      );
     }
 
     if (placementPreview) {
@@ -159,7 +189,9 @@ export class FieldRenderer {
       this.drawHoldPreview(holdPreview, state, camera, currentCellSize);
     }
 
-    this.drawTransientEvents(camera, currentCellSize, now);
+    if (selectionPreview) this.drawSelectionRect(selectionPreview);
+
+    this.drawTransientEvents(camera, currentCellSize, screenWidth, screenHeight, now);
   }
 
   private drawGrid(camera: Camera, screenWidth: number, screenHeight: number, currentCellSize: number): void {
@@ -198,8 +230,9 @@ export class FieldRenderer {
     const patternPulse = analysis?.patternId === 'heart_seal' && analysis.isValid
       ? 0.76 + Math.sin((now % 720) / 720 * Math.PI * 2) * 0.18
       : 0;
-    const pulse = state.isHeartEngineBound && now < this.enginePulseUntil
-      ? Math.sin(Math.min(1, Math.max(0, (now - (this.enginePulseUntil - 460)) / 460)) * Math.PI)
+    const heartPulseUntil = state.heartEngineId ? this.enginePulseUntil.get(state.heartEngineId) || 0 : 0;
+    const pulse = state.isHeartEngineBound && now < heartPulseUntil
+      ? Math.sin(Math.min(1, Math.max(0, (now - (heartPulseUntil - 460)) / 460)) * Math.PI)
       : 0;
 
     ctx.fillStyle = bound ? 'rgba(89, 69, 99, 0.12)' : 'rgba(227, 181, 60, 0.035)';
@@ -297,6 +330,7 @@ export class FieldRenderer {
     rotation: number,
     camera: Camera,
     currentCellSize: number,
+    consumptivePreview: boolean,
   ): void {
     const ctx = this.ctx;
     const colors = SHAPE_COLORS[shape];
@@ -325,7 +359,16 @@ export class FieldRenderer {
       ctx.globalAlpha = 1;
     }
 
-    if (selected) {
+    if (consumptivePreview) {
+      const bounds = this.getScreenBounds(cells, camera, currentCellSize);
+      ctx.strokeStyle = CRIMSON;
+      ctx.globalAlpha = 0.95;
+      ctx.lineWidth = Math.max(2, 2.2 * camera.zoom);
+      ctx.setLineDash([4 * camera.zoom, 3 * camera.zoom]);
+      ctx.strokeRect(bounds.x + 1, bounds.y + 1, bounds.width - 2, bounds.height - 2);
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    } else if (selected) {
       const bounds = this.getScreenBounds(cells, camera, currentCellSize);
       ctx.strokeStyle = BONE;
       ctx.globalAlpha = 0.95;
@@ -337,6 +380,7 @@ export class FieldRenderer {
 
   private drawEngine(
     state: GameState,
+    engine: EngineState,
     engineBlocks: GameState['blocks'][string][],
     camera: Camera,
     currentCellSize: number,
@@ -345,8 +389,9 @@ export class FieldRenderer {
     const ctx = this.ctx;
     const engineCells = engineBlocks.flatMap(block => getBlockOccupiedCells(block.shape, block.position!, block.rotation));
     const engineKeys = new Set(engineCells.map(cell => `${cell.x},${cell.y}`));
-    const pulse = now < this.enginePulseUntil
-      ? Math.sin(Math.min(1, Math.max(0, (now - (this.enginePulseUntil - 460)) / 460)) * Math.PI)
+    const pulseUntil = this.enginePulseUntil.get(engine.id) || 0;
+    const pulse = now < pulseUntil
+      ? Math.sin(Math.min(1, Math.max(0, (now - (pulseUntil - 460)) / 460)) * Math.PI)
       : 0;
 
     for (const cell of engineCells) {
@@ -406,11 +451,9 @@ export class FieldRenderer {
     const center = camera.gridToScreen(centerGrid.x, centerGrid.y);
     const engineWidth = (maxX - minX + 1) * currentCellSize;
     const engineHeight = (maxY - minY + 1) * currentCellSize;
-    const view = state.heartEngine
-      ? getEngineProductionView(state.heartEngine, state.buffers)
-      : null;
+    const view = getEngineProductionView(engine);
 
-    if (view) {
+    {
       const ringRadius = Math.max(9, Math.min(engineWidth, engineHeight) * 0.29);
       ctx.strokeStyle = '#413947';
       ctx.globalAlpha = 0.9;
@@ -419,21 +462,21 @@ export class FieldRenderer {
       ctx.arc(center.x, center.y, ringRadius, -Math.PI / 2, Math.PI * 1.5);
       ctx.stroke();
 
-      ctx.strokeStyle = view.isBlocked ? CRIMSON : GOLD;
-      ctx.globalAlpha = view.isBlocked ? 0.86 : 0.95;
+      ctx.strokeStyle = GOLD;
+      ctx.globalAlpha = 0.95;
       ctx.beginPath();
-      if (view.isBlocked) {
-        ctx.moveTo(center.x - 5 * camera.zoom, center.y - 4 * camera.zoom);
-        ctx.lineTo(center.x + 5 * camera.zoom, center.y + 4 * camera.zoom);
-        ctx.moveTo(center.x + 5 * camera.zoom, center.y - 4 * camera.zoom);
-        ctx.lineTo(center.x - 5 * camera.zoom, center.y + 4 * camera.zoom);
-      } else {
-        ctx.arc(center.x, center.y, ringRadius, -Math.PI / 2, -Math.PI / 2 + view.progress * Math.PI * 2);
-      }
+      ctx.arc(center.x, center.y, ringRadius, -Math.PI / 2, -Math.PI / 2 + view.progress * Math.PI * 2);
       ctx.stroke();
       ctx.globalAlpha = 1;
 
-      this.drawHeartGlyph(center.x, center.y, Math.max(5, ringRadius * 0.48), pulse > 0 ? '#d9b3df' : '#b78dbc');
+      if (engine.foundational) this.drawHeartGlyph(center.x, center.y, Math.max(5, ringRadius * 0.48), pulse > 0 ? '#d9b3df' : '#b78dbc');
+      else this.drawEngineGlyph(center.x, center.y, Math.max(5, ringRadius * 0.52), pulse > 0 ? '#d9b3df' : '#b78dbc');
+
+      if (state.selectedEngineId === engine.id) {
+        const bounds = this.getScreenBounds(engineCells, camera, currentCellSize);
+        ctx.strokeStyle = '#d9b3df'; ctx.lineWidth = Math.max(2, 2 * camera.zoom); ctx.globalAlpha = .9;
+        ctx.strokeRect(bounds.x - 3, bounds.y - 3, bounds.width + 6, bounds.height + 6); ctx.globalAlpha = 1;
+      }
 
       if (view.nextShape) {
         const outputAnchor = camera.gridToScreen(maxX + 1.05, minY - 0.08);
@@ -485,11 +528,56 @@ export class FieldRenderer {
     ctx.stroke();
   }
 
-  private drawTransientEvents(camera: Camera, currentCellSize: number, now: number): void {
+  private drawSelectionRect(selection: SelectionPreviewState): void {
+    const x = Math.min(selection.start.x, selection.end.x);
+    const y = Math.min(selection.start.y, selection.end.y);
+    const width = Math.abs(selection.end.x - selection.start.x);
+    const height = Math.abs(selection.end.y - selection.start.y);
+    this.ctx.save();
+    this.ctx.fillStyle = 'rgba(139,187,194,.08)';
+    this.ctx.strokeStyle = '#8bbbc2';
+    this.ctx.globalAlpha = .82;
+    this.ctx.lineWidth = 1;
+    this.ctx.setLineDash([5, 4]);
+    this.ctx.fillRect(x, y, width, height);
+    this.ctx.strokeRect(x + .5, y + .5, width, height);
+    this.ctx.restore();
+  }
+
+  private drawTransientEvents(
+    camera: Camera,
+    currentCellSize: number,
+    screenWidth: number,
+    screenHeight: number,
+    now: number,
+  ): void {
     const ctx = this.ctx;
     for (const event of this.transientEvents) {
       const progress = Math.min(1, Math.max(0, (now - event.startedAt) / event.duration));
       const alpha = 1 - progress;
+
+      if (event.type === 'bind' && event.blocks.length > 1) {
+        const centers = event.blocks.map(block => {
+          const cells = getBlockOccupiedCells(block.shape, block.position, block.rotation);
+          const center = {
+            x: cells.reduce((sum, cell) => sum + cell.x, 0) / cells.length + 0.5,
+            y: cells.reduce((sum, cell) => sum + cell.y, 0) / cells.length + 0.5,
+          };
+          return camera.gridToScreen(center.x, center.y);
+        });
+        ctx.save();
+        ctx.strokeStyle = AMETHYST;
+        ctx.globalAlpha = (0.2 + progress * 0.48) * alpha;
+        ctx.lineWidth = Math.max(1, 1.5 * camera.zoom);
+        for (let index = 1; index < centers.length; index += 1) {
+          ctx.beginPath();
+          ctx.moveTo(centers[index - 1].x, centers[index - 1].y);
+          ctx.lineTo(centers[index].x, centers[index].y);
+          ctx.stroke();
+        }
+        ctx.restore();
+      }
+
       for (const block of event.blocks) {
         const cells = getBlockOccupiedCells(block.shape, block.position, block.rotation);
         const centerCell = {
@@ -497,43 +585,107 @@ export class FieldRenderer {
           y: cells.reduce((sum, cell) => sum + cell.y, 0) / cells.length + 0.5,
         };
         const center = camera.gridToScreen(centerCell.x, centerCell.y);
-        ctx.globalAlpha = alpha;
-        ctx.lineWidth = Math.max(1, 2 * camera.zoom);
+
         if (event.type === 'return') {
-          ctx.strokeStyle = GOLD;
-          ctx.beginPath();
-          ctx.arc(center.x, center.y, currentCellSize * (0.35 + progress * 0.45), -Math.PI / 2, Math.PI * 1.5);
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.moveTo(center.x, center.y);
-          ctx.lineTo(center.x, center.y + currentCellSize * (1.3 + progress));
-          ctx.stroke();
-        } else if (event.type === 'submit') {
-          ctx.strokeStyle = CRIMSON;
-          ctx.beginPath();
-          ctx.arc(center.x, center.y, currentCellSize * (0.28 + progress * 0.62), 0, Math.PI * 2);
-          ctx.stroke();
-          ctx.beginPath();
-          ctx.moveTo(center.x - 4 * camera.zoom, center.y - 4 * camera.zoom);
-          ctx.lineTo(center.x + 4 * camera.zoom, center.y + 4 * camera.zoom);
-          ctx.moveTo(center.x + 4 * camera.zoom, center.y - 4 * camera.zoom);
-          ctx.lineTo(center.x - 4 * camera.zoom, center.y + 4 * camera.zoom);
-          ctx.stroke();
+          const targetX = screenWidth * 0.5;
+          const targetY = screenHeight - 32;
+          const move = progress * 0.18;
+          this.drawEventSilhouette(
+            block,
+            camera,
+            currentCellSize,
+            1 - progress * 0.34,
+            alpha * 0.92,
+            SHAPE_COLORS[block.shape].fill,
+            GOLD,
+            (targetX - center.x) * move,
+            (targetY - center.y) * move,
+            0,
+          );
+          if (progress > 0.48) {
+            ctx.save();
+            ctx.strokeStyle = GOLD;
+            ctx.globalAlpha = alpha * 0.25;
+            ctx.lineWidth = Math.max(1, camera.zoom);
+            ctx.beginPath();
+            ctx.arc(center.x, center.y, currentCellSize * (0.42 + progress * 0.2), -Math.PI / 2, Math.PI * 1.5);
+            ctx.stroke();
+            ctx.restore();
+          }
+        } else if (event.type === 'submit' || event.type === 'extract') {
+          this.drawEventSilhouette(
+            block,
+            camera,
+            currentCellSize,
+            1 - progress * 0.78,
+            alpha * 0.9,
+            SHAPE_COLORS[block.shape].fill,
+            event.type === 'extract' ? AMETHYST : CRIMSON,
+            0,
+            0,
+            0.78,
+          );
+          if (progress < 0.28) {
+            const bounds = this.getScreenBounds(cells, camera, currentCellSize);
+            ctx.save();
+            ctx.strokeStyle = event.type === 'extract' ? AMETHYST : CRIMSON;
+            ctx.globalAlpha = alpha * 0.9;
+            ctx.lineWidth = Math.max(1, 1.8 * camera.zoom);
+            ctx.setLineDash([4 * camera.zoom, 3 * camera.zoom]);
+            ctx.strokeRect(bounds.x + 1, bounds.y + 1, bounds.width - 2, bounds.height - 2);
+            ctx.restore();
+          }
+          if (progress > 0.58) {
+            ctx.save();
+            ctx.strokeStyle = '#dc8151';
+            ctx.globalAlpha = alpha * 0.22;
+            ctx.lineWidth = Math.max(1, camera.zoom);
+            ctx.beginPath();
+            ctx.arc(center.x, center.y, currentCellSize * (0.22 + progress * 0.34), 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+          }
         } else if (event.type === 'bind') {
+          // The bound Engine is already underneath this snapshot. Fading the
+          // bright tetromino over it makes Bind read as crystallization, not
+          // consumption, while the occupied coordinates stay unchanged.
+          this.drawEventSilhouette(
+            block,
+            camera,
+            currentCellSize,
+            1 - progress * 0.04,
+            (1 - progress) * 0.88,
+            SHAPE_COLORS[block.shape].fill,
+            SHAPE_COLORS[block.shape].stroke,
+            0,
+            0,
+            0,
+          );
+          ctx.save();
           ctx.strokeStyle = AMETHYST;
+          ctx.globalAlpha = alpha * 0.7;
+          ctx.lineWidth = Math.max(1, 1.5 * camera.zoom);
           ctx.beginPath();
-          ctx.arc(center.x, center.y, currentCellSize * (0.4 + progress * 0.55), 0, Math.PI * 2);
+          ctx.arc(center.x, center.y, currentCellSize * (0.28 + progress * 0.35), 0, Math.PI * 2);
           ctx.stroke();
+          ctx.restore();
         } else {
-          ctx.strokeStyle = SHAPE_COLORS[block.shape].glow;
-          ctx.beginPath();
-          ctx.arc(center.x, center.y, currentCellSize * (0.2 + progress * 0.35), 0, Math.PI * 2);
-          ctx.stroke();
+          this.drawEventSilhouette(
+            block,
+            camera,
+            currentCellSize,
+            1 + (1 - progress) * 0.06,
+            alpha * 0.5,
+            SHAPE_COLORS[block.shape].fill,
+            SHAPE_COLORS[block.shape].glow,
+            0,
+            0,
+            0,
+          );
         }
-        ctx.globalAlpha = 1;
       }
 
-      if (event.type === 'submit' && event.reward && event.blocks.length > 0) {
+      if ((event.type === 'submit' || event.type === 'extract') && event.blocks.length > 0) {
         const average = event.blocks.reduce((center, block) => {
           const cells = getBlockOccupiedCells(block.shape, block.position, block.rotation);
           return {
@@ -545,17 +697,50 @@ export class FieldRenderer {
           average.x / event.blocks.length,
           average.y / event.blocks.length - progress * 0.8,
         );
+        ctx.save();
         ctx.globalAlpha = alpha;
         ctx.font = `${Math.max(9, Math.round(11 * camera.zoom))}px ui-monospace, SFMono-Regular, monospace`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillStyle = '#dc8151';
-        ctx.fillText(`+${event.reward.ash}`, rewardCenter.x + 8 * camera.zoom, rewardCenter.y);
-        ctx.fillStyle = '#8bbbc2';
-        ctx.fillText(`◆ ${event.reward.shards}`, rewardCenter.x + 8 * camera.zoom, rewardCenter.y + 13 * camera.zoom);
-        ctx.globalAlpha = 1;
+        ctx.fillStyle = event.type === 'extract' ? '#d9b3df' : '#dc8151';
+        ctx.fillText(event.type === 'extract' ? `◆ +${event.shards || 0}` : `✦ +${event.reward?.ash || 0}`, rewardCenter.x + 8 * camera.zoom, rewardCenter.y);
+        ctx.restore();
       }
     }
+  }
+
+  private drawEventSilhouette(
+    block: VisualBlockEvent,
+    camera: Camera,
+    currentCellSize: number,
+    scale: number,
+    alpha: number,
+    fill: string,
+    stroke: string,
+    shiftX: number,
+    shiftY: number,
+    foldAmount: number,
+  ): void {
+    const cells = getBlockOccupiedCells(block.shape, block.position, block.rotation);
+    const centers = cells.map(cell => camera.gridToScreen(cell.x + 0.5, cell.y + 0.5));
+    const centroid = centers.reduce((sum, center) => ({ x: sum.x + center.x, y: sum.y + center.y }), { x: 0, y: 0 });
+    centroid.x /= centers.length;
+    centroid.y /= centers.length;
+
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = Math.max(1, 1.5 * camera.zoom);
+    for (const center of centers) {
+      const x = centroid.x + (center.x - centroid.x) * (1 - foldAmount * (1 - scale)) + shiftX;
+      const y = centroid.y + (center.y - centroid.y) * (1 - foldAmount * (1 - scale)) + shiftY;
+      const size = Math.max(2, (currentCellSize - 5 * camera.zoom) * scale);
+      ctx.fillStyle = fill;
+      ctx.fillRect(x - size / 2, y - size / 2, size, size);
+      ctx.strokeStyle = stroke;
+      ctx.strokeRect(x - size / 2, y - size / 2, size, size);
+    }
+    ctx.restore();
   }
 
   private drawHeartGlyph(x: number, y: number, radius: number, color: string): void {
@@ -566,6 +751,16 @@ export class FieldRenderer {
     ctx.bezierCurveTo(x - radius * 1.3, y - radius * 0.05, x - radius * 0.85, y - radius * 0.95, x, y - radius * 0.35);
     ctx.bezierCurveTo(x + radius * 0.85, y - radius * 0.95, x + radius * 1.3, y - radius * 0.05, x, y + radius * 0.85);
     ctx.fill();
+  }
+
+  private drawEngineGlyph(x: number, y: number, radius: number, color: string): void {
+    const ctx = this.ctx;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1.5, radius * .22);
+    ctx.beginPath();
+    ctx.moveTo(x, y - radius); ctx.lineTo(x + radius, y); ctx.lineTo(x, y + radius); ctx.lineTo(x - radius, y); ctx.closePath();
+    ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y, radius * .3, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill();
   }
 
   private drawShapeGlyph(shape: ShapeType, x: number, y: number, cellSize: number, color: string, alpha: number): void {

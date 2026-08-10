@@ -1,33 +1,35 @@
-/**
- * Consequential state transition dispatchers for HL;BM — Rune Foundry.
- * Pure deterministic state transformations for all player actions.
- */
+/** Pure deterministic state transitions for placement, Patterns, Engines, and progression. */
 
 import {
   advanceEngineProduction,
   Block,
+  calculateEngineExtractionShards,
   calculateRecipeReward,
+  createProductionBag,
+  EngineState,
   evaluatePattern,
   findConnectedComponents,
   getBlockOccupiedCells,
-  getEngineXpThreshold,
+  getShapeGradeUpgradeCost,
   isCradleCell,
   Position,
   RecipeReward,
   ShapeType,
+  stableEngineSeed,
 } from '../core/index.ts';
 import { GameState } from './state.ts';
 
 export function getActiveBlocksList(state: GameState): Block[] {
-  return Object.values(state.blocks).filter(b => b.state === 'Loose' || b.state === 'Bound');
+  return Object.values(state.blocks).filter(block => block.state === 'Loose' || block.state === 'Bound');
 }
 
 export function getLooseBlocksList(state: GameState): Block[] {
-  return Object.values(state.blocks).filter(b => b.state === 'Loose' && b.position !== null);
+  return Object.values(state.blocks).filter(block => block.state === 'Loose' && block.position !== null);
 }
 
 const MAX_FIELD_CANDIDATE_BLOCKS = 12;
 const MAX_NEARBY_COMPONENT_DISTANCE = 8;
+const BINDABLE_RECIPE_IDS = new Set(['compression_press', 'twin_stars']);
 
 function blockCells(block: Block): Position[] {
   return block.position ? getBlockOccupiedCells(block.shape, block.position, block.rotation) : [];
@@ -48,10 +50,7 @@ function distanceBetween(left: Position, right: Position): number {
   return Math.hypot(left.x - right.x, left.y - right.y);
 }
 
-/**
- * Selects a small, explainable candidate for Field-first Pattern feedback.
- * This deliberately avoids searching every subset of every Loose Block.
- */
+/** Select a small, explainable local candidate without exhaustive subset search. */
 export function getFieldPatternCandidate(state: GameState, focusBlockId?: string | null): Block[] {
   const looseBlocks = getLooseBlocksList(state);
   if (looseBlocks.length === 0) return [];
@@ -78,20 +77,11 @@ export function getFieldPatternCandidate(state: GameState, focusBlockId?: string
     const focusCenter = componentCenter(focusComponent);
     const nearby = components
       .filter(component => component.id !== focusComponent.id)
-      .map(component => ({
-        component,
-        distance: distanceBetween(focusCenter, componentCenter(component)),
-      }))
+      .map(component => ({ component, distance: distanceBetween(focusCenter, componentCenter(component)) }))
       .filter(entry => entry.distance <= MAX_NEARBY_COMPONENT_DISTANCE)
-      .sort((left, right) => left.distance - right.distance)[0];
-
-    if (nearby) {
-      for (const blockId of nearby.component.blockIds) candidateIds.add(blockId);
-    }
-
-    return looseBlocks
-      .filter(block => candidateIds.has(block.id))
-      .slice(0, MAX_FIELD_CANDIDATE_BLOCKS);
+      .sort((left, right) => left.distance - right.distance || left.component.id - right.component.id)[0];
+    if (nearby) for (const blockId of nearby.component.blockIds) candidateIds.add(blockId);
+    return looseBlocks.filter(block => candidateIds.has(block.id)).slice(0, MAX_FIELD_CANDIDATE_BLOCKS);
   }
 
   if (focusBlock) return [focusBlock];
@@ -102,16 +92,10 @@ export function refreshFieldPattern(state: GameState, focusBlockId?: string | nu
   const candidate = getFieldPatternCandidate(state, focusBlockId);
   state.fieldCandidateBlockIds = candidate.map(block => block.id);
   if (focusBlockId) state.recentFieldBlockId = focusBlockId;
-
-  if (candidate.length === 0) {
-    state.fieldAnalysis = null;
-    return state;
-  }
-
-  const analysis = evaluatePattern(candidate);
-  state.fieldAnalysis = analysis;
-  if (analysis.isValid && analysis.patternId !== 'none' && !state.discoveredPatterns.includes(analysis.patternId)) {
-    state.discoveredPatterns.push(analysis.patternId);
+  state.fieldAnalysis = candidate.length > 0 ? evaluatePattern(candidate) : null;
+  const patternId = state.fieldAnalysis?.patternId;
+  if (state.fieldAnalysis?.isValid && patternId && patternId !== 'none' && !state.discoveredPatterns.includes(patternId)) {
+    state.discoveredPatterns.push(patternId);
   }
   return state;
 }
@@ -120,9 +104,8 @@ export function getAllOccupiedCells(state: GameState, ignoreBlockId?: string): M
   const cellMap = new Map<string, { blockId: string; isEngine: boolean }>();
   for (const block of getActiveBlocksList(state)) {
     if (block.id === ignoreBlockId || !block.position) continue;
-    const cells = getBlockOccupiedCells(block.shape, block.position, block.rotation);
-    for (const c of cells) {
-      cellMap.set(`${c.x},${c.y}`, { blockId: block.id, isEngine: block.state === 'Bound' });
+    for (const cell of getBlockOccupiedCells(block.shape, block.position, block.rotation)) {
+      cellMap.set(`${cell.x},${cell.y}`, { blockId: block.id, isEngine: block.state === 'Bound' });
     }
   }
   return cellMap;
@@ -130,137 +113,106 @@ export function getAllOccupiedCells(state: GameState, ignoreBlockId?: string): M
 
 export function hasCollisionAt(state: GameState, cells: Position[], ignoreBlockId?: string): boolean {
   const occupied = getAllOccupiedCells(state, ignoreBlockId);
-  for (const c of cells) {
-    if (occupied.has(`${c.x},${c.y}`)) {
-      return true;
-    }
-  }
-  return false;
+  return cells.some(cell => occupied.has(`${cell.x},${cell.y}`));
 }
 
 export function placeBlockFromBuffer(
   state: GameState,
   shape: ShapeType,
   position: Position,
-  rotation: number = 0
+  rotation: number = 0,
 ): { success: boolean; blockId?: string; error?: string } {
-  if ((state.buffers[shape] || 0) <= 0) {
-    return { success: false, error: `No ${shape} blocks in buffer.` };
-  }
-
-  const targetCells = getBlockOccupiedCells(shape, position, rotation);
-  if (hasCollisionAt(state, targetCells)) {
-    return { success: false, error: 'Position overlaps with existing block or Engine cell.' };
+  if ((state.buffers[shape] || 0) <= 0) return { success: false, error: `No ${shape} Blocks in inventory.` };
+  if (hasCollisionAt(state, getBlockOccupiedCells(shape, position, rotation))) {
+    return { success: false, error: 'Position overlaps existing Field cells.' };
   }
 
   const blockId = `block-${state.nextBlockSeq}`;
-  const newBlock: Block = {
+  state.blocks[blockId] = {
     id: blockId,
     shape,
     state: 'Loose',
-    grade: 1,
-    position,
+    grade: state.shapeGrades[shape],
+    position: { ...position },
     rotation: ((rotation % 4) + 4) % 4,
   };
-
-  state.blocks[blockId] = newBlock;
   state.buffers[shape] -= 1;
   state.nextBlockSeq += 1;
   state.recentFieldBlockId = blockId;
+  state.selectedEngineId = null;
   refreshFieldPattern(state, blockId);
-
   return { success: true, blockId };
 }
 
-export function moveBlock(
-  state: GameState,
-  blockId: string,
-  newPosition: Position
-): { success: boolean; error?: string } {
+export function moveBlock(state: GameState, blockId: string, newPosition: Position): { success: boolean; error?: string } {
   const block = state.blocks[blockId];
-  if (!block || block.state !== 'Loose') {
-    return { success: false, error: 'Block is not a Loose placed block.' };
+  if (!block || block.state !== 'Loose') return { success: false, error: 'Block is not Loose.' };
+  if (hasCollisionAt(state, getBlockOccupiedCells(block.shape, newPosition, block.rotation), blockId)) {
+    return { success: false, error: 'Target overlaps existing Field cells.' };
   }
-
-  const targetCells = getBlockOccupiedCells(block.shape, newPosition, block.rotation);
-  if (hasCollisionAt(state, targetCells, blockId)) {
-    return { success: false, error: 'Target position overlaps with existing block.' };
-  }
-
-  block.position = newPosition;
-  if (state.selectedBlockIds.includes(blockId)) {
-    analyzeSelection(state);
-  } else {
-    refreshFieldPattern(state, blockId);
-  }
+  block.position = { ...newPosition };
+  state.selectedBlockIds.includes(blockId) ? analyzeSelection(state) : refreshFieldPattern(state, blockId);
   return { success: true };
 }
 
-export function rotateBlock(
-  state: GameState,
-  blockId: string
-): { success: boolean; newRotation?: number; error?: string } {
+export function rotateBlock(state: GameState, blockId: string): { success: boolean; newRotation?: number; error?: string } {
   const block = state.blocks[blockId];
-  if (!block || block.state !== 'Loose' || !block.position) {
-    return { success: false, error: 'Block is not a editable Loose block.' };
-  }
-
+  if (!block || block.state !== 'Loose' || !block.position) return { success: false, error: 'Block is not editable.' };
   const nextRotation = (block.rotation + 1) % 4;
-  const targetCells = getBlockOccupiedCells(block.shape, block.position, nextRotation);
-  if (hasCollisionAt(state, targetCells, blockId)) {
-    return { success: false, error: 'Rotation overlaps with adjacent block.' };
+  if (hasCollisionAt(state, getBlockOccupiedCells(block.shape, block.position, nextRotation), blockId)) {
+    return { success: false, error: 'Rotation overlaps existing Field cells.' };
   }
-
   block.rotation = nextRotation;
-  if (state.selectedBlockIds.includes(blockId)) {
-    analyzeSelection(state);
-  } else {
-    refreshFieldPattern(state, blockId);
-  }
+  state.selectedBlockIds.includes(blockId) ? analyzeSelection(state) : refreshFieldPattern(state, blockId);
   return { success: true, newRotation: nextRotation };
 }
 
-export function returnBlockToBuffer(
-  state: GameState,
-  blockId: string
-): { success: boolean; error?: string } {
+export function returnBlockToBuffer(state: GameState, blockId: string): { success: boolean; error?: string } {
   const block = state.blocks[blockId];
-  if (!block || block.state !== 'Loose') {
-    return { success: false, error: 'Cannot return non-Loose block to buffer.' };
-  }
-
+  if (!block || block.state !== 'Loose') return { success: false, error: 'Only Loose Blocks can Return.' };
   delete state.blocks[blockId];
-  state.buffers[block.shape] = (state.buffers[block.shape] || 0) + 1;
+  state.buffers[block.shape] += 1;
   state.selectedBlockIds = state.selectedBlockIds.filter(id => id !== blockId);
   if (state.recentFieldBlockId === blockId) state.recentFieldBlockId = null;
-  if (state.selectedBlockIds.length > 0) analyzeSelection(state);
-  else refreshFieldPattern(state);
-
+  state.selectedBlockIds.length > 0 ? analyzeSelection(state) : refreshFieldPattern(state);
   return { success: true };
 }
 
 export function selectBlock(state: GameState, blockId: string, toggle: boolean = false): void {
   const block = state.blocks[blockId];
   if (!block || block.state !== 'Loose') return;
-
+  state.selectedEngineId = null;
   if (toggle) {
-    if (state.selectedBlockIds.includes(blockId)) {
-      state.selectedBlockIds = state.selectedBlockIds.filter(id => id !== blockId);
-    } else {
-      state.selectedBlockIds.push(blockId);
-    }
+    state.selectedBlockIds = state.selectedBlockIds.includes(blockId)
+      ? state.selectedBlockIds.filter(id => id !== blockId)
+      : [...state.selectedBlockIds, blockId];
   } else {
     state.selectedBlockIds = [blockId];
   }
-
   analyzeSelection(state);
 }
 
-export function selectAllLooseBlocks(state: GameState): void {
-  state.selectedBlockIds = Object.values(state.blocks)
-    .filter(b => b.state === 'Loose')
-    .map(b => b.id);
+export function selectLooseBlocks(state: GameState, blockIds: readonly string[], additive: boolean = false): void {
+  const validIds = blockIds.filter(id => state.blocks[id]?.state === 'Loose');
+  state.selectedEngineId = null;
+  state.selectedBlockIds = additive
+    ? [...new Set([...state.selectedBlockIds, ...validIds])]
+    : [...new Set(validIds)];
   analyzeSelection(state);
+}
+
+export interface GridSelectionRect { minX: number; maxX: number; minY: number; maxY: number }
+
+export function getLooseBlockIdsIntersectingRect(state: GameState, rect: GridSelectionRect): string[] {
+  return getLooseBlocksList(state)
+    .filter(block => blockCells(block).some(cell =>
+      cell.x >= rect.minX && cell.x <= rect.maxX && cell.y >= rect.minY && cell.y <= rect.maxY,
+    ))
+    .map(block => block.id);
+}
+
+export function selectAllLooseBlocks(state: GameState): void {
+  selectLooseBlocks(state, getLooseBlocksList(state).map(block => block.id));
 }
 
 export function clearSelection(state: GameState): void {
@@ -269,162 +221,213 @@ export function clearSelection(state: GameState): void {
   refreshFieldPattern(state);
 }
 
+export function selectEngine(state: GameState, engineId: string | null): void {
+  state.selectedEngineId = engineId && state.engines[engineId] ? engineId : null;
+  state.selectedBlockIds = [];
+  state.lastAnalysis = null;
+  refreshFieldPattern(state);
+}
+
+export function getEngineIdForBlock(state: GameState, blockId: string): string | null {
+  return Object.values(state.engines).find(engine => engine.constituentBlockIds.includes(blockId))?.id ?? null;
+}
+
 export function analyzeSelection(state: GameState): GameState {
   const selectedBlocks = state.selectedBlockIds
     .map(id => state.blocks[id])
-    .filter((b): b is Block => Boolean(b) && b.state === 'Loose');
-
+    .filter((block): block is Block => Boolean(block) && block.state === 'Loose');
   if (selectedBlocks.length === 0) {
     state.lastAnalysis = null;
     refreshFieldPattern(state);
     return state;
   }
-
   const analysis = evaluatePattern(selectedBlocks);
   state.lastAnalysis = analysis;
   state.fieldAnalysis = analysis;
   state.fieldCandidateBlockIds = selectedBlocks.map(block => block.id);
-
-  if (analysis.isValid && analysis.patternId !== 'none') {
-    if (!state.discoveredPatterns.includes(analysis.patternId)) {
-      state.discoveredPatterns.push(analysis.patternId);
-    }
+  if (analysis.isValid && analysis.patternId !== 'none' && !state.discoveredPatterns.includes(analysis.patternId)) {
+    state.discoveredPatterns.push(analysis.patternId);
   }
-
   return state;
 }
 
-export interface SubmissionPreview {
+export interface PatternActionPreview {
+  blockIds: string[];
   blocks: Block[];
   analysis: ReturnType<typeof evaluatePattern> | null;
   reward: RecipeReward | null;
+  source: 'explicit' | 'field' | 'none';
+  canBind: boolean;
+  canSubmit: boolean;
 }
 
-export function getSubmissionPreview(state: GameState): SubmissionPreview {
-  const blocks = state.selectedBlockIds
-    .map(id => state.blocks[id])
-    .filter((block): block is Block => Boolean(block) && block.state === 'Loose' && block.position !== null);
-  if (blocks.length === 0) return { blocks, analysis: null, reward: null };
+function exactLooseBlocks(state: GameState, blockIds: readonly string[]): Block[] | null {
+  if (blockIds.length === 0 || new Set(blockIds).size !== blockIds.length) return null;
+  const blocks = blockIds.map(id => state.blocks[id]);
+  return blocks.some(block => !block || block.state !== 'Loose' || block.position === null) ? null : blocks as Block[];
+}
 
+function previewForIds(state: GameState, blockIds: readonly string[], source: PatternActionPreview['source']): PatternActionPreview {
+  const blocks = exactLooseBlocks(state, blockIds) || [];
+  if (blocks.length === 0) {
+    return { blockIds: [], blocks, analysis: null, reward: null, source, canBind: false, canSubmit: false };
+  }
   const analysis = evaluatePattern(blocks);
-  const isRecipe = analysis.isValid && (analysis.patternId === 'compression_press' || analysis.patternId === 'twin_stars');
+  const isOrdinaryRecipe = analysis.isValid && BINDABLE_RECIPE_IDS.has(analysis.patternId);
+  const isHeart = analysis.isValid && analysis.patternId === 'heart_seal' && !state.isHeartEngineBound;
   return {
+    blockIds: blocks.map(block => block.id),
     blocks,
     analysis,
-    reward: isRecipe ? calculateRecipeReward(blocks, analysis.quality) : null,
+    reward: isOrdinaryRecipe ? calculateRecipeReward(blocks, analysis.quality) : null,
+    source,
+    canBind: isHeart || (state.isHeartEngineBound && isOrdinaryRecipe),
+    canSubmit: state.isHeartEngineBound && isOrdinaryRecipe,
   };
 }
 
-export function bindHeartSeal(state: GameState): { success: boolean; error?: string } {
-  if (state.isHeartEngineBound) {
-    return { success: false, error: 'Heart Engine is already bound.' };
-  }
+export function getPatternActionPreview(state: GameState, blockIds?: readonly string[]): PatternActionPreview {
+  if (blockIds) return previewForIds(state, blockIds, 'explicit');
+  if (state.selectedBlockIds.length > 0) return previewForIds(state, state.selectedBlockIds, 'explicit');
+  if (state.fieldCandidateBlockIds.length > 0) return previewForIds(state, state.fieldCandidateBlockIds, 'field');
+  return previewForIds(state, [], 'none');
+}
 
-  let analysis = state.fieldAnalysis;
-  let candidateIds = state.fieldCandidateBlockIds;
+export const getSubmissionPreview = getPatternActionPreview;
 
-  if (!analysis?.isValid || analysis.patternId !== 'heart_seal' || candidateIds.length === 0) {
-    analyzeSelection(state);
-    analysis = state.lastAnalysis;
-    candidateIds = state.selectedBlockIds;
-  }
-
-  if (!analysis || !analysis.isValid || analysis.patternId !== 'heart_seal') {
-    return { success: false, error: 'Selection does not satisfy Heart Seal.' };
-  }
-
-  // Crystallize selected blocks into persistent Engine cells
-  const boundBlockIds: string[] = [];
-  for (const blockId of candidateIds) {
-    const block = state.blocks[blockId];
-    if (block && block.state === 'Loose') {
-      block.state = 'Bound';
-      boundBlockIds.push(blockId);
-    }
-  }
-
-  state.isHeartEngineBound = true;
-  state.heartEngine = {
-    id: 'engine-heart',
-    name: 'Heart Engine',
-    level: 1,
-    xp: 0,
-    quality: 1.0,
+function createBoundEngine(
+  state: GameState,
+  preview: PatternActionPreview,
+  foundational: boolean,
+): EngineState {
+  const id = foundational ? 'engine-heart' : `engine-${state.nextEngineSeq++}`;
+  return {
+    id,
+    name: foundational ? 'Heart Engine' : `${preview.analysis!.patternName} Engine`,
+    sourcePatternId: preview.analysis!.patternId,
+    sourcePatternName: preview.analysis!.patternName,
+    foundational,
+    extractable: !foundational,
+    quality: preview.analysis!.quality,
     accumulatedTimeSec: 0,
-    constituentBlockIds: boundBlockIds,
+    constituentBlockIds: [...preview.blockIds],
+    ...createProductionBag(stableEngineSeed(id)),
   };
+}
 
-  if (!state.discoveredPatterns.includes('heart_seal')) {
-    state.discoveredPatterns.push('heart_seal');
+export function bindPattern(state: GameState): { success: boolean; engine?: EngineState; error?: string } {
+  const initial = getPatternActionPreview(state);
+  if (!initial.canBind || !initial.analysis) return { success: false, error: 'Current Pattern cannot be Bound.' };
+  const frozenIds = [...initial.blockIds];
+  const preview = getPatternActionPreview(state, frozenIds);
+  if (!preview.canBind || !preview.analysis) return { success: false, error: 'Pattern changed before Bind.' };
+
+  const foundational = preview.analysis.patternId === 'heart_seal';
+  if (foundational && state.isHeartEngineBound) return { success: false, error: 'Heart Engine already exists.' };
+  for (const block of preview.blocks) block.state = 'Bound';
+  const engine = createBoundEngine(state, preview, foundational);
+  state.engines[engine.id] = engine;
+  if (foundational) {
+    state.heartEngineId = engine.id;
+    state.isHeartEngineBound = true;
   }
-
+  state.learnedActions.bind = true;
+  state.selectedEngineId = engine.id;
   clearSelection(state);
   state.fieldAnalysis = null;
   state.fieldCandidateBlockIds = [];
   state.recentFieldBlockId = null;
-  return { success: true };
+  return { success: true, engine };
+}
+
+export function bindHeartSeal(state: GameState): { success: boolean; engine?: EngineState; error?: string } {
+  const preview = getPatternActionPreview(state);
+  if (preview.analysis?.patternId !== 'heart_seal') return { success: false, error: 'Heart Seal is incomplete.' };
+  return bindPattern(state);
 }
 
 export function submitRecipe(state: GameState): { success: boolean; reward?: RecipeReward; error?: string } {
-  analyzeSelection(state);
-  const analysis = state.lastAnalysis;
+  const initial = getPatternActionPreview(state);
+  if (!initial.canSubmit || !initial.reward || !initial.analysis) return { success: false, error: 'No valid Loose Recipe to Submit.' };
+  const frozenIds = [...initial.blockIds];
+  const preview = getPatternActionPreview(state, frozenIds);
+  if (!preview.canSubmit || !preview.reward || !preview.analysis) return { success: false, error: 'Recipe changed before Submit.' };
 
-  if (!analysis || !analysis.isValid || (analysis.patternId !== 'compression_press' && analysis.patternId !== 'twin_stars')) {
-    return { success: false, error: 'Current selection is not a valid submission recipe.' };
-  }
-
-  const selectedBlocks = state.selectedBlockIds
-    .map(id => state.blocks[id])
-    .filter((b): b is Block => Boolean(b) && b.state === 'Loose');
-
-  const reward = calculateRecipeReward(selectedBlocks, analysis.quality);
-
-  // Apply Payout
-  state.currencies.ash += reward.ash;
-  state.currencies.shards += reward.shards;
-
-  if (state.heartEngine) {
-    state.heartEngine.xp += reward.engineXp;
-    let xpReq = getEngineXpThreshold(state.heartEngine.level);
-    while (state.heartEngine.xp >= xpReq) {
-      state.heartEngine.xp -= xpReq;
-      state.heartEngine.level += 1;
-      xpReq = getEngineXpThreshold(state.heartEngine.level);
-    }
-  }
-
-  // Permanently consume selected blocks
-  for (const b of selectedBlocks) {
-    b.state = 'Consumed';
-    delete state.blocks[b.id];
-  }
-
-  if (state.recentFieldBlockId && selectedBlocks.some(block => block.id === state.recentFieldBlockId)) {
-    state.recentFieldBlockId = null;
-  }
-
-  if (!state.discoveredPatterns.includes(analysis.patternId)) {
-    state.discoveredPatterns.push(analysis.patternId);
-  }
-
+  state.currencies.ash += preview.reward.ash;
+  for (const block of preview.blocks) delete state.blocks[block.id];
+  state.learnedActions.submit = true;
+  if (state.recentFieldBlockId && frozenIds.includes(state.recentFieldBlockId)) state.recentFieldBlockId = null;
   clearSelection(state);
-  return { success: true, reward };
+  return { success: true, reward: preview.reward };
 }
+
+export interface EngineExtractionPreview {
+  engine: EngineState;
+  blocks: Block[];
+  shards: number;
+  canExtract: boolean;
+  error?: string;
+}
+
+export function getEngineExtractionPreview(state: GameState, engineId: string): EngineExtractionPreview | null {
+  const engine = state.engines[engineId];
+  if (!engine) return null;
+  const blocks = engine.constituentBlockIds.map(id => state.blocks[id]).filter((block): block is Block => Boolean(block));
+  const intact = blocks.length === engine.constituentBlockIds.length && blocks.every(block => block.state === 'Bound');
+  return {
+    engine,
+    blocks,
+    shards: intact ? calculateEngineExtractionShards(blocks, engine.quality) : 0,
+    canExtract: engine.extractable && intact,
+    error: !engine.extractable ? 'Heart Engine is foundational.' : !intact ? 'Engine constituents are no longer intact.' : undefined,
+  };
+}
+
+export function extractEngine(state: GameState, engineId: string): { success: boolean; shards?: number; error?: string } {
+  const initial = getEngineExtractionPreview(state, engineId);
+  if (!initial?.canExtract) return { success: false, error: initial?.error || 'Engine not found.' };
+  const frozenIds = [...initial.engine.constituentBlockIds];
+  const preview = getEngineExtractionPreview(state, engineId);
+  if (!preview?.canExtract || frozenIds.some((id, index) => preview.engine.constituentBlockIds[index] !== id)) {
+    return { success: false, error: 'Engine changed before Extraction.' };
+  }
+  for (const blockId of frozenIds) delete state.blocks[blockId];
+  delete state.engines[engineId];
+  state.currencies.shards += preview.shards;
+  state.learnedActions.extract = true;
+  if (state.selectedEngineId === engineId) state.selectedEngineId = null;
+  refreshFieldPattern(state);
+  return { success: true, shards: preview.shards };
+}
+
+export function upgradeShapeGrade(state: GameState, shape: ShapeType): { success: boolean; grade?: number; cost?: number; error?: string } {
+  const currentGrade = state.shapeGrades[shape];
+  const cost = getShapeGradeUpgradeCost(currentGrade);
+  if (state.currencies.shards < cost) return { success: false, cost, error: `Need ${cost} Shards.` };
+  const grade = currentGrade + 1;
+  state.currencies.shards -= cost;
+  state.shapeGrades[shape] = grade;
+  for (const block of Object.values(state.blocks)) {
+    if (block.state === 'Loose' && block.shape === shape) block.grade = grade;
+  }
+  state.learnedActions.upgrade = true;
+  return { success: true, grade, cost };
+}
+
+export interface EngineProductionOutput { engineId: string; shape: ShapeType }
 
 export function advanceProductionTime(
   state: GameState,
-  deltaSeconds: number
-): { generatedShapes: ShapeType[]; changed: boolean } {
-  if (!state.isHeartEngineBound || !state.heartEngine) {
-    return { generatedShapes: [], changed: false };
+  deltaSeconds: number,
+): { generatedShapes: ShapeType[]; outputs: EngineProductionOutput[]; changed: boolean } {
+  const outputs: EngineProductionOutput[] = [];
+  let buffers = state.buffers;
+  for (const engineId of Object.keys(state.engines).sort()) {
+    const result = advanceEngineProduction(state.engines[engineId], buffers, deltaSeconds);
+    state.engines[engineId] = result.engine;
+    buffers = result.buffers;
+    outputs.push(...result.generatedShapes.map(shape => ({ engineId, shape })));
   }
-
-  const result = advanceEngineProduction(state.heartEngine, state.buffers, deltaSeconds);
-  state.heartEngine = result.engine;
-  state.buffers = result.buffers;
-
-  return {
-    generatedShapes: result.generatedShapes,
-    changed: result.generatedShapes.length > 0,
-  };
+  state.buffers = buffers;
+  return { generatedShapes: outputs.map(output => output.shape), outputs, changed: outputs.length > 0 };
 }

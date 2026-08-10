@@ -3,7 +3,7 @@
  * Evaluates spatial arrangements of selected Loose Blocks.
  */
 
-import { Block, PatternAnalysisResult, Position } from './types.ts';
+import { Block, PatternAnalysisResult, Position, ShapeType } from './types.ts';
 import { getBlockOccupiedCells } from './shapes.ts';
 import { coordKey, isCradleCell } from './field.ts';
 
@@ -11,6 +11,55 @@ export interface ConnectedComponent {
   id: number;
   blockIds: string[];
   cells: Position[];
+}
+
+type OccupiedCellSource = Iterable<Position | string | readonly [string, unknown]>;
+
+function occupiedKeys(source: OccupiedCellSource): Set<string> {
+  const keys = new Set<string>();
+  for (const item of source) {
+    if (typeof item === 'string') keys.add(item);
+    else if ('x' in item) keys.add(coordKey(item.x, item.y));
+    else keys.add(String(item[0]));
+  }
+  return keys;
+}
+
+/**
+ * Resolves a cursor's desired origin to a nearby legal origin. Candidates use
+ * Euclidean distance, then y/x ordering for a stable and testable tie-break.
+ */
+export function findNearestValidPlacement(
+  shape: ShapeType,
+  rotation: number,
+  desiredOrigin: Position,
+  occupiedCells: OccupiedCellSource,
+  searchRadius: number = 3,
+): Position | null {
+  const occupied = occupiedKeys(occupiedCells);
+  const radius = Math.max(0, Math.floor(searchRadius));
+  const candidates: Position[] = [];
+
+  for (let dy = -radius; dy <= radius; dy += 1) {
+    for (let dx = -radius; dx <= radius; dx += 1) {
+      candidates.push({ x: desiredOrigin.x + dx, y: desiredOrigin.y + dy });
+    }
+  }
+
+  candidates.sort((left, right) => {
+    const leftDx = left.x - desiredOrigin.x;
+    const leftDy = left.y - desiredOrigin.y;
+    const rightDx = right.x - desiredOrigin.x;
+    const rightDy = right.y - desiredOrigin.y;
+    const distanceDelta = leftDx * leftDx + leftDy * leftDy - (rightDx * rightDx + rightDy * rightDy);
+    return distanceDelta || left.y - right.y || left.x - right.x;
+  });
+
+  for (const origin of candidates) {
+    const cells = getBlockOccupiedCells(shape, origin, rotation);
+    if (cells.every(cell => !occupied.has(coordKey(cell.x, cell.y)))) return origin;
+  }
+  return null;
 }
 
 export function findConnectedComponents(selectedBlocks: Block[]): ConnectedComponent[] {
@@ -209,16 +258,30 @@ export function evaluatePattern(selectedBlocks: Block[]): PatternAnalysisResult 
     };
   }
 
-  // 3. Test Compression Press: Single connected component, at least 2 blocks
+  // 3. Test Compression Press: one connected component with 4–10 Blocks.
+  // Keep the lower and upper bounds explicit: this is a Recipe boundary, not
+  // merely a connected-component heuristic.
   if (componentCount === 1) {
-    if (blockCount < 2) {
+    if (blockCount < 4) {
       return {
         patternId: 'compression_press',
         patternName: 'Compression Press',
         isValid: false,
-        quality: 0.4,
+        quality: blockCount / 4,
         metrics: { blockCount, cellCount, componentCount },
-        nearMatchReason: 'Compression Press requires at least 2 connected Loose Blocks.',
+        nearMatchReason: `${blockCount} / 4`,
+        involvedBlockIds,
+      };
+    }
+
+    if (blockCount > 10) {
+      return {
+        patternId: 'compression_press',
+        patternName: 'Compression Press',
+        isValid: false,
+        quality: 0.5,
+        metrics: { blockCount, cellCount, componentCount },
+        nearMatchReason: `${blockCount} / 10`,
         involvedBlockIds,
       };
     }

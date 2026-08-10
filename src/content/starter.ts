@@ -6,7 +6,7 @@
 export interface RecipeDefinition {
   id: string;
   name: string;
-  type: 'Bind' | 'Consumptive';
+  type: 'Foundational' | 'BindOrSubmit';
   description: string;
 }
 
@@ -14,20 +14,20 @@ export const STARTER_RECIPES: Record<string, RecipeDefinition> = {
   heart_seal: {
     id: 'heart_seal',
     name: 'Heart Seal',
-    type: 'Bind',
+    type: 'Foundational',
     description: 'Exact 4x4 fill of the opening Cradle. Freezes starter blocks into a permanent Heart Engine.',
   },
   compression_press: {
     id: 'compression_press',
     name: 'Compression Press',
-    type: 'Consumptive',
-    description: 'Dense connected block component with maximum shared edges. Consumes blocks for Ash, Shards, and Engine XP.',
+    type: 'BindOrSubmit',
+    description: 'Four to ten connected Blocks. Bind as an Engine or Submit for Ash.',
   },
   twin_stars: {
     id: 'twin_stars',
     name: 'Twin Stars',
-    type: 'Consumptive',
-    description: 'Two equal-sized disconnected components separated in space. Consumes blocks for Ash, Shards, and Engine XP.',
+    type: 'BindOrSubmit',
+    description: 'Two equal-sized separated components. Bind as an Engine or Submit for Ash.',
   },
 };
 

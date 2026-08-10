@@ -24,9 +24,10 @@ function main(): void {
     saveGameState(state);
   });
 
-  // Save on page hide / unload / visibility change
+  // Save on consequential actions, then cover browser lifecycle exits. The
+  // visibility event belongs to document; pagehide remains the hard fallback.
   const saveNow = () => saveGameState(store.getState());
-  window.addEventListener('visibilitychange', () => {
+  document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'hidden') saveNow();
   });
   window.addEventListener('pagehide', saveNow);

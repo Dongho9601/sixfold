@@ -25,6 +25,8 @@ export class UIController {
   private hud: HUD;
   private inspector: InspectorPanel;
   private input: InputController;
+  private logicalWidth = 0;
+  private logicalHeight = 0;
 
   constructor(rootContainer: HTMLElement, store: AppStore) {
     this.store = store;
@@ -52,7 +54,7 @@ export class UIController {
     this.resizeCanvas();
     window.addEventListener('resize', () => this.resizeCanvas());
 
-    this.camera = new Camera(this.canvas.width, this.canvas.height);
+    this.camera = new Camera(this.logicalWidth, this.logicalHeight);
     this.renderer = new FieldRenderer(this.ctx);
     this.hud = new HUD(hudContainer, this.store);
     this.inspector = new InspectorPanel(inspectorContainer, this.store, (message, isError = false) => {
@@ -76,8 +78,14 @@ export class UIController {
   }
 
   private resizeCanvas(): void {
-    this.canvas.width = window.innerWidth;
-    this.canvas.height = window.innerHeight;
+    this.logicalWidth = window.innerWidth;
+    this.logicalHeight = window.innerHeight;
+    const dpr = Math.min(2, Math.max(1, window.devicePixelRatio || 1));
+    this.canvas.width = Math.round(this.logicalWidth * dpr);
+    this.canvas.height = Math.round(this.logicalHeight * dpr);
+    this.canvas.style.width = `${this.logicalWidth}px`;
+    this.canvas.style.height = `${this.logicalHeight}px`;
+    this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
   private startRenderLoop(): void {
@@ -85,15 +93,19 @@ export class UIController {
       const state = this.store.getState();
       const placementPreview = this.input.getPlacementPreview();
       const holdPreview = this.input.getHoldPreview();
+      const selectionPreview = this.input.getSelectionPreview();
+      const submissionPreview = this.store.getSubmissionPreview();
       this.canvas.style.cursor = placementPreview ? 'crosshair' : 'default';
       this.renderer.render(
         state,
         this.camera,
-        this.canvas.width,
-        this.canvas.height,
+        this.logicalWidth,
+        this.logicalHeight,
         placementPreview,
         holdPreview,
+        selectionPreview,
         performance.now(),
+        submissionPreview.reward ? submissionPreview.blockIds : [],
       );
       requestAnimationFrame(loop);
     };

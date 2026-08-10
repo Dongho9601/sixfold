@@ -3,35 +3,82 @@
  * Left click commits the active ghost or selects a Loose Block; it never edits a placed Block.
  */
 
-import { Block, getBlockOccupiedCells, Position, ShapeType } from '../core/index.ts';
-import { hasCollisionAt } from '../application/actions.ts';
+import { Block, findNearestValidPlacement, getBlockOccupiedCells, Position, ShapeType } from '../core/index.ts';
+import { getAllOccupiedCells } from '../application/actions.ts';
 import { GameState } from '../application/state.ts';
 import { AppStore } from '../application/store.ts';
 import { Camera } from './camera.ts';
-import { HoldPreviewState, PlacementPreviewState } from './renderer.ts';
+import { HoldPreviewState, PlacementPreviewState, SelectionPreviewState } from './renderer.ts';
 import { HUD } from './hud.ts';
 
 export const LONG_PRESS_RETURN_MS = 450;
 
 const SHAPE_BY_HOTKEY: Record<string, ShapeType> = {
-  '1': 'I',
-  '2': 'O',
-  '4': 'L',
-  '5': 'J',
+  Digit1: 'I', Numpad1: 'I',
+  Digit2: 'O', Numpad2: 'O',
+  Digit3: 'T', Numpad3: 'T',
+  Digit4: 'L', Numpad4: 'L',
+  Digit5: 'J', Numpad5: 'J',
+  Digit6: 'S', Numpad6: 'S',
+  Digit7: 'Z', Numpad7: 'Z',
 };
 
-const UNAVAILABLE_SHAPE_HOTKEYS = new Set(['3', '6', '7']);
-
-export function shapeForHotkey(key: string): ShapeType | null {
-  return SHAPE_BY_HOTKEY[key] || null;
+export function shapeForHotkey(code: string): ShapeType | null {
+  return SHAPE_BY_HOTKEY[code] || null;
 }
 
-export function isUnavailableShapeHotkey(key: string): boolean {
-  return UNAVAILABLE_SHAPE_HOTKEYS.has(key);
+export function isUnavailableShapeHotkey(_code: string): boolean {
+  return false;
+}
+
+export type GameplayCommand = 'rotate' | 'pan' | 'return' | 'cancel';
+
+export function gameplayCommandForCode(code: string): GameplayCommand | null {
+  if (code === 'KeyR') return 'rotate';
+  if (code === 'Space') return 'pan';
+  if (code === 'Delete' || code === 'Backspace') return 'return';
+  if (code === 'Escape') return 'cancel';
+  return null;
 }
 
 export function shouldCompleteLongPress(elapsedMs: number, pointerMoved: boolean): boolean {
   return !pointerMoved && elapsedMs >= LONG_PRESS_RETURN_MS;
+}
+
+export type PointerIntent =
+  | 'multi-touch'
+  | 'pan'
+  | 'existing-loose'
+  | 'existing-engine'
+  | 'place'
+  | 'deselect'
+  | 'ignore';
+
+export interface PointerIntentContext {
+  pointerType: string;
+  pointerCount: number;
+  button: number;
+  spaceDown: boolean;
+  existingBlockState: Block['state'] | null;
+  hasSpawnShape: boolean;
+}
+
+/**
+ * Pure primary-intent routing. Placement mode owns primary click everywhere;
+ * selection and Engine inspection are available only after placement is off.
+ */
+export function decidePointerIntent(context: PointerIntentContext): PointerIntent {
+  if (context.pointerType === 'touch' && context.pointerCount >= 2) return 'multi-touch';
+  if (context.button === 1 || context.button === 2 || (context.button === 0 && context.spaceDown)) return 'pan';
+  if (context.button !== 0) return 'ignore';
+  if (context.hasSpawnShape) return 'place';
+  if (context.existingBlockState === 'Loose') return 'existing-loose';
+  if (context.existingBlockState === 'Bound') return 'existing-engine';
+  return 'deselect';
+}
+
+export function gameplayHotkeysEnabled(event: Pick<KeyboardEvent, 'ctrlKey' | 'metaKey' | 'altKey'>): boolean {
+  return !event.ctrlKey && !event.metaKey && !event.altKey;
 }
 
 interface PointerPosition {
@@ -56,6 +103,12 @@ export class InputController {
   private lastGridPosition: Position | null = null;
   private spawnRotation = 0;
   private placementPreview: PlacementPreviewState | null = null;
+
+  private selectionPointerId: number | null = null;
+  private selectionStart: PointerPosition | null = null;
+  private selectionCurrent: PointerPosition | null = null;
+  private selectionAdditive = false;
+  private selectionMoved = false;
 
   private heldBlockId: string | null = null;
   private holdStartedAt = 0;
@@ -104,6 +157,11 @@ export class InputController {
     return this.holdPreview;
   }
 
+  getSelectionPreview(): SelectionPreviewState | null {
+    if (!this.selectionMoved || !this.selectionStart || !this.selectionCurrent) return null;
+    return { start: { ...this.selectionStart }, end: { ...this.selectionCurrent } };
+  }
+
   private attachEventListeners(): void {
     this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
     this.canvas.addEventListener('pointerdown', this.onPointerDown);
@@ -127,23 +185,43 @@ export class InputController {
     const point = { x: event.clientX, y: event.clientY };
     this.pointers.set(event.pointerId, point);
 
-    if (event.pointerType === 'touch' && this.pointers.size >= 2) {
+    const canvasPoint = this.getCanvasPoint(event.clientX, event.clientY);
+    const gridPosition = this.camera.screenToGrid(canvasPoint.x, canvasPoint.y);
+    this.lastGridPosition = gridPosition;
+    const clickedBlock = this.findBlockAt(this.store.getState(), gridPosition);
+    const activeShape = this.hud.getSelectedSpawnShape();
+    const intent = decidePointerIntent({
+      pointerType: event.pointerType,
+      pointerCount: this.pointers.size,
+      button: event.button,
+      spaceDown: this.spaceDown,
+      existingBlockState: clickedBlock?.state || null,
+      hasSpawnShape: Boolean(activeShape),
+    });
+
+    if (intent === 'multi-touch') {
       this.beginTouchGesture();
       return;
     }
 
-    if (event.button === 1 || event.button === 2 || (event.button === 0 && this.spaceDown)) {
+    if (intent === 'pan') {
       this.beginPan(event);
       return;
     }
-    if (event.button !== 0) return;
 
-    const canvasPoint = this.getCanvasPoint(event.clientX, event.clientY);
-    const gridPosition = this.camera.screenToGrid(canvasPoint.x, canvasPoint.y);
-    this.lastGridPosition = gridPosition;
+    if (intent === 'ignore') return;
 
-    const activeShape = this.hud.getSelectedSpawnShape();
-    if (activeShape) {
+    if (intent === 'existing-loose' && clickedBlock) {
+      this.beginReturnHold(clickedBlock, event);
+      return;
+    }
+
+    if (intent === 'existing-engine' && clickedBlock) {
+      this.store.selectEngineByBlockId(clickedBlock.id);
+      return;
+    }
+
+    if (intent === 'place' && activeShape) {
       this.placementPointerId = event.pointerId;
       this.placementMoved = false;
       this.placementStartPointer = { ...canvasPoint };
@@ -151,20 +229,14 @@ export class InputController {
       return;
     }
 
-    const clickedBlock = this.findBlockAt(this.store.getState(), gridPosition);
-    if (clickedBlock?.state === 'Loose') {
-      this.beginReturnHold(clickedBlock, event);
-      return;
+    if (intent === 'deselect') {
+      this.selectionPointerId = event.pointerId;
+      this.selectionStart = canvasPoint;
+      this.selectionCurrent = canvasPoint;
+      this.selectionAdditive = event.shiftKey;
+      this.selectionMoved = false;
+      this.canvas.setPointerCapture?.(event.pointerId);
     }
-
-    if (clickedBlock?.state === 'Bound') {
-      this.hud.showFeedback('♥');
-      return;
-    }
-
-    // Ordinary left-click on open Field only clears selection. Panning requires a
-    // secondary button or Space, so a placed Block can never be accidentally edited.
-    if (!event.shiftKey) this.store.clearSelection();
   };
 
   private onPointerMove = (event: PointerEvent): void => {
@@ -191,6 +263,15 @@ export class InputController {
       const start = this.placementStartPointer;
       if (start && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 7) {
         this.placementMoved = true;
+      }
+    }
+
+
+    if (this.selectionPointerId === event.pointerId && this.selectionStart) {
+      const canvasPoint = this.getCanvasPoint(event.clientX, event.clientY);
+      this.selectionCurrent = canvasPoint;
+      if (Math.hypot(canvasPoint.x - this.selectionStart.x, canvasPoint.y - this.selectionStart.y) > 5) {
+        this.selectionMoved = true;
       }
     }
 
@@ -231,6 +312,24 @@ export class InputController {
       return;
     }
 
+    if (this.selectionPointerId === event.pointerId) {
+      if (this.selectionMoved && this.selectionStart && this.selectionCurrent) {
+        const start = this.camera.screenToGrid(this.selectionStart.x, this.selectionStart.y);
+        const end = this.camera.screenToGrid(this.selectionCurrent.x, this.selectionCurrent.y);
+        this.store.selectBlocksInRect({
+          minX: Math.min(start.x, end.x),
+          maxX: Math.max(start.x, end.x),
+          minY: Math.min(start.y, end.y),
+          maxY: Math.max(start.y, end.y),
+        }, this.selectionAdditive);
+      } else if (!this.selectionAdditive) {
+        this.store.clearSelection();
+        this.store.clearEngineSelection();
+      }
+      this.cancelRectangleSelection();
+      return;
+    }
+
     if (this.heldBlockId) {
       const blockId = this.heldBlockId;
       const completed = (this.holdPreview?.progress ?? 0) >= 1;
@@ -250,6 +349,7 @@ export class InputController {
       this.placementStartPointer = null;
     }
     if (this.heldBlockId) this.cancelHold(true);
+    if (this.selectionPointerId === event.pointerId) this.cancelRectangleSelection();
     if (this.isPanning && this.panPointerId === event.pointerId) {
       this.isPanning = false;
       this.panPointerId = null;
@@ -258,36 +358,36 @@ export class InputController {
 
   private onKeyDown = (event: KeyboardEvent): void => {
     if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') return;
+    if (!gameplayHotkeysEnabled(event)) return;
 
-    if (event.key === ' ') {
+    if (event.code === 'Space') {
       this.spaceDown = true;
       event.preventDefault();
       return;
     }
 
-    const shape = shapeForHotkey(event.key);
+    const shape = shapeForHotkey(event.code);
     if (shape) {
       const count = this.store.getState().buffers[shape] || 0;
       if (count <= 0) {
         this.hud.setSelectedSpawnShape(null);
         this.hud.showFeedback('0', true);
       } else {
-        this.store.clearSelection();
-        this.spawnRotation = 0;
-        this.hud.setSelectedSpawnShape(shape);
-        this.updatePlacementPreview(this.lastGridPosition);
+        if (this.hud.getSelectedSpawnShape() === shape) {
+          this.hud.setSelectedSpawnShape(null);
+        } else {
+          this.store.clearSelection();
+          this.store.clearEngineSelection();
+          this.spawnRotation = 0;
+          this.hud.setSelectedSpawnShape(shape);
+          this.updatePlacementPreview(this.lastGridPosition);
+        }
       }
       event.preventDefault();
       return;
     }
 
-    if (isUnavailableShapeHotkey(event.key)) {
-      this.hud.showFeedback('—');
-      event.preventDefault();
-      return;
-    }
-
-    if (event.key === 'r' || event.key === 'R') {
+    if (event.code === 'KeyR') {
       if (this.hud.getSelectedSpawnShape()) {
         this.spawnRotation = (this.spawnRotation + 1) % 4;
         this.updatePlacementPreview(this.lastGridPosition);
@@ -296,7 +396,7 @@ export class InputController {
       return;
     }
 
-    if (event.key === 'Delete' || event.key === 'Backspace') {
+    if (event.code === 'Delete' || event.code === 'Backspace') {
       const ids = [...this.store.getState().selectedBlockIds];
       for (const id of ids) this.store.returnBlock(id);
       if (ids.length > 0) this.hud.showFeedback('↩');
@@ -304,23 +404,29 @@ export class InputController {
       return;
     }
 
-    if (event.key === 'Escape') {
+    if (event.code === 'Escape') {
       if (this.hud.getSelectedSpawnShape()) this.hud.setSelectedSpawnShape(null);
-      else this.store.clearSelection();
+      else {
+        this.store.clearSelection();
+        this.store.clearEngineSelection();
+      }
       this.cancelHold(true);
+      this.cancelRectangleSelection();
+      event.preventDefault();
     }
   };
 
   private onKeyUp = (event: KeyboardEvent): void => {
-    if (event.key === ' ') {
+    if (event.code === 'Space') {
       this.spaceDown = false;
-      event.preventDefault();
+      if (gameplayHotkeysEnabled(event)) event.preventDefault();
     }
   };
 
   private onWindowBlur = (): void => {
     this.spaceDown = false;
     this.cancelHold(true);
+    this.cancelRectangleSelection();
     this.isPanning = false;
     this.panPointerId = null;
     this.pointers.clear();
@@ -364,9 +470,7 @@ export class InputController {
   }
 
   private selectLooseBlock(blockId: string, additive: boolean): void {
-    const state = this.store.getState();
-    const alreadySelected = state.selectedBlockIds.includes(blockId);
-    this.store.selectBlock(blockId, additive || alreadySelected);
+    this.store.selectBlock(blockId, additive);
   }
 
   private updatePlacementPreview(gridPosition: Position | null): void {
@@ -377,13 +481,23 @@ export class InputController {
     }
 
     const state = this.store.getState();
-    const cells = getBlockOccupiedCells(shape, gridPosition, this.spawnRotation);
+    const resolved = (state.buffers[shape] || 0) > 0
+      ? findNearestValidPlacement(shape, this.spawnRotation, gridPosition, getAllOccupiedCells(state), 3)
+      : null;
     this.placementPreview = {
       shape,
-      position: { ...gridPosition },
+      position: resolved ? { ...resolved } : { ...gridPosition },
       rotation: this.spawnRotation,
-      isValid: (state.buffers[shape] || 0) > 0 && !hasCollisionAt(state, cells),
+      isValid: resolved !== null,
     };
+  }
+
+  private cancelRectangleSelection(): void {
+    this.selectionPointerId = null;
+    this.selectionStart = null;
+    this.selectionCurrent = null;
+    this.selectionAdditive = false;
+    this.selectionMoved = false;
   }
 
   private getCanvasPoint(clientX: number, clientY: number): Position {
@@ -402,6 +516,7 @@ export class InputController {
 
   private beginTouchGesture(): void {
     this.cancelHold(true);
+    this.cancelRectangleSelection();
     this.placementPointerId = null;
     this.placementStartPointer = null;
     this.touchGesture = true;

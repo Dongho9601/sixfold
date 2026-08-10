@@ -8,8 +8,8 @@ import {
 import { FieldGrid } from '../src/core/field.ts';
 
 describe('Tetromino Shapes & Collision Math', () => {
-  it('should support rotations for I, O, L, J', () => {
-    const shapes: ShapeType[] = ['I', 'O', 'L', 'J'];
+  it('supports rotations for all seven tetromino Shapes', () => {
+    const shapes: ShapeType[] = ['I', 'O', 'T', 'L', 'J', 'S', 'Z'];
     for (const shape of shapes) {
       for (let r = 0; r < 4; r++) {
         const cells = getBlockOccupiedCells(shape, { x: 5, y: 5 }, r);
@@ -21,6 +21,18 @@ describe('Tetromino Shapes & Collision Math', () => {
         }
       }
     }
+  });
+
+  it('defines canonical T/S/Z cells and rotated occupancy', () => {
+    expect(getBlockOccupiedCells('T', { x: 0, y: 0 }, 0)).toEqual([
+      { x: 0, y: 0 }, { x: 1, y: 0 }, { x: 2, y: 0 }, { x: 1, y: 1 },
+    ]);
+    expect(getBlockOccupiedCells('S', { x: 0, y: 0 }, 1)).toEqual([
+      { x: 1, y: 1 }, { x: 1, y: 2 }, { x: 0, y: 0 }, { x: 0, y: 1 },
+    ]);
+    expect(getBlockOccupiedCells('Z', { x: 5, y: 7 }, 1)).toEqual([
+      { x: 6, y: 7 }, { x: 6, y: 8 }, { x: 5, y: 8 }, { x: 5, y: 9 },
+    ]);
   });
 
   it('should rotate and normalize offset boxes deterministically', () => {

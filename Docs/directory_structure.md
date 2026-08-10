@@ -56,7 +56,7 @@ hold_less_be_more_rune_foundry/
 | `src/core` | Pure deterministic game rules, geometry math, state definitions, and resource formulas. | **Zero** DOM, Canvas, IndexedDB, or UI dependencies. Imports nothing outside `core`. |
 | `src/content` | Declarative authored data (starter patterns, recipes, sectors, fractures). | Data structures referencing `core` types. No UI/platform dependencies. |
 | `src/application` | Session state container, action dispatchers, transaction orchestration. | Imports `core` and `content`. Defines side-effect ports when needed. Does NOT import UI or platform. |
-| `src/platform` | Browser infrastructure (IndexedDB storage, localStorage fallback, session clocks, analytics). | Implements application side-effect ports using browser APIs. NOT a parent or child layer of UI. |
+| `src/platform` | Browser infrastructure (versioned localStorage storage, session clocks, analytics). | Implements application side-effect ports using browser APIs. NOT a parent or child layer of UI. |
 | `src/ui` | Canvas 2D renderer, camera controls, input handlers, overlay HUDs, previews. | Presentation only. Consumes state and dispatches actions via `@application`. **UI never calculates gameplay math.** |
 | `tools/` | Standalone CLI scripts for development and validation. | Run via Node/tsx. Imports canonical logic from `@core` and `@content`. |
 | `tests/` | Automated test suites for domain math, actions, and persistence. | Exercises production modules directly. |

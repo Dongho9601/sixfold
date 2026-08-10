@@ -22,12 +22,12 @@ Implement the production software architecture and playable core loop so the gam
 ### Major Deliverables
 1. **Core Domain Model (`src/core/`):**
    - Simple sparse 2D coordinate grid representation (`Map<string, Cell>`).
-   - Tetromino shape matrices (`I`, `O`, `L`, `J`), rotations, and cell offsets.
+   - All seven tetromino matrices (`I`, `O`, `T`, `L`, `J`, `S`, `Z`), rotations, and cell offsets.
    - Loose Block state, placed cells, and Shape buffers.
    - Pure geometry resolver computing Cohesion, component count, and edge contact.
    - Pattern evaluator for initial Patterns (Heart Seal, Compression Press, Twin Stars).
-   - Atomic Engine Binding and consumptive Submission transactions.
-   - Base Ash burst, Shards, and Engine XP formulas.
+   - Atomic Pattern Bind, Loose Submit, and ordinary Engine Extract transactions.
+   - Ash submission, Shard extraction, and Shape Grade formulas; no Engine XP/Level.
 2. **Authored Starter Content (`src/content/`):**
    - Opening Cradle Sector.
    - Starter Pattern & Recipe definitions (Heart Seal, Compression Press, Twin Stars).
@@ -35,13 +35,13 @@ Implement the production software architecture and playable core loop so the gam
    - Action dispatchers (`PlaceBlock`, `ReturnBlock`, `AnalyzeSelection` fallback, `BindEngine`, `SubmitRecipe`) with placement treated as a commit rather than editor movement.
    - Session state container.
 4. **Platform Infrastructure (`src/platform/`):**
-   - Local save adapter (IndexedDB / localStorage fallback).
+   - Versioned localStorage save adapter with safe malformed-state fallback.
    - Monotonic session clock.
 5. **Canvas 2D Renderer & UI (`src/ui/`):**
    - Sparse Field Canvas 2D renderer with pan and zoom camera.
-   - Interactive Shape ghost placement/rotation and selection controls.
-   - Compact contextual Submission action showing consumption count and payout.
-   - Minimal HUD displaying Ash, Shards, Shape buffers, and active Shape hotkeys.
+   - Snapping Shape ghost placement/rotation, physical-code shortcuts, click/Shift/box selection.
+   - Compact, distinct Bind/Submit/Extract actions with exact consumption and payout previews.
+   - Legible minimal HUD plus collapsible goal/Recipe/Grade sidebar.
 
 ### Dependency Ordering
 $$\text{Core Math \& Domain} \longrightarrow \text{Application Actions} \longrightarrow \text{Storage \& Canvas UI} \longrightarrow \text{Playable Core}$$
@@ -49,8 +49,8 @@ $$\text{Core Math \& Domain} \longrightarrow \text{Application Actions} \longrig
 ### Exit Criteria
 - The game runs in the browser via `npm run dev`.
 - Player can place starter Blocks in the 4×4 Cradle to discover and Bind the Heart Engine.
-- Bound Heart Engine generates new Blocks into buffers over time.
-- Player can place generated Blocks and Submit them to Compression Press or Twin Stars.
+- Heart and ordinary Engines generate independent deterministic randomized 7-bags into uncapped inventory.
+- Player can Bind or Submit Compression/Twin Stars, Extract ordinary Engines for Shards, and upgrade Shape Grades.
 - **Submitted Loose Blocks are consumed and disappear from the board.**
 - Game state persists across browser reloads.
 
@@ -62,21 +62,22 @@ $$\text{Core Math \& Domain} \longrightarrow \text{Application Actions} \longrig
 Play the live browser game, evaluate feel, and fix weaknesses in loop pacing, spatial legibility, and player feedback.
 
 ### Major Deliverables
-1. **Pacing Observation:**
-   - Exercise the existing Engine intervals, buffer caps, and rewards without materially changing the economy or production rules.
+1. **Core Loop Revision:**
+   - Replace buffer balancing/caps with persisted per-Engine shuffled 7-bags.
+   - Support the foundational non-extractable Heart plus 0..N extractable ordinary Engines.
 2. **Core Interaction Contract:**
-   - Shape hotkeys/palette activate a grid ghost; `R` rotates; a valid click commits; unavailable Shape keys give subtle feedback.
+   - Physical `Digit1..Digit7`/Numpad codes activate a snapping grid ghost; `KeyR` rotates; repeat activation toggles placement off.
    - Remove ordinary left-drag movement from gameplay. Right/middle/Space+left pan, the wheel zooms, and a 450 ms Loose Block hold Returns it.
-   - Keep click/Shift+click selection only for exact Submission sets; Engine cells are never selectable for consumption.
+   - Keep click/Shift+click and add empty-Field rectangle selection; Engine cells are excluded.
 3. **Field-First Spatial Feedback:**
    - Evaluate bounded local candidates automatically after placement/Return.
    - Highlight missing geometry and trace valid Patterns on the Field.
    - Distinguish Loose tetromino silhouettes from crystallized Bound Engine structures.
-   - Show Engine next-Shape/progress/full-buffer state directly beside the Engine.
-   - Surface compact Bind/Submit actions with explicit `SUBMIT N` consumption count and reward icons.
+   - Show each Engine's actual next random Shape and progress locally; remove full/blocked state.
+   - Surface distinct Bind/Submit/Extract choices with exact consumption and payout.
 4. **Board Presentation:**
    - Refine camera pan/zoom and establish the two-finger mobile contract.
-   - Replace dashboard HUD/Inspector chrome with a small resource strip and Shape palette.
+   - Keep a larger minimal resource/Shape HUD and add a quiet Recipe/onboarding/Grade sidebar.
 
 ### Exit Criteria
 - Playability testing confirms that new players immediately understand that **Bind keeps Blocks as an Engine** while **Submit consumes Loose Blocks**.
@@ -91,12 +92,10 @@ Play the live browser game, evaluate feel, and fix weaknesses in loop pacing, sp
 Implement all remaining intended product systems, spatial pattern families, and campaign progression.
 
 ### Major Deliverables
-1. **Full Shape & Pattern Expansion (`src/content/`):**
-   - Add remaining 3 tetromino shapes (`T`, `S`, `Z`).
+1. **Pattern Expansion (`src/content/`):**
    - Implement all spatial pattern profiles: Spines, Hollow Rings, Symmetry, Bridges, Fractures, and Grand Patterns.
-2. **Engines, Evolutions & Block Grades:**
-   - Engine leveling, Rebinding, and focused evolution trait choices.
-   - Persistent Block Grade upgrades and Shard spending.
+2. **Engine Evolutions:**
+   - Evaluate Rebinding and focused Engine trait choices only if they create distinct decisions.
 3. **Field Expansion & Weakpoints:**
    - Sector expansion, voids, landmarks, and Survey gates.
    - Fracture resolution mechanics (Point, Line, Hook, Fork, Core Weakpoints).

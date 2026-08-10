@@ -24,12 +24,15 @@ export function calculateAshReward(submissionPower: number): number {
   return Math.round(60 * submissionPower);
 }
 
-export function calculateShardsReward(blockCount: number, quality: number): number {
-  return Math.round(blockCount * (1 + quality));
+/** Extraction reward: total bound Grades, scaled linearly by bound Quality. */
+export function calculateEngineExtractionShards(blocks: Block[], quality: number): number {
+  const gradeTotal = blocks.reduce((sum, block) => sum + block.grade, 0);
+  return Math.max(1, Math.round(gradeTotal * (1 + quality)));
 }
 
-export function calculateEngineXpReward(submissionPower: number): number {
-  return Math.round(submissionPower * 5);
+/** The cost shown beside Grade N is the exact cost to reach Grade N + 1. */
+export function getShapeGradeUpgradeCost(currentGrade: number): number {
+  return Math.max(1, Math.floor(currentGrade)) * 3;
 }
 
 export function getQualityTier(quality: number): 'Valid' | 'Strong' | 'Masterwork' | 'Perfect' {
@@ -44,16 +47,10 @@ export function calculateRecipeReward(blocks: Block[], quality: number): RecipeR
   return {
     submissionPower: power,
     ash: calculateAshReward(power),
-    shards: calculateShardsReward(blocks.length, quality),
-    engineXp: calculateEngineXpReward(power),
     qualityTier: getQualityTier(quality),
   };
 }
 
-export function calculateBlocksPerMinute(baseRate: number, qBind: number, level: number): number {
-  return baseRate * (0.75 + 0.50 * qBind) * Math.pow(1.28, level - 1);
-}
-
-export function getEngineXpThreshold(level: number): number {
-  return Math.round(100 * Math.pow(1.5, level - 1));
+export function calculateBlocksPerMinute(baseRate: number, qBind: number): number {
+  return baseRate * (0.75 + 0.50 * qBind);
 }
