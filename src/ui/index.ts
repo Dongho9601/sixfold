@@ -55,11 +55,14 @@ export class UIController {
     this.camera = new Camera(this.canvas.width, this.canvas.height);
     this.renderer = new FieldRenderer(this.ctx);
     this.hud = new HUD(hudContainer, this.store);
-    this.inspector = new InspectorPanel(inspectorContainer, this.store);
+    this.inspector = new InspectorPanel(inspectorContainer, this.store, (message, isError = false) => {
+      this.hud.showFeedback(message, isError);
+    });
     this.input = new InputController(this.canvas, this.camera, this.store, this.hud);
 
     // Subscribe to store updates
     this.store.subscribe(() => {
+      this.renderer.handleVisualEvents(this.store.drainVisualEvents());
       this.hud.update();
       this.inspector.update();
     });
@@ -80,8 +83,18 @@ export class UIController {
   private startRenderLoop(): void {
     const loop = () => {
       const state = this.store.getState();
-      const dragPreview = this.input.getDragPreview();
-      this.renderer.render(state, this.camera, this.canvas.width, this.canvas.height, dragPreview);
+      const placementPreview = this.input.getPlacementPreview();
+      const holdPreview = this.input.getHoldPreview();
+      this.canvas.style.cursor = placementPreview ? 'crosshair' : 'default';
+      this.renderer.render(
+        state,
+        this.camera,
+        this.canvas.width,
+        this.canvas.height,
+        placementPreview,
+        holdPreview,
+        performance.now(),
+      );
       requestAnimationFrame(loop);
     };
     requestAnimationFrame(loop);

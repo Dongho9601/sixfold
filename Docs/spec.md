@@ -32,8 +32,8 @@ The Field contains two distinct structural states:
 
 ```text
 Engines generate Blocks into Buffers
-  → Player places/rotates Loose Blocks on the sparse Field
-  → Spatial Analyzer / Hints recognize a Pattern
+  → Player selects a Shape, rotates its ghost, and commits it on the sparse Field
+  → The Field evaluates a bounded local candidate and recognizes a Pattern
   → First valid copy can be Bound into a persistent Engine
   → Later valid copies are Submitted to a Recipe
   → Submitted Loose Blocks are consumed and disappear from the Field
@@ -62,7 +62,7 @@ A Block is a single tetromino piece occupying four orthogonally connected cells.
 - **Seven Canonical Shapes:** `I`, `O`, `T`, `L`, `J`, `S`, `Z`.
 - **Block States:**
   - *Buffered:* Stored in Shape inventory, waiting to be placed.
-  - *Loose:* Placed on the Field; can be moved, rotated, returned to buffer, bound, or submitted.
+  - *Loose:* Placed on the Field; can be returned to buffer by a hold, bound, or submitted. Loose Blocks are not drag-movable after placement.
   - *Engine Cell:* Bound into a permanent generator; immutable and non-consumable.
   - *Blueprint Slot:* Ghost placement reservation used for planning and Stencil auto-fill.
 
@@ -77,9 +77,10 @@ Increasing a shape's Grade doubles the material value and Submission payout of a
 
 ### 4.1 Geometry-Based Discovery
 Patterns are discovered through spatial experimentation rather than reading a static technology tree.
-- **Analyzer:** Selecting a group of Loose Blocks and triggering **Analyze** tests the selection against authored geometry predicates (component count, edge contact, bounding density, holes, symmetry, distance, landmarks).
+- **Field Resolver:** After placement or Return, a bounded local candidate based on the recent Block, its connected component, an obvious nearby component, or an explicit selection is evaluated against authored geometry predicates (component count, edge contact, bounding density, holes, symmetry, distance, landmarks). Exhaustive subset search is not part of the ordinary interaction.
+- **Selection:** Loose Blocks may still be selected with click and Shift+click when an unambiguous set is needed for Submission. Analyze may remain as an internal or accessibility fallback, but it is not the ordinary discovery step.
 - **Discovery Result:** Valid undiscovered arrangements unlock the Pattern and add it to the Codex.
-- **Near-Match Clues:** Invalid or partial arrangements return precise spatial feedback (e.g., *"Requires 1 more shared edge"*, *"Inner void is unsealed"*).
+- **Near-Match Clues:** Invalid or partial arrangements highlight relevant Field edges/cells and missing geometry directly; compact numbers or icons may supplement the Field.
 
 ### 4.2 Codex & Hints
 - The **Codex** records all discovered Patterns, best Quality records, saved Stencils, and Recipe rules.
@@ -196,19 +197,22 @@ A **Stencil** is a saved Blueprint layout created from a discovered Pattern or c
 ## 11. UX and Presentation
 
 ### 11.1 Interface Layout
-- **Hero Focus:** The Field dominates the screen with smooth pan and zoom controls (Block view, Pattern view, Engine view, Atlas view).
-- **Desktop:** Multi-panel HUD with Block palette on left, Field center, Recipe/Preview panel right, and Engine production timeline bottom.
-- **Mobile:** Clean full-screen Field with collapsible bottom Block tray and modal context sheets.
+- **Hero Focus:** The Field dominates the screen with smooth pan and zoom controls. The persistent HUD is a small resource strip plus a minimal Shape palette/hotkey row.
+- **Desktop:** Right-drag, middle-drag, or Space+left-drag pans; the wheel zooms. Ordinary left-drag never moves a placed Block.
+- **Mobile:** Tap places or selects, long-pressing a Loose Block Returns it, and two fingers pan/zoom. Advanced mobile polish is deferred.
 
 ### 11.2 Visual & Tactile Feedback
-- **Placement:** Crisp snap-to-grid with subtle tactile audio.
-- **Submission:** Highlight outline $\rightarrow$ spatial collapse animation $\rightarrow$ Blocks vanish $\rightarrow$ temporary afterimage $\rightarrow$ resource count-up.
-- **Clear Actions:** Submission buttons explicitly state consumption count (e.g., `SUBMIT 6 BLOCKS`).
+- **Placement:** A Shape hotkey or palette click activates a grid ghost; `R` rotates it and a valid click commits it. Invalid clicks briefly mark the target without changing state.
+- **Loose vs Bound:** Loose Blocks retain bright individual tetromino silhouettes and a Return affordance. Bound Engine cells share a darker crystallized surface, linking trace, central glyph, and production indicator; their coordinates never change.
+- **Production:** The Engine shows the next Shape, a thin progress ring, and a compact full/buffer-blocked state on the Field. Completion briefly pulses the Engine.
+- **Patterns:** Near-matches mark missing cells/edges. Valid Patterns trace their involved Blocks and surface one compact Bind or Submit action.
+- **Return:** Holding a Loose Block for about 450 ms shows a radial indicator and returns it to its buffer; release or pointer movement cancels. Engine cells cannot Return. Delete/Backspace is the keyboard alternate for a selected Loose Block.
+- **Submission:** Exact selected Loose Blocks receive a consumption outline, a compact reward preview, and a `SUBMIT N` action. Confirmation collapses/fades them and briefly shows reward icons; Return and Submit use different visual effects.
 
 ### 11.3 Accessibility
 - Symbol indicators on all Blocks alongside color coding for colorblind accessibility.
 - Reduced motion setting replacing screen shakes/collapses with simple fades.
-- Full keyboard shortcut mapping for placement, rotation, selection, and submission.
+- Shape hotkeys are `1=I`, `2=O`, `3=T`, `4=L`, `5=J`, `6=S`, `7=Z`; only currently implemented/unlocked Shapes activate. `R` rotates the active ghost and `Delete`/`Backspace` Returns selected Loose Blocks.
 
 ---
 
@@ -280,7 +284,7 @@ Representative starter Recipes illustrating spatial progression:
 
 ### 15.3 Open Tuning Questions
 - *Exact Engine production intervals:* To be tuned during Pass 2 playtesting for optimal pacing.
-- *Analyze auto-prompt threshold:* Whether obvious Patterns auto-highlight or require manual Analyze clicks.
+- *Pattern feedback density:* How much near-match highlighting is helpful before the Field feels noisy.
 - *Perfect Quality threshold:* Whether $Q \ge 0.95$ or $Q \ge 0.90$ feels more achievable and satisfying.
 
 ### 15.4 Post-Launch Possibilities

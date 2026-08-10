@@ -1,10 +1,13 @@
 /**
- * HUD Overlay controller for HL;BM — Rune Foundry.
- * Renders stable HTML overlays for currencies, Heart Engine status, shape buffers palette, and field action buttons.
+ * Minimal persistent HUD for Rune Foundry.
+ * Resources and Shape buffers stay visible; engine and Pattern detail live on the Field.
  */
 
-import { ShapeType } from '../core/index.ts';
+import { getBlockOccupiedCells, ShapeType } from '../core/index.ts';
 import { AppStore } from '../application/store.ts';
+
+const AVAILABLE_SHAPES: ShapeType[] = ['I', 'O', 'L', 'J'];
+const SHAPE_HOTKEYS: Record<ShapeType, string> = { I: '1', O: '2', L: '4', J: '5' };
 
 export class HUD {
   private container: HTMLElement;
@@ -28,21 +31,17 @@ export class HUD {
   }
 
   showFeedback(message: string, isError: boolean = false): void {
-    const banner = this.container.querySelector('#hud-status-banner') as HTMLElement;
+    const banner = this.container.querySelector('#hud-feedback') as HTMLElement | null;
     if (!banner) return;
 
-    if (this.statusTimeoutId !== null) {
-      clearTimeout(this.statusTimeoutId);
-    }
-
+    if (this.statusTimeoutId !== null) window.clearTimeout(this.statusTimeoutId);
     banner.textContent = message;
-    banner.style.color = isError ? '#f87171' : '#38bdf8';
-    banner.style.opacity = '1';
-
+    banner.style.color = isError ? '#d56e5f' : '#b7b4ae';
+    banner.style.opacity = message ? '1' : '0';
     this.statusTimeoutId = window.setTimeout(() => {
       banner.style.opacity = '0';
       this.statusTimeoutId = null;
-    }, 3000);
+    }, 900);
   }
 
   private initDOM(): void {
@@ -52,284 +51,242 @@ export class HUD {
           position: absolute;
           inset: 0;
           pointer-events: none;
-          display: flex;
-          flex-direction: column;
-          justify-content: space-between;
-          padding: 16px;
-          font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-          color: #f3f4f6;
+          color: #b7b4ae;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
           user-select: none;
         }
 
-        .rf-top-bar {
+        .rf-resource-strip {
+          position: absolute;
+          top: 14px;
+          left: 16px;
           display: flex;
-          justify-content: space-between;
           align-items: center;
-          background: rgba(17, 24, 39, 0.85);
-          backdrop-filter: blur(8px);
-          border: 1px solid rgba(75, 85, 99, 0.4);
-          border-radius: 12px;
-          padding: 12px 20px;
-          pointer-events: auto;
-          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-        }
-
-        .rf-title {
-          font-weight: 700;
-          font-size: 16px;
-          letter-spacing: 0.05em;
-          color: #f3f4f6;
-        }
-
-        .rf-currencies {
-          display: flex;
-          gap: 20px;
-          font-weight: 600;
-          font-size: 15px;
-        }
-
-        .rf-ash { color: #f97316; }
-        .rf-shards { color: #38bdf8; }
-
-        .rf-engine-status {
-          font-size: 13px;
-          background: rgba(31, 41, 55, 0.7);
-          padding: 6px 12px;
-          border-radius: 6px;
-          border: 1px solid rgba(107, 114, 128, 0.3);
-        }
-
-        .rf-status-banner {
-          align-self: center;
-          background: rgba(17, 24, 39, 0.9);
-          border: 1px solid rgba(75, 85, 99, 0.5);
-          border-radius: 20px;
-          padding: 6px 16px;
-          font-size: 13px;
-          font-weight: 600;
-          transition: opacity 0.3s ease;
-          opacity: 0;
-          pointer-events: none;
-        }
-
-        .rf-bottom-bar {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-end;
-          pointer-events: auto;
           gap: 16px;
+          min-height: 32px;
+          padding: 4px 10px;
+          background: rgba(10, 10, 10, 0.78);
+          border-bottom: 1px solid rgba(94, 90, 84, 0.58);
+          pointer-events: auto;
         }
+
+        .rf-mark {
+          color: #e3b53c;
+          font-size: 12px;
+          letter-spacing: 0.14em;
+        }
+
+        .rf-resource {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          color: #b7b4ae;
+          font-size: 14px;
+          font-weight: 700;
+          line-height: 20px;
+        }
+
+        .rf-ash-icon {
+          color: #dc8151;
+          font-size: 16px;
+          line-height: 1;
+        }
+
+        .rf-resource-icon {
+          width: 19px;
+          height: 19px;
+          object-fit: contain;
+          image-rendering: pixelated;
+        }
+
+        .rf-reset {
+          width: 24px;
+          height: 24px;
+          margin-left: 2px;
+          padding: 0;
+          color: #5e5a54;
+          background: transparent;
+          border: 0;
+          font: inherit;
+          font-size: 16px;
+          cursor: pointer;
+        }
+
+        .rf-reset:hover { color: #b7b4ae; }
 
         .rf-palette {
+          position: absolute;
+          left: 50%;
+          bottom: 16px;
           display: flex;
-          gap: 10px;
-          background: rgba(17, 24, 39, 0.85);
-          backdrop-filter: blur(8px);
-          border: 1px solid rgba(75, 85, 99, 0.4);
-          border-radius: 12px;
-          padding: 10px 16px;
-          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+          align-items: end;
+          gap: 5px;
+          transform: translateX(-50%);
+          padding: 5px 7px;
+          background: rgba(10, 10, 10, 0.8);
+          border-top: 1px solid rgba(94, 90, 84, 0.58);
+          pointer-events: auto;
         }
 
         .rf-shape-btn {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          width: 54px;
-          height: 54px;
-          border-radius: 8px;
-          border: 2px solid rgba(75, 85, 99, 0.5);
-          background: rgba(31, 41, 55, 0.8);
-          color: #f3f4f6;
-          font-weight: 700;
+          position: relative;
+          display: grid;
+          place-items: center;
+          width: 48px;
+          height: 46px;
+          padding: 3px 3px 6px;
+          color: #b7b4ae;
+          background: transparent;
+          border: 1px solid transparent;
           cursor: pointer;
-          transition: all 0.15s ease;
         }
 
-        .rf-shape-btn:hover:not(:disabled) {
-          border-color: #38bdf8;
-          transform: translateY(-2px);
-        }
+        .rf-shape-btn:hover:not(:disabled) { border-color: #5e5a54; }
+        .rf-shape-btn.active { border-color: #e3b53c; background: rgba(89, 69, 99, 0.3); }
+        .rf-shape-btn:disabled { opacity: 0.28; cursor: not-allowed; }
 
-        .rf-shape-btn.active {
-          border-color: #38bdf8;
-          background: rgba(56, 189, 248, 0.25);
-          box-shadow: 0 0 14px rgba(56, 189, 248, 0.5);
-        }
-
-        .rf-shape-btn:disabled {
-          opacity: 0.4;
-          cursor: not-allowed;
+        .rf-hotkey {
+          position: absolute;
+          right: 3px;
+          bottom: 1px;
+          color: #5e5a54;
+          font-size: 9px;
+          line-height: 10px;
         }
 
         .rf-shape-count {
-          font-size: 10px;
-          font-weight: 500;
-          color: #9ca3af;
-          margin-top: 2px;
+          position: absolute;
+          left: 4px;
+          bottom: 1px;
+          color: #b7b4ae;
+          font-size: 9px;
+          line-height: 10px;
         }
 
-        .rf-actions-bar {
-          display: flex;
-          gap: 8px;
-          background: rgba(17, 24, 39, 0.85);
-          backdrop-filter: blur(8px);
-          border: 1px solid rgba(75, 85, 99, 0.4);
-          border-radius: 12px;
-          padding: 10px 14px;
-          box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+        .rf-shape-glyph {
+          display: grid;
+          grid-template-columns: repeat(4, 6px);
+          grid-template-rows: repeat(4, 6px);
+          gap: 1px;
+          width: 27px;
+          height: 27px;
+          color: #e3b53c;
         }
 
-        .rf-btn {
-          background: #374151;
-          color: #f3f4f6;
-          border: 1px solid rgba(107, 114, 128, 0.4);
-          border-radius: 6px;
-          padding: 8px 12px;
-          font-size: 13px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: background 0.15s ease;
+        .rf-shape-glyph i {
+          display: block;
+          width: 6px;
+          height: 6px;
+          background: currentColor;
         }
 
-        .rf-btn:hover {
-          background: #4b5563;
+        .rf-shape-btn[data-shape="I"] .rf-shape-glyph { color: #8bbbc2; }
+        .rf-shape-btn[data-shape="O"] .rf-shape-glyph { color: #e3b53c; }
+        .rf-shape-btn[data-shape="L"] .rf-shape-glyph { color: #dc8151; }
+        .rf-shape-btn[data-shape="J"] .rf-shape-glyph { color: #91a7cb; }
+
+        .rf-feedback {
+          position: absolute;
+          top: 58px;
+          left: 50%;
+          min-width: 18px;
+          padding: 3px 7px;
+          color: #b7b4ae;
+          background: rgba(10, 10, 10, 0.84);
+          border-bottom: 1px solid rgba(94, 90, 84, 0.5);
+          text-align: center;
+          font-size: 12px;
+          font-weight: 700;
+          opacity: 0;
+          transform: translateX(-50%);
+          transition: opacity 120ms ease;
+          pointer-events: none;
+        }
+
+        @media (max-width: 560px) {
+          .rf-resource-strip { top: 8px; left: 8px; gap: 9px; }
+          .rf-palette { bottom: 8px; }
+          .rf-shape-btn { width: 44px; }
         }
       </style>
 
       <div class="rf-hud">
-        <div class="rf-top-bar">
-          <div class="rf-title">HL;BM — RUNE FOUNDRY</div>
-          <div class="rf-currencies">
-            <span class="rf-ash" id="hud-ash">🔥 0 Ash</span>
-            <span class="rf-shards" id="hud-shards">💎 0 Shards</span>
-          </div>
-          <div class="rf-engine-status" id="hud-engine">Engine: Unbound</div>
+        <div class="rf-resource-strip" aria-label="Resources">
+          <span class="rf-mark">RF</span>
+          <span class="rf-resource" title="Ash"><span class="rf-ash-icon" aria-hidden="true">✦</span><span id="hud-ash">0</span></span>
+          <span class="rf-resource" title="Shards"><img class="rf-resource-icon" src="/assets/hlbm/icon_gem.png" alt="" /><span id="hud-shards">0</span></span>
+          <button class="rf-reset" id="btn-reset" type="button" title="Reset" aria-label="Reset">↺</button>
         </div>
 
-        <div class="rf-status-banner" id="hud-status-banner">Ready</div>
+        <div class="rf-feedback" id="hud-feedback" aria-live="polite"></div>
 
-        <div class="rf-bottom-bar">
-          <div class="rf-palette" id="hud-palette">
-            <button class="rf-shape-btn" id="btn-shape-I" data-shape="I">
-              <span>I</span>
-              <span class="rf-shape-count" id="count-shape-I">0 in buf</span>
+        <div class="rf-palette" id="hud-palette" aria-label="Loose Block palette">
+          ${AVAILABLE_SHAPES.map(shape => `
+            <button class="rf-shape-btn" id="btn-shape-${shape}" data-shape="${shape}" type="button" aria-label="${shape} Block">
+              ${shapeGlyphMarkup(shape)}
+              <span class="rf-shape-count" id="count-shape-${shape}">0</span>
+              <span class="rf-hotkey">${SHAPE_HOTKEYS[shape]}</span>
             </button>
-            <button class="rf-shape-btn" id="btn-shape-O" data-shape="O">
-              <span>O</span>
-              <span class="rf-shape-count" id="count-shape-O">0 in buf</span>
-            </button>
-            <button class="rf-shape-btn" id="btn-shape-L" data-shape="L">
-              <span>L</span>
-              <span class="rf-shape-count" id="count-shape-L">0 in buf</span>
-            </button>
-            <button class="rf-shape-btn" id="btn-shape-J" data-shape="J">
-              <span>J</span>
-              <span class="rf-shape-count" id="count-shape-J">0 in buf</span>
-            </button>
-          </div>
-          <div class="rf-actions-bar">
-            <button class="rf-btn" id="btn-select-all">Select All</button>
-            <button class="rf-btn" id="btn-clear-sel">Clear</button>
-            <button class="rf-btn" id="btn-rotate">Rotate (R)</button>
-            <button class="rf-btn" id="btn-return">Return (Del)</button>
-            <button class="rf-btn" style="background:#7f1d1d;" id="btn-reset">Reset</button>
-          </div>
+          `).join('')}
         </div>
       </div>
     `;
 
-    // Attach stable event listeners to shape buttons
-    const shapes: ShapeType[] = ['I', 'O', 'L', 'J'];
-    for (const shape of shapes) {
-      const btn = this.container.querySelector(`#btn-shape-${shape}`);
-      btn?.addEventListener('click', () => {
+    for (const shape of AVAILABLE_SHAPES) {
+      const button = this.container.querySelector(`#btn-shape-${shape}`);
+      button?.addEventListener('click', () => {
         const state = this.store.getState();
-        if (state.buffers[shape] > 0) {
-          // Toggle behavior: clicking active shape deselects it to allow panning
-          if (this.selectedSpawnShape === shape) {
-            this.setSelectedSpawnShape(null);
-            this.showFeedback('Selection mode: Panning');
-          } else {
-            this.setSelectedSpawnShape(shape);
-            this.showFeedback(`Selected ${shape} for placement`);
-          }
-        } else {
-          this.showFeedback(`Buffer empty for ${shape}`, true);
+        if ((state.buffers[shape] || 0) <= 0) {
+          this.showFeedback('0', true);
+          return;
         }
+
+        if (this.selectedSpawnShape === shape) {
+          this.selectedSpawnShape = null;
+        } else {
+          this.selectedSpawnShape = shape;
+          this.store.clearSelection();
+        }
+        this.update();
       });
     }
 
-    // Attach stable event listeners to action buttons
-    this.container.querySelector('#btn-select-all')?.addEventListener('click', () => {
-      this.store.selectAllLooseBlocks();
-    });
-    this.container.querySelector('#btn-clear-sel')?.addEventListener('click', () => {
-      this.store.clearSelection();
-    });
-    this.container.querySelector('#btn-rotate')?.addEventListener('click', () => {
-      const state = this.store.getState();
-      if (state.selectedBlockIds.length > 0) {
-        for (const id of state.selectedBlockIds) {
-          this.store.rotateBlock(id);
-        }
-      }
-    });
-    this.container.querySelector('#btn-return')?.addEventListener('click', () => {
-      const state = this.store.getState();
-      if (state.selectedBlockIds.length > 0) {
-        const ids = [...state.selectedBlockIds];
-        for (const id of ids) {
-          this.store.returnBlock(id);
-        }
-      }
-    });
     this.container.querySelector('#btn-reset')?.addEventListener('click', () => {
-      if (confirm('Reset game state and start fresh?')) {
+      if (window.confirm('Reset Rune Foundry?')) {
         this.store.resetGame();
         this.selectedSpawnShape = 'I';
-        this.showFeedback('Game reset');
+        this.update();
+        this.showFeedback('↺');
       }
     });
   }
 
   update(): void {
     const state = this.store.getState();
-
-    // 1. Currencies
     const ashEl = this.container.querySelector('#hud-ash');
-    if (ashEl) ashEl.textContent = `🔥 ${state.currencies.ash} Ash`;
-
     const shardsEl = this.container.querySelector('#hud-shards');
-    if (shardsEl) shardsEl.textContent = `💎 ${state.currencies.shards} Shards`;
+    if (ashEl) ashEl.textContent = compactNumber(state.currencies.ash);
+    if (shardsEl) shardsEl.textContent = compactNumber(state.currencies.shards);
 
-    // 2. Engine status
-    const engineEl = this.container.querySelector('#hud-engine');
-    if (engineEl) {
-      if (state.isHeartEngineBound && state.heartEngine) {
-        engineEl.textContent = `Heart Engine Lv.${state.heartEngine.level} [XP: ${state.heartEngine.xp}]`;
-      } else {
-        engineEl.textContent = 'Heart Engine: UNBOUND (Fill Cradle)';
-      }
-    }
-
-    // 3. Buffer Palette Elements
-    const shapes: ShapeType[] = ['I', 'O', 'L', 'J'];
-    for (const shape of shapes) {
-      const btn = this.container.querySelector(`#btn-shape-${shape}`) as HTMLButtonElement | null;
+    for (const shape of AVAILABLE_SHAPES) {
+      const button = this.container.querySelector(`#btn-shape-${shape}`) as HTMLButtonElement | null;
       const countEl = this.container.querySelector(`#count-shape-${shape}`);
-      if (btn && countEl) {
-        const count = state.buffers[shape] || 0;
-        countEl.textContent = `${count} in buf`;
-        btn.disabled = count <= 0;
-        btn.classList.toggle('active', this.selectedSpawnShape === shape);
-
-        // Auto-deselect shape if count drops to 0
-        if (count <= 0 && this.selectedSpawnShape === shape) {
-          this.selectedSpawnShape = null;
-        }
-      }
+      const count = state.buffers[shape] || 0;
+      if (!button || !countEl) continue;
+      countEl.textContent = compactNumber(count);
+      button.disabled = count <= 0;
+      button.setAttribute('aria-label', `${shape} Block, ${count} available, hotkey ${SHAPE_HOTKEYS[shape]}`);
+      if (count <= 0 && this.selectedSpawnShape === shape) this.selectedSpawnShape = null;
+      button.classList.toggle('active', this.selectedSpawnShape === shape);
     }
   }
+}
+
+function compactNumber(value: number): string {
+  return value >= 1000 ? `${(value / 1000).toFixed(1)}k` : `${value}`;
+}
+
+function shapeGlyphMarkup(shape: ShapeType): string {
+  const cells = getBlockOccupiedCells(shape, { x: 0, y: 0 }, 0);
+  return `<span class="rf-shape-glyph" aria-hidden="true">${cells.map(cell => `<i style="grid-column:${cell.x + 1};grid-row:${cell.y + 1}"></i>`).join('')}</span>`;
 }

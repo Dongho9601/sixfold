@@ -1,8 +1,100 @@
 import { describe, expect, it, vi } from 'vitest';
 import { AppStore } from '../src/application/store.ts';
 import { loadGameState, saveGameState } from '../src/platform/storage.ts';
+import { getEngineProductionView } from '../src/core/engine.ts';
+import {
+  isUnavailableShapeHotkey,
+  shapeForHotkey,
+  shouldCompleteLongPress,
+} from '../src/ui/input.ts';
 
 describe('Pass 1 Interactive Correctness & Persistence Audit', () => {
+  it('Pass 2 shape hotkeys only activate implemented Shapes', () => {
+    expect(shapeForHotkey('1')).toBe('I');
+    expect(shapeForHotkey('2')).toBe('O');
+    expect(shapeForHotkey('4')).toBe('L');
+    expect(shapeForHotkey('5')).toBe('J');
+    expect(shapeForHotkey('3')).toBeNull();
+    expect(shapeForHotkey('6')).toBeNull();
+    expect(shapeForHotkey('7')).toBeNull();
+    expect(isUnavailableShapeHotkey('3')).toBe(true);
+    expect(isUnavailableShapeHotkey('6')).toBe(true);
+    expect(isUnavailableShapeHotkey('7')).toBe(true);
+  });
+
+  it('Pass 2 click placement commits a Loose Block at the ghost location', () => {
+    const store = new AppStore();
+    const result = store.placeBlock('I', { x: 8, y: 5 }, 1);
+    expect(result.success).toBe(true);
+    expect(result.blockId).toBeDefined();
+    expect(store.getState().blocks[result.blockId!].position).toEqual({ x: 8, y: 5 });
+    expect(store.getState().blocks[result.blockId!].state).toBe('Loose');
+  });
+
+  it('Pass 2 long-press contract completes only after 450 ms without movement', () => {
+    expect(shouldCompleteLongPress(449, false)).toBe(false);
+    expect(shouldCompleteLongPress(450, false)).toBe(true);
+    expect(shouldCompleteLongPress(900, true)).toBe(false);
+
+    const store = new AppStore();
+    const placed = store.placeBlock('O', { x: 8, y: 8 });
+    expect(placed.success).toBe(true);
+    const blockId = placed.blockId!;
+    expect(store.returnBlock(blockId).success).toBe(true);
+    expect(store.returnBlock(blockId).success).toBe(false);
+    expect(store.getState().buffers.O).toBe(1);
+  });
+
+  it('Pass 2 production UI view follows canonical Engine state and exposes blocked buffers', () => {
+    const engine = {
+      id: 'engine-heart',
+      name: 'Heart Engine',
+      level: 1,
+      xp: 0,
+      quality: 1,
+      accumulatedTimeSec: 2.4,
+      constituentBlockIds: [],
+    };
+    const view = getEngineProductionView(engine, { I: 0, O: 1, L: 1, J: 1 });
+    expect(view.nextShape).toBe('I');
+    expect(view.progress).toBeGreaterThan(0.4);
+    expect(view.progress).toBeLessThan(0.6);
+
+    const blocked = getEngineProductionView(engine, { I: 3, O: 3, L: 3, J: 3 });
+    expect(blocked.nextShape).toBeNull();
+    expect(blocked.isBlocked).toBe(true);
+  });
+
+  it('Pass 2 Field feedback refreshes after placement and Return', () => {
+    const store = new AppStore();
+    store.getState().buffers.O = 2;
+    const first = store.placeBlock('O', { x: 10, y: 10 });
+    const second = store.placeBlock('O', { x: 12, y: 10 });
+
+    expect(first.success).toBe(true);
+    expect(second.success).toBe(true);
+    expect(store.getState().fieldAnalysis?.patternId).toBe('compression_press');
+    expect(store.getState().fieldAnalysis?.isValid).toBe(true);
+
+    store.returnBlock(first.blockId!);
+    expect(store.getState().fieldAnalysis?.patternId).toBe('compression_press');
+    expect(store.getState().fieldAnalysis?.isValid).toBe(false);
+  });
+
+  it('Pass 2 valid Heart Seal feedback can bind the Field candidate without a selection panel', () => {
+    const store = new AppStore();
+    store.getState().buffers.I = 4;
+    for (const x of [0, 1, 2, 3]) {
+      expect(store.placeBlock('I', { x, y: 0 }, 1).success).toBe(true);
+    }
+
+    expect(store.getState().fieldAnalysis?.patternId).toBe('heart_seal');
+    expect(store.getState().fieldAnalysis?.isValid).toBe(true);
+    expect(store.getState().selectedBlockIds).toHaveLength(0);
+    expect(store.bindEngine().success).toBe(true);
+    expect(Object.values(store.getState().blocks).every(block => block.state === 'Bound')).toBe(true);
+  });
+
   it('1. should allow switching active spawn shapes cleanly', () => {
     const store = new AppStore();
 

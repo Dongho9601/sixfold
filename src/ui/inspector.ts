@@ -1,311 +1,207 @@
 /**
- * Inspector and Submission Preview Modal Controller for HL;BM — Rune Foundry.
- * Displays pattern feedback, Quality metrics, near-match clues, Bind Heart Seal, and SUBMIT N BLOCKS action.
+ * Context action strip. It appears only when the Field or an explicit selection
+ * has something actionable; there is no persistent Inspector panel.
  */
 
-import { calculateRecipeReward, Block } from '../core/index.ts';
 import { AppStore } from '../application/store.ts';
+
+type ContextAction = 'bind' | 'submit' | 'none';
 
 export class InspectorPanel {
   private container: HTMLElement;
   private store: AppStore;
-  private currentActionType: 'bind' | 'submit' | 'none' = 'none';
+  private currentAction: ContextAction = 'none';
+  private feedback: (message: string, isError?: boolean) => void;
 
-  constructor(container: HTMLElement, store: AppStore) {
+  constructor(container: HTMLElement, store: AppStore, feedback: (message: string, isError?: boolean) => void = () => undefined) {
     this.container = container;
     this.store = store;
+    this.feedback = feedback;
     this.initDOM();
   }
 
   private initDOM(): void {
     this.container.innerHTML = `
       <style>
-        .rf-inspector {
+        .rf-context {
           position: absolute;
-          top: 80px;
-          right: 16px;
-          width: 320px;
-          background: rgba(17, 24, 39, 0.9);
-          backdrop-filter: blur(10px);
-          border: 1px solid rgba(75, 85, 99, 0.5);
-          border-radius: 12px;
-          padding: 16px;
-          font-family: system-ui, -apple-system, sans-serif;
-          color: #f3f4f6;
-          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
+          left: 50%;
+          bottom: 84px;
+          display: none;
+          align-items: center;
+          gap: 9px;
+          min-height: 38px;
+          padding: 5px 7px 5px 8px;
+          color: #b7b4ae;
+          background: rgba(10, 10, 10, 0.9);
+          border-bottom: 1px solid rgba(94, 90, 84, 0.7);
+          transform: translateX(-50%);
           pointer-events: auto;
           user-select: none;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
         }
 
-        .rf-insp-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          border-bottom: 1px solid rgba(75, 85, 99, 0.4);
-          padding-bottom: 8px;
-        }
-
-        .rf-insp-title {
-          font-weight: 700;
-          font-size: 14px;
-          color: #9ca3af;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-        }
-
-        .rf-insp-count {
-          font-size: 13px;
-          background: #374151;
-          padding: 2px 8px;
-          border-radius: 12px;
-        }
-
-        .rf-pattern-card {
-          background: rgba(31, 41, 55, 0.7);
-          border-radius: 8px;
-          padding: 12px;
-          border: 1px solid rgba(107, 114, 128, 0.3);
-        }
-
-        .rf-pattern-name {
-          font-size: 16px;
-          font-weight: 700;
-          color: #38bdf8;
-          margin-bottom: 4px;
-        }
-
-        .rf-pattern-status {
-          font-size: 12px;
-          font-weight: 600;
-          color: #22c55e;
-          display: inline-block;
-          margin-bottom: 8px;
-        }
-
-        .rf-pattern-nearmatch {
-          color: #f59e0b;
-        }
-
-        .rf-reward-grid {
+        .rf-context-icon {
+          width: 26px;
+          height: 26px;
           display: grid;
-          grid-template-columns: 1fr 1fr 1fr;
-          gap: 8px;
-          margin: 10px 0;
-          background: rgba(17, 24, 39, 0.6);
-          padding: 8px;
-          border-radius: 6px;
-          text-align: center;
+          place-items: center;
         }
 
-        .rf-reward-val {
-          font-size: 15px;
+        .rf-context-icon img {
+          width: 25px;
+          height: 25px;
+          object-fit: contain;
+          image-rendering: pixelated;
+        }
+
+        .rf-context-main {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          min-width: 72px;
+          font-size: 12px;
+          font-weight: 700;
+          letter-spacing: 0.06em;
+        }
+
+        .rf-context-metric {
+          color: #e3b53c;
+          white-space: nowrap;
+        }
+
+        .rf-context-rewards {
+          display: flex;
+          align-items: center;
+          gap: 7px;
+          padding-left: 4px;
+          color: #b7b4ae;
+          font-size: 11px;
           font-weight: 700;
         }
 
-        .rf-reward-lbl {
-          font-size: 10px;
-          color: #9ca3af;
-          text-transform: uppercase;
+        .rf-reward { display: inline-flex; align-items: center; gap: 3px; }
+        .rf-reward-ash { color: #dc8151; }
+        .rf-reward-xp { color: #b78dbc; }
+        .rf-reward-gem { width: 15px; height: 15px; image-rendering: pixelated; }
+
+        .rf-quality {
+          color: #506047;
+          font-size: 13px;
+          letter-spacing: 0.04em;
+          white-space: nowrap;
         }
 
-        .rf-action-btn-primary {
-          width: 100%;
-          padding: 12px;
-          border-radius: 8px;
-          border: none;
-          font-size: 15px;
-          font-weight: 700;
+        .rf-context-action {
+          min-width: 64px;
+          height: 28px;
+          padding: 0 9px;
+          color: #0a0a0a;
+          background: #e3b53c;
+          border: 0;
+          font: inherit;
+          font-size: 11px;
+          font-weight: 900;
+          letter-spacing: 0.08em;
           cursor: pointer;
-          transition: all 0.15s ease;
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
         }
 
-        .rf-btn-bind {
-          background: linear-gradient(135deg, #a855f7, #7e22ce);
-          color: #ffffff;
-          box-shadow: 0 0 16px rgba(168, 85, 247, 0.4);
-        }
+        .rf-context-action:hover { background: #f1cc66; }
+        .rf-context-submit { background: #53666d; color: #0a0a0a; }
+        .rf-context-submit:hover { background: #8bbbc2; }
+        .rf-context-near { color: #a17d3b; }
 
-        .rf-btn-bind:hover {
-          background: linear-gradient(135deg, #c084fc, #9333ea);
-        }
-
-        .rf-btn-submit {
-          background: linear-gradient(135deg, #0284c7, #0369a1);
-          color: #ffffff;
-          box-shadow: 0 0 16px rgba(2, 132, 199, 0.4);
-        }
-
-        .rf-btn-submit:hover {
-          background: linear-gradient(135deg, #38bdf8, #0284c7);
+        @media (max-width: 560px) {
+          .rf-context { bottom: 70px; max-width: calc(100vw - 16px); }
+          .rf-context-rewards { gap: 4px; }
         }
       </style>
 
-      <div class="rf-inspector">
-        <div class="rf-insp-header">
-          <div class="rf-title">Selection</div>
-          <div class="rf-insp-count" id="insp-header-count">0 Blocks</div>
+      <div class="rf-context" id="rf-context" role="status">
+        <div class="rf-context-icon"><img id="rf-context-icon" src="/assets/hlbm/icon_seal.png" alt="" /></div>
+        <div class="rf-context-main">
+          <span id="rf-context-name">HEART SEAL</span>
+          <span class="rf-context-metric" id="rf-context-metric"></span>
+          <span class="rf-quality" id="rf-quality"></span>
         </div>
-
-        <div class="rf-pattern-card" id="insp-empty-msg" style="text-align:center; color:#9ca3af; font-size:13px;">
-          Select Loose Blocks on the Field to Analyze, Bind, or Submit.
-        </div>
-
-        <div class="rf-pattern-card" id="insp-card" style="display:none;">
-          <div class="rf-pattern-name" id="insp-title">Pattern Name</div>
-          <div class="rf-pattern-status" id="insp-status">Status</div>
-          <div id="insp-clue" style="font-size:12px; color:#d1d5db; margin-bottom:8px; line-height:1.4;">
-            Clue description.
-          </div>
-
-          <div class="rf-reward-grid" id="insp-rewards" style="display:none;">
-            <div>
-              <div class="rf-reward-val" style="color:#f97316;" id="reward-ash">+0</div>
-              <div class="rf-reward-lbl">Ash</div>
-            </div>
-            <div>
-              <div class="rf-reward-val" style="color:#38bdf8;" id="reward-shards">+0</div>
-              <div class="rf-reward-lbl">Shards</div>
-            </div>
-            <div>
-              <div class="rf-reward-val" style="color:#c084fc;" id="reward-xp">+0</div>
-              <div class="rf-reward-lbl">Engine XP</div>
-            </div>
-          </div>
-
-          <div id="insp-warning" style="font-size:11px; color:#ef4444; margin-bottom:10px; text-align:center; display:none;">
-            ⚠️ Submitted Loose Blocks will be consumed and removed from Field.
-          </div>
-
-          <button class="rf-action-btn-primary" id="btn-insp-action" style="display:none;">
-            ACTION
-          </button>
-        </div>
+        <div class="rf-context-rewards" id="rf-context-rewards"></div>
+        <button class="rf-context-action" id="rf-context-action" type="button">BIND</button>
       </div>
     `;
 
-    // Attach stable event listener ONCE
-    const actionBtn = this.container.querySelector('#btn-insp-action');
-    actionBtn?.addEventListener('click', () => {
-      if (this.currentActionType === 'bind') {
-        const res = this.store.bindEngine();
-        if (!res.success) {
-          alert(res.error || 'Failed to bind engine.');
-        }
-      } else if (this.currentActionType === 'submit') {
-        const res = this.store.submitRecipe();
-        if (!res.success) {
-          alert(res.error || 'Failed to submit recipe.');
-        }
+    this.container.querySelector('#rf-context-action')?.addEventListener('click', () => {
+      if (this.currentAction === 'bind') {
+        const result = this.store.bindEngine();
+        if (!result.success) this.feedback('×', true);
+      } else if (this.currentAction === 'submit') {
+        const result = this.store.submitRecipe();
+        if (!result.success) this.feedback('×', true);
       }
     });
   }
 
   update(): void {
     const state = this.store.getState();
-    const selectedLooseBlocks = state.selectedBlockIds
-      .map(id => state.blocks[id])
-      .filter((b): b is Block => Boolean(b) && b.state === 'Loose');
+    const context = this.container.querySelector('#rf-context') as HTMLElement | null;
+    const icon = this.container.querySelector('#rf-context-icon') as HTMLImageElement | null;
+    const name = this.container.querySelector('#rf-context-name');
+    const metric = this.container.querySelector('#rf-context-metric');
+    const quality = this.container.querySelector('#rf-quality');
+    const rewards = this.container.querySelector('#rf-context-rewards');
+    const action = this.container.querySelector('#rf-context-action') as HTMLButtonElement | null;
+    if (!context || !icon || !name || !metric || !quality || !rewards || !action) return;
 
-    const looseCount = selectedLooseBlocks.length;
-    const analysis = state.lastAnalysis;
+    const fieldAnalysis = state.fieldAnalysis;
+    const preview = this.store.getSubmissionPreview();
+    this.currentAction = 'none';
+    context.classList.remove('rf-context-near');
+    context.style.display = 'none';
+    rewards.innerHTML = '';
+    quality.textContent = '';
+    metric.textContent = '';
 
-    const countEl = this.container.querySelector('#insp-header-count');
-    const emptyMsgEl = this.container.querySelector('#insp-empty-msg') as HTMLElement | null;
-    const cardEl = this.container.querySelector('#insp-card') as HTMLElement | null;
-    const titleEl = this.container.querySelector('#insp-title');
-    const statusEl = this.container.querySelector('#insp-status');
-    const clueEl = this.container.querySelector('#insp-clue');
-    const rewardsEl = this.container.querySelector('#insp-rewards') as HTMLElement | null;
-    const warningEl = this.container.querySelector('#insp-warning') as HTMLElement | null;
-    const actionBtn = this.container.querySelector('#btn-insp-action') as HTMLButtonElement | null;
-
-    if (countEl) countEl.textContent = `${looseCount} Loose Blocks`;
-
-    if (looseCount === 0 || !cardEl || !emptyMsgEl) {
-      if (emptyMsgEl) emptyMsgEl.style.display = 'block';
-      if (cardEl) cardEl.style.display = 'none';
-      this.currentActionType = 'none';
+    if (!state.isHeartEngineBound && fieldAnalysis?.patternId === 'heart_seal' && fieldAnalysis.isValid) {
+      this.currentAction = 'bind';
+      icon.src = '/assets/hlbm/icon_seal.png';
+      name.textContent = 'HEART SEAL';
+      metric.textContent = '4×4';
+      action.textContent = 'BIND';
+      action.className = 'rf-context-action';
+      action.style.display = 'block';
+      context.style.display = 'flex';
       return;
     }
 
-    emptyMsgEl.style.display = 'none';
-    cardEl.style.display = 'block';
+    if (!state.isHeartEngineBound && fieldAnalysis?.patternId === 'heart_seal' && !fieldAnalysis.isValid) {
+      icon.src = '/assets/hlbm/icon_seal.png';
+      name.textContent = 'SEAL';
+      metric.textContent = `${fieldAnalysis.metrics.cellCount} / 16`;
+      action.style.display = 'none';
+      context.classList.add('rf-context-near');
+      context.style.display = 'flex';
+      return;
+    }
 
-    if (!analysis || !analysis.isValid) {
-      this.currentActionType = 'none';
-      if (titleEl) {
-        titleEl.textContent = 'Near-Match Clue';
-        titleEl.setAttribute('style', 'color:#f59e0b;');
-      }
-      if (statusEl) {
-        statusEl.textContent = 'INVALID ARRANGEMENT';
-        statusEl.className = 'rf-pattern-status rf-pattern-nearmatch';
-      }
-      if (clueEl) {
-        clueEl.textContent = analysis?.nearMatchReason || 'No valid pattern recognized.';
-      }
-      if (rewardsEl) rewardsEl.style.display = 'none';
-      if (warningEl) warningEl.style.display = 'none';
-      if (actionBtn) actionBtn.style.display = 'none';
-    } else if (analysis.patternId === 'heart_seal') {
-      this.currentActionType = 'bind';
-      if (titleEl) {
-        titleEl.textContent = 'HEART SEAL';
-        titleEl.setAttribute('style', 'color:#c084fc;');
-      }
-      if (statusEl) {
-        statusEl.textContent = 'OPENING ENGINE BIND';
-        statusEl.className = 'rf-pattern-status';
-        statusEl.setAttribute('style', 'color:#c084fc;');
-      }
-      if (clueEl) {
-        clueEl.textContent = 'Arrangement occupies all 16 Cradle cells. Binding crystallizes starter blocks into the persistent Heart Engine generator.';
-      }
-      if (rewardsEl) rewardsEl.style.display = 'none';
-      if (warningEl) warningEl.style.display = 'none';
-      if (actionBtn) {
-        actionBtn.style.display = 'block';
-        actionBtn.textContent = 'BIND HEART SEAL';
-        actionBtn.className = 'rf-action-btn-primary rf-btn-bind';
-      }
-    } else if (analysis.patternId === 'compression_press' || analysis.patternId === 'twin_stars') {
-      this.currentActionType = 'submit';
-      const rewards = calculateRecipeReward(selectedLooseBlocks, analysis.quality);
-
-      if (titleEl) {
-        titleEl.textContent = analysis.patternName;
-        titleEl.setAttribute('style', 'color:#38bdf8;');
-      }
-      if (statusEl) {
-        statusEl.textContent = `${rewards.qualityTier.toUpperCase()} QUALITY (${Math.round(analysis.quality * 100)}%)`;
-        statusEl.className = 'rf-pattern-status';
-        statusEl.setAttribute('style', 'color:#22c55e;');
-      }
-      if (clueEl) {
-        clueEl.textContent = 'Consumptive Recipe submission. Selected blocks will be permanently removed.';
-      }
-
-      const ashVal = this.container.querySelector('#reward-ash');
-      const shardsVal = this.container.querySelector('#reward-shards');
-      const xpVal = this.container.querySelector('#reward-xp');
-
-      if (ashVal) ashVal.textContent = `+${rewards.ash}`;
-      if (shardsVal) shardsVal.textContent = `+${rewards.shards}`;
-      if (xpVal) xpVal.textContent = `+${rewards.engineXp}`;
-
-      if (rewardsEl) rewardsEl.style.display = 'grid';
-      if (warningEl) warningEl.style.display = 'block';
-
-      if (actionBtn) {
-        actionBtn.style.display = 'block';
-        actionBtn.textContent = `SUBMIT ${looseCount} BLOCKS`;
-        actionBtn.className = 'rf-action-btn-primary rf-btn-submit';
-      }
+    if (preview.reward && preview.analysis) {
+      this.currentAction = 'submit';
+      icon.src = '/assets/hlbm/icon_gem.png';
+      name.textContent = preview.analysis.patternId === 'compression_press' ? 'PRESS' : 'STARS';
+      metric.textContent = `${preview.blocks.length}`;
+      quality.textContent = qualityPips(preview.analysis.quality);
+      rewards.innerHTML = `
+        <span class="rf-reward rf-reward-ash"><span aria-hidden="true">✦</span>+${preview.reward.ash}</span>
+        <span class="rf-reward"><img class="rf-reward-gem" src="/assets/hlbm/icon_gem.png" alt="" />+${preview.reward.shards}</span>
+        <span class="rf-reward rf-reward-xp">+${preview.reward.engineXp}xp</span>
+      `;
+      action.textContent = `SUBMIT ${preview.blocks.length}`;
+      action.className = 'rf-context-action rf-context-submit';
+      action.style.display = 'block';
+      context.style.display = 'flex';
     }
   }
+}
+
+function qualityPips(quality: number): string {
+  const filled = Math.max(1, Math.min(4, Math.round(quality * 4)));
+  return `${'◆'.repeat(filled)}${'◇'.repeat(4 - filled)}`;
 }

@@ -32,16 +32,16 @@ Implement the production software architecture and playable core loop so the gam
    - Opening Cradle Sector.
    - Starter Pattern & Recipe definitions (Heart Seal, Compression Press, Twin Stars).
 3. **Application State & Actions (`src/application/`):**
-   - Action dispatchers (`PlaceBlock`, `MoveBlock`, `RotateBlock`, `ReturnBlock`, `AnalyzeSelection`, `BindEngine`, `SubmitRecipe`).
+   - Action dispatchers (`PlaceBlock`, `ReturnBlock`, `AnalyzeSelection` fallback, `BindEngine`, `SubmitRecipe`) with placement treated as a commit rather than editor movement.
    - Session state container.
 4. **Platform Infrastructure (`src/platform/`):**
    - Local save adapter (IndexedDB / localStorage fallback).
    - Monotonic session clock.
 5. **Canvas 2D Renderer & UI (`src/ui/`):**
    - Sparse Field Canvas 2D renderer with pan and zoom camera.
-   - Interactive Block placement, rotation, and selection controls.
-   - Submission preview modal showing consumption count and payout.
-   - Basic HUD displaying Ash, Shards, buffers, and active Recipe state.
+   - Interactive Shape ghost placement/rotation and selection controls.
+   - Compact contextual Submission action showing consumption count and payout.
+   - Minimal HUD displaying Ash, Shards, Shape buffers, and active Shape hotkeys.
 
 ### Dependency Ordering
 $$\text{Core Math \& Domain} \longrightarrow \text{Application Actions} \longrightarrow \text{Storage \& Canvas UI} \longrightarrow \text{Playable Core}$$
@@ -62,22 +62,26 @@ $$\text{Core Math \& Domain} \longrightarrow \text{Application Actions} \longrig
 Play the live browser game, evaluate feel, and fix weaknesses in loop pacing, spatial legibility, and player feedback.
 
 ### Major Deliverables
-1. **Pacing & Balance Tuning:**
-   - Calibrate Engine generation intervals and buffer caps.
-   - Balance Ash burst amounts and upgrade costs to ensure meaningful progression decisions.
-2. **UX & Spatial Feedback:**
-   - Enhance spatial feedback for Quality tiers (Valid, Strong, Masterwork, Perfect).
-   - Clear visual distinction between Loose Blocks, Bound Engine cells, and empty space.
-   - Explicit consumption confirmation prompts (`SUBMIT X BLOCKS`).
-   - Near-match feedback tuning in the Pattern Analyzer.
-3. **Board Interaction & Navigation:**
-   - Refine camera pan/zoom smoothness and touch gestures for mobile devices.
-   - Implement block drag-and-drop and hotkey shortcuts.
+1. **Pacing Observation:**
+   - Exercise the existing Engine intervals, buffer caps, and rewards without materially changing the economy or production rules.
+2. **Core Interaction Contract:**
+   - Shape hotkeys/palette activate a grid ghost; `R` rotates; a valid click commits; unavailable Shape keys give subtle feedback.
+   - Remove ordinary left-drag movement from gameplay. Right/middle/Space+left pan, the wheel zooms, and a 450 ms Loose Block hold Returns it.
+   - Keep click/Shift+click selection only for exact Submission sets; Engine cells are never selectable for consumption.
+3. **Field-First Spatial Feedback:**
+   - Evaluate bounded local candidates automatically after placement/Return.
+   - Highlight missing geometry and trace valid Patterns on the Field.
+   - Distinguish Loose tetromino silhouettes from crystallized Bound Engine structures.
+   - Show Engine next-Shape/progress/full-buffer state directly beside the Engine.
+   - Surface compact Bind/Submit actions with explicit `SUBMIT N` consumption count and reward icons.
+4. **Board Presentation:**
+   - Refine camera pan/zoom and establish the two-finger mobile contract.
+   - Replace dashboard HUD/Inspector chrome with a small resource strip and Shape palette.
 
 ### Exit Criteria
 - Playability testing confirms that new players immediately understand that **Bind keeps Blocks as an Engine** while **Submit consumes Loose Blocks**.
 - Connected vs. separated topology choices feel distinct and visually intuitive.
-- Early game loop (5–30 minutes) is engaging, clear, and free of UI friction.
+- Early game loop (5–30 minutes) is engaging, clear, and free of editor-like placement friction.
 
 ---
 

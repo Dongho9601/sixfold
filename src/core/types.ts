@@ -65,6 +65,10 @@ export interface PatternAnalysisResult {
   quality: number; // 0.0 to 1.0
   metrics: PatternMetrics;
   nearMatchReason?: string;
+  /** The bounded field candidate that produced this result, when available. */
+  involvedBlockIds?: string[];
+  /** Spatial cells that would complete a near-match, such as the Heart Seal Cradle. */
+  missingCells?: Position[];
 }
 
 export interface RecipeReward {

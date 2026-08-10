@@ -15,6 +15,60 @@ export interface EngineTickResult {
   generatedShapes: ShapeType[];
 }
 
+export interface EngineProductionView {
+  nextShape: ShapeType | null;
+  progress: number;
+  isBlocked: boolean;
+  intervalSec: number;
+}
+
+export const PRODUCTION_SHAPE_ORDER: ShapeType[] = ['I', 'O', 'L', 'J'];
+
+export function getNextProductionShape(
+  buffers: BufferCounts,
+  maxPerShape: number = DEFAULT_MAX_BUFFER_PER_SHAPE,
+): ShapeType | null {
+  const availableShapes = PRODUCTION_SHAPE_ORDER.filter(shape => buffers[shape] < maxPerShape);
+  if (availableShapes.length === 0) return null;
+
+  let targetShape = availableShapes[0];
+  let minCount = buffers[targetShape];
+
+  for (const shape of availableShapes) {
+    if (buffers[shape] < minCount) {
+      minCount = buffers[shape];
+      targetShape = shape;
+    }
+  }
+
+  return targetShape;
+}
+
+export function getProductionIntervalSec(
+  engine: HeartEngineState,
+  baseRate: number = DEFAULT_BASE_PRODUCTION_RATE,
+): number {
+  const bpm = calculateBlocksPerMinute(baseRate, engine.quality, engine.level);
+  return 60 / bpm;
+}
+
+export function getEngineProductionView(
+  engine: HeartEngineState,
+  buffers: BufferCounts,
+  baseRate: number = DEFAULT_BASE_PRODUCTION_RATE,
+  maxPerShape: number = DEFAULT_MAX_BUFFER_PER_SHAPE,
+): EngineProductionView {
+  const intervalSec = getProductionIntervalSec(engine, baseRate);
+  const nextShape = getNextProductionShape(buffers, maxPerShape);
+
+  return {
+    nextShape,
+    progress: Math.min(1, Math.max(0, engine.accumulatedTimeSec / intervalSec)),
+    isBlocked: nextShape === null,
+    intervalSec,
+  };
+}
+
 export function advanceEngineProduction(
   engine: HeartEngineState,
   buffers: BufferCounts,
@@ -22,33 +76,18 @@ export function advanceEngineProduction(
   baseRate: number = DEFAULT_BASE_PRODUCTION_RATE,
   maxPerShape: number = DEFAULT_MAX_BUFFER_PER_SHAPE
 ): EngineTickResult {
-  const bpm = calculateBlocksPerMinute(baseRate, engine.quality, engine.level);
-  const intervalSec = 60 / bpm;
+  const intervalSec = getProductionIntervalSec(engine, baseRate);
 
   let accTime = engine.accumulatedTimeSec + deltaSeconds;
   const generatedShapes: ShapeType[] = [];
   const updatedBuffers = { ...buffers };
 
-  const shapeOrder: ShapeType[] = ['I', 'O', 'L', 'J'];
-
   while (accTime >= intervalSec) {
-    // Find shapes that have room in buffer
-    const availableShapes = shapeOrder.filter(s => updatedBuffers[s] < maxPerShape);
-    if (availableShapes.length === 0) {
+    const targetShape = getNextProductionShape(updatedBuffers, maxPerShape);
+    if (!targetShape) {
       // Buffers full - cap accumulated time so production resumes immediately when space opens
       accTime = Math.min(accTime, intervalSec);
       break;
-    }
-
-    // Pick shape with lowest current buffer count
-    let targetShape = availableShapes[0];
-    let minCount = updatedBuffers[targetShape];
-
-    for (const shape of availableShapes) {
-      if (updatedBuffers[shape] < minCount) {
-        minCount = updatedBuffers[shape];
-        targetShape = shape;
-      }
     }
 
     updatedBuffers[targetShape] += 1;

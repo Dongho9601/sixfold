@@ -8,8 +8,10 @@ import {
   Block,
   calculateRecipeReward,
   evaluatePattern,
+  findConnectedComponents,
   getBlockOccupiedCells,
   getEngineXpThreshold,
+  isCradleCell,
   Position,
   RecipeReward,
   ShapeType,
@@ -18,6 +20,100 @@ import { GameState } from './state.ts';
 
 export function getActiveBlocksList(state: GameState): Block[] {
   return Object.values(state.blocks).filter(b => b.state === 'Loose' || b.state === 'Bound');
+}
+
+export function getLooseBlocksList(state: GameState): Block[] {
+  return Object.values(state.blocks).filter(b => b.state === 'Loose' && b.position !== null);
+}
+
+const MAX_FIELD_CANDIDATE_BLOCKS = 12;
+const MAX_NEARBY_COMPONENT_DISTANCE = 8;
+
+function blockCells(block: Block): Position[] {
+  return block.position ? getBlockOccupiedCells(block.shape, block.position, block.rotation) : [];
+}
+
+function blockTouchesCradle(block: Block): boolean {
+  return blockCells(block).some(cell => isCradleCell(cell.x, cell.y));
+}
+
+function componentCenter(component: { cells: Position[] }): Position {
+  return {
+    x: component.cells.reduce((sum, cell) => sum + cell.x, 0) / component.cells.length,
+    y: component.cells.reduce((sum, cell) => sum + cell.y, 0) / component.cells.length,
+  };
+}
+
+function distanceBetween(left: Position, right: Position): number {
+  return Math.hypot(left.x - right.x, left.y - right.y);
+}
+
+/**
+ * Selects a small, explainable candidate for Field-first Pattern feedback.
+ * This deliberately avoids searching every subset of every Loose Block.
+ */
+export function getFieldPatternCandidate(state: GameState, focusBlockId?: string | null): Block[] {
+  const looseBlocks = getLooseBlocksList(state);
+  if (looseBlocks.length === 0) return [];
+
+  const selectedBlocks = state.selectedBlockIds
+    .map(id => state.blocks[id])
+    .filter((block): block is Block => Boolean(block) && block.state === 'Loose' && block.position !== null);
+  if (selectedBlocks.length > 0) return selectedBlocks;
+
+  const focusId = focusBlockId || state.recentFieldBlockId;
+  const focusBlock = focusId ? state.blocks[focusId] : undefined;
+  const cradleBlocks = looseBlocks.filter(blockTouchesCradle);
+  if (focusBlock && blockTouchesCradle(focusBlock) && cradleBlocks.length > 0) {
+    return cradleBlocks.slice(0, MAX_FIELD_CANDIDATE_BLOCKS);
+  }
+
+  const components = findConnectedComponents(looseBlocks);
+  const focusComponent = focusId
+    ? components.find(component => component.blockIds.includes(focusId))
+    : undefined;
+
+  if (focusComponent) {
+    const candidateIds = new Set(focusComponent.blockIds);
+    const focusCenter = componentCenter(focusComponent);
+    const nearby = components
+      .filter(component => component.id !== focusComponent.id)
+      .map(component => ({
+        component,
+        distance: distanceBetween(focusCenter, componentCenter(component)),
+      }))
+      .filter(entry => entry.distance <= MAX_NEARBY_COMPONENT_DISTANCE)
+      .sort((left, right) => left.distance - right.distance)[0];
+
+    if (nearby) {
+      for (const blockId of nearby.component.blockIds) candidateIds.add(blockId);
+    }
+
+    return looseBlocks
+      .filter(block => candidateIds.has(block.id))
+      .slice(0, MAX_FIELD_CANDIDATE_BLOCKS);
+  }
+
+  if (focusBlock) return [focusBlock];
+  return looseBlocks.slice(0, MAX_FIELD_CANDIDATE_BLOCKS);
+}
+
+export function refreshFieldPattern(state: GameState, focusBlockId?: string | null): GameState {
+  const candidate = getFieldPatternCandidate(state, focusBlockId);
+  state.fieldCandidateBlockIds = candidate.map(block => block.id);
+  if (focusBlockId) state.recentFieldBlockId = focusBlockId;
+
+  if (candidate.length === 0) {
+    state.fieldAnalysis = null;
+    return state;
+  }
+
+  const analysis = evaluatePattern(candidate);
+  state.fieldAnalysis = analysis;
+  if (analysis.isValid && analysis.patternId !== 'none' && !state.discoveredPatterns.includes(analysis.patternId)) {
+    state.discoveredPatterns.push(analysis.patternId);
+  }
+  return state;
 }
 
 export function getAllOccupiedCells(state: GameState, ignoreBlockId?: string): Map<string, { blockId: string; isEngine: boolean }> {
@@ -70,6 +166,8 @@ export function placeBlockFromBuffer(
   state.blocks[blockId] = newBlock;
   state.buffers[shape] -= 1;
   state.nextBlockSeq += 1;
+  state.recentFieldBlockId = blockId;
+  refreshFieldPattern(state, blockId);
 
   return { success: true, blockId };
 }
@@ -92,6 +190,8 @@ export function moveBlock(
   block.position = newPosition;
   if (state.selectedBlockIds.includes(blockId)) {
     analyzeSelection(state);
+  } else {
+    refreshFieldPattern(state, blockId);
   }
   return { success: true };
 }
@@ -114,6 +214,8 @@ export function rotateBlock(
   block.rotation = nextRotation;
   if (state.selectedBlockIds.includes(blockId)) {
     analyzeSelection(state);
+  } else {
+    refreshFieldPattern(state, blockId);
   }
   return { success: true, newRotation: nextRotation };
 }
@@ -130,7 +232,9 @@ export function returnBlockToBuffer(
   delete state.blocks[blockId];
   state.buffers[block.shape] = (state.buffers[block.shape] || 0) + 1;
   state.selectedBlockIds = state.selectedBlockIds.filter(id => id !== blockId);
-  analyzeSelection(state);
+  if (state.recentFieldBlockId === blockId) state.recentFieldBlockId = null;
+  if (state.selectedBlockIds.length > 0) analyzeSelection(state);
+  else refreshFieldPattern(state);
 
   return { success: true };
 }
@@ -162,6 +266,7 @@ export function selectAllLooseBlocks(state: GameState): void {
 export function clearSelection(state: GameState): void {
   state.selectedBlockIds = [];
   state.lastAnalysis = null;
+  refreshFieldPattern(state);
 }
 
 export function analyzeSelection(state: GameState): GameState {
@@ -169,8 +274,16 @@ export function analyzeSelection(state: GameState): GameState {
     .map(id => state.blocks[id])
     .filter((b): b is Block => Boolean(b) && b.state === 'Loose');
 
+  if (selectedBlocks.length === 0) {
+    state.lastAnalysis = null;
+    refreshFieldPattern(state);
+    return state;
+  }
+
   const analysis = evaluatePattern(selectedBlocks);
   state.lastAnalysis = analysis;
+  state.fieldAnalysis = analysis;
+  state.fieldCandidateBlockIds = selectedBlocks.map(block => block.id);
 
   if (analysis.isValid && analysis.patternId !== 'none') {
     if (!state.discoveredPatterns.includes(analysis.patternId)) {
@@ -181,19 +294,48 @@ export function analyzeSelection(state: GameState): GameState {
   return state;
 }
 
+export interface SubmissionPreview {
+  blocks: Block[];
+  analysis: ReturnType<typeof evaluatePattern> | null;
+  reward: RecipeReward | null;
+}
+
+export function getSubmissionPreview(state: GameState): SubmissionPreview {
+  const blocks = state.selectedBlockIds
+    .map(id => state.blocks[id])
+    .filter((block): block is Block => Boolean(block) && block.state === 'Loose' && block.position !== null);
+  if (blocks.length === 0) return { blocks, analysis: null, reward: null };
+
+  const analysis = evaluatePattern(blocks);
+  const isRecipe = analysis.isValid && (analysis.patternId === 'compression_press' || analysis.patternId === 'twin_stars');
+  return {
+    blocks,
+    analysis,
+    reward: isRecipe ? calculateRecipeReward(blocks, analysis.quality) : null,
+  };
+}
+
 export function bindHeartSeal(state: GameState): { success: boolean; error?: string } {
   if (state.isHeartEngineBound) {
     return { success: false, error: 'Heart Engine is already bound.' };
   }
 
-  analyzeSelection(state);
-  if (!state.lastAnalysis || !state.lastAnalysis.isValid || state.lastAnalysis.patternId !== 'heart_seal') {
+  let analysis = state.fieldAnalysis;
+  let candidateIds = state.fieldCandidateBlockIds;
+
+  if (!analysis?.isValid || analysis.patternId !== 'heart_seal' || candidateIds.length === 0) {
+    analyzeSelection(state);
+    analysis = state.lastAnalysis;
+    candidateIds = state.selectedBlockIds;
+  }
+
+  if (!analysis || !analysis.isValid || analysis.patternId !== 'heart_seal') {
     return { success: false, error: 'Selection does not satisfy Heart Seal.' };
   }
 
   // Crystallize selected blocks into persistent Engine cells
   const boundBlockIds: string[] = [];
-  for (const blockId of state.selectedBlockIds) {
+  for (const blockId of candidateIds) {
     const block = state.blocks[blockId];
     if (block && block.state === 'Loose') {
       block.state = 'Bound';
@@ -217,6 +359,9 @@ export function bindHeartSeal(state: GameState): { success: boolean; error?: str
   }
 
   clearSelection(state);
+  state.fieldAnalysis = null;
+  state.fieldCandidateBlockIds = [];
+  state.recentFieldBlockId = null;
   return { success: true };
 }
 
@@ -252,6 +397,10 @@ export function submitRecipe(state: GameState): { success: boolean; reward?: Rec
   for (const b of selectedBlocks) {
     b.state = 'Consumed';
     delete state.blocks[b.id];
+  }
+
+  if (state.recentFieldBlockId && selectedBlocks.some(block => block.id === state.recentFieldBlockId)) {
+    state.recentFieldBlockId = null;
   }
 
   if (!state.discoveredPatterns.includes(analysis.patternId)) {

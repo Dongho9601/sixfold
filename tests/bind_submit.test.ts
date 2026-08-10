@@ -87,6 +87,8 @@ describe('Bind & Submission Transactions', () => {
     store.selectBlock('e1', false);
     expect(state.selectedBlockIds).toHaveLength(0);
 
+    expect(store.returnBlock('e1').success).toBe(false);
+
     const subRes = store.submitRecipe();
     expect(subRes.success).toBe(false);
   });

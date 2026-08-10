@@ -116,6 +116,7 @@ export function evaluatePattern(selectedBlocks: Block[]): PatternAnalysisResult 
       quality: 0,
       metrics: { blockCount: 0, cellCount: 0, componentCount: 0 },
       nearMatchReason: 'Select Loose Blocks on the Field to Analyze.',
+      involvedBlockIds: [],
     };
   }
 
@@ -129,6 +130,7 @@ export function evaluatePattern(selectedBlocks: Block[]): PatternAnalysisResult 
   const blockCount = looseBlocks.length;
   const cellCount = allCells.length;
   const componentCount = components.length;
+  const involvedBlockIds = looseBlocks.map(block => block.id);
 
   // 1. Test Heart Seal: All 16 Cradle cells filled, 0 outside
   const cradleCellsCount = allCells.filter(c => isCradleCell(c.x, c.y)).length;
@@ -143,6 +145,7 @@ export function evaluatePattern(selectedBlocks: Block[]): PatternAnalysisResult 
         isValid: true,
         quality: 1.0,
         metrics: { blockCount, cellCount, componentCount, isCradleFilled: true },
+        involvedBlockIds,
       };
     }
     // Partial cradle near-match clue
@@ -154,6 +157,8 @@ export function evaluatePattern(selectedBlocks: Block[]): PatternAnalysisResult 
         quality: cradleCellsCount / 16,
         metrics: { blockCount, cellCount, componentCount },
         nearMatchReason: `Heart Seal requires all 16 cells of the 4x4 Cradle filled (currently ${cradleCellsCount}/16).`,
+        involvedBlockIds,
+        missingCells: getMissingCradleCells(allCells),
       };
     }
   }
@@ -179,6 +184,7 @@ export function evaluatePattern(selectedBlocks: Block[]): PatternAnalysisResult 
         isValid: true,
         quality,
         metrics: { blockCount, cellCount, componentCount, separation: sep },
+        involvedBlockIds,
       };
     } else {
       return {
@@ -188,6 +194,7 @@ export function evaluatePattern(selectedBlocks: Block[]): PatternAnalysisResult 
         quality: 0.5,
         metrics: { blockCount, cellCount, componentCount },
         nearMatchReason: `Both stars must contain the same number of Blocks (${comp1.blockIds.length} vs ${comp2.blockIds.length}).`,
+        involvedBlockIds,
       };
     }
   } else if (componentCount > 2) {
@@ -198,6 +205,7 @@ export function evaluatePattern(selectedBlocks: Block[]): PatternAnalysisResult 
       quality: 0.3,
       metrics: { blockCount, cellCount, componentCount },
       nearMatchReason: `Twin Stars requires exactly two components (found ${componentCount}).`,
+      involvedBlockIds,
     };
   }
 
@@ -211,6 +219,7 @@ export function evaluatePattern(selectedBlocks: Block[]): PatternAnalysisResult 
         quality: 0.4,
         metrics: { blockCount, cellCount, componentCount },
         nearMatchReason: 'Compression Press requires at least 2 connected Loose Blocks.',
+        involvedBlockIds,
       };
     }
 
@@ -225,6 +234,7 @@ export function evaluatePattern(selectedBlocks: Block[]): PatternAnalysisResult 
       isValid: true,
       quality,
       metrics: { blockCount, cellCount, componentCount, cohesion },
+      involvedBlockIds,
     };
   }
 
@@ -235,5 +245,21 @@ export function evaluatePattern(selectedBlocks: Block[]): PatternAnalysisResult 
     quality: 0,
     metrics: { blockCount, cellCount, componentCount },
     nearMatchReason: 'Requires one connected component or two equal twin components.',
+    involvedBlockIds,
   };
+}
+
+function getMissingCradleCells(occupiedCells: Position[]): Position[] {
+  const occupied = new Set(occupiedCells.map(cell => coordKey(cell.x, cell.y)));
+  const missing: Position[] = [];
+
+  for (let y = 0; y <= 3; y += 1) {
+    for (let x = 0; x <= 3; x += 1) {
+      if (!occupied.has(coordKey(x, y))) {
+        missing.push({ x, y });
+      }
+    }
+  }
+
+  return missing;
 }
