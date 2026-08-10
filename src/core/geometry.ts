@@ -212,11 +212,35 @@ export function evaluatePattern(selectedBlocks: Block[]): PatternAnalysisResult 
     }
   }
 
-  // 2. Test Twin Stars: Exactly 2 disconnected components with equal block count
+  // 2. Test Twin Stars: exactly 2 components, equal size, at least 2 Blocks each.
   if (componentCount === 2) {
     const comp1 = components[0];
     const comp2 = components[1];
-    if (comp1.blockIds.length === comp2.blockIds.length) {
+    if (comp1.blockIds.length !== comp2.blockIds.length) {
+      return {
+        patternId: 'twin_stars',
+        patternName: 'Twin Stars',
+        isValid: false,
+        quality: 0.5,
+        metrics: { blockCount, cellCount, componentCount },
+        nearMatchReason: `Both stars must contain the same number of Blocks (${comp1.blockIds.length} vs ${comp2.blockIds.length}).`,
+        involvedBlockIds,
+      };
+    }
+
+    if (comp1.blockIds.length < 2) {
+      return {
+        patternId: 'twin_stars',
+        patternName: 'Twin Stars',
+        isValid: false,
+        quality: 0.5,
+        metrics: { blockCount, cellCount, componentCount },
+        nearMatchReason: `${comp1.blockIds.length} / 2 each`,
+        involvedBlockIds,
+      };
+    }
+
+    {
       // Calculate centroid distance
       const c1x = comp1.cells.reduce((s, c) => s + c.x, 0) / comp1.cells.length;
       const c1y = comp1.cells.reduce((s, c) => s + c.y, 0) / comp1.cells.length;
@@ -233,16 +257,6 @@ export function evaluatePattern(selectedBlocks: Block[]): PatternAnalysisResult 
         isValid: true,
         quality,
         metrics: { blockCount, cellCount, componentCount, separation: sep },
-        involvedBlockIds,
-      };
-    } else {
-      return {
-        patternId: 'twin_stars',
-        patternName: 'Twin Stars',
-        isValid: false,
-        quality: 0.5,
-        metrics: { blockCount, cellCount, componentCount },
-        nearMatchReason: `Both stars must contain the same number of Blocks (${comp1.blockIds.length} vs ${comp2.blockIds.length}).`,
         involvedBlockIds,
       };
     }

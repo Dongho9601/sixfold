@@ -94,7 +94,6 @@ export class UIController {
       const placementPreview = this.input.getPlacementPreview();
       const holdPreview = this.input.getHoldPreview();
       const selectionPreview = this.input.getSelectionPreview();
-      const submissionPreview = this.store.getSubmissionPreview();
       this.canvas.style.cursor = placementPreview ? 'crosshair' : 'default';
       this.renderer.render(
         state,
@@ -105,7 +104,6 @@ export class UIController {
         holdPreview,
         selectionPreview,
         performance.now(),
-        submissionPreview.reward ? submissionPreview.blockIds : [],
       );
       requestAnimationFrame(loop);
     };

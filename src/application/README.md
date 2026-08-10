@@ -3,7 +3,7 @@
 The `application` directory orchestrates game interactions, typed consequential actions, and session state container logic.
 
 ## Responsibilities
-- **`actions`**: Typed consequential handlers for placement/Return, selection, Pattern analysis, Bind, Submit, Engine Extract, production, and Shape Grade upgrades.
+- **`actions`**: Typed consequential handlers for placement/Return, selection, Pattern analysis, Pattern Bind, Engine Submit, production, and Shape Grade upgrades.
 - **`state`**: Application session container, current active selection, UI focus mode, transaction history.
 
 ## Strict Rules

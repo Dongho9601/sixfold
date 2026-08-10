@@ -3,8 +3,8 @@
 import {
   advanceEngineProduction,
   Block,
-  calculateEngineExtractionShards,
-  calculateRecipeReward,
+  calculateBoundValue,
+  calculateEngineSubmissionShards,
   createProductionBag,
   EngineState,
   evaluatePattern,
@@ -13,7 +13,6 @@ import {
   getShapeGradeUpgradeCost,
   isCradleCell,
   Position,
-  RecipeReward,
   ShapeType,
   stableEngineSeed,
 } from '../core/index.ts';
@@ -255,10 +254,8 @@ export interface PatternActionPreview {
   blockIds: string[];
   blocks: Block[];
   analysis: ReturnType<typeof evaluatePattern> | null;
-  reward: RecipeReward | null;
   source: 'explicit' | 'field' | 'none';
   canBind: boolean;
-  canSubmit: boolean;
 }
 
 function exactLooseBlocks(state: GameState, blockIds: readonly string[]): Block[] | null {
@@ -270,7 +267,7 @@ function exactLooseBlocks(state: GameState, blockIds: readonly string[]): Block[
 function previewForIds(state: GameState, blockIds: readonly string[], source: PatternActionPreview['source']): PatternActionPreview {
   const blocks = exactLooseBlocks(state, blockIds) || [];
   if (blocks.length === 0) {
-    return { blockIds: [], blocks, analysis: null, reward: null, source, canBind: false, canSubmit: false };
+    return { blockIds: [], blocks, analysis: null, source, canBind: false };
   }
   const analysis = evaluatePattern(blocks);
   const isOrdinaryRecipe = analysis.isValid && BINDABLE_RECIPE_IDS.has(analysis.patternId);
@@ -279,10 +276,8 @@ function previewForIds(state: GameState, blockIds: readonly string[], source: Pa
     blockIds: blocks.map(block => block.id),
     blocks,
     analysis,
-    reward: isOrdinaryRecipe ? calculateRecipeReward(blocks, analysis.quality) : null,
     source,
     canBind: isHeart || (state.isHeartEngineBound && isOrdinaryRecipe),
-    canSubmit: state.isHeartEngineBound && isOrdinaryRecipe,
   };
 }
 
@@ -292,8 +287,6 @@ export function getPatternActionPreview(state: GameState, blockIds?: readonly st
   if (state.fieldCandidateBlockIds.length > 0) return previewForIds(state, state.fieldCandidateBlockIds, 'field');
   return previewForIds(state, [], 'none');
 }
-
-export const getSubmissionPreview = getPatternActionPreview;
 
 function createBoundEngine(
   state: GameState,
@@ -307,8 +300,9 @@ function createBoundEngine(
     sourcePatternId: preview.analysis!.patternId,
     sourcePatternName: preview.analysis!.patternName,
     foundational,
-    extractable: !foundational,
+    submittable: !foundational,
     quality: preview.analysis!.quality,
+    boundValue: calculateBoundValue(preview.blocks),
     accumulatedTimeSec: 0,
     constituentBlockIds: [...preview.blockIds],
     ...createProductionBag(stableEngineSeed(id)),
@@ -346,30 +340,15 @@ export function bindHeartSeal(state: GameState): { success: boolean; engine?: En
   return bindPattern(state);
 }
 
-export function submitRecipe(state: GameState): { success: boolean; reward?: RecipeReward; error?: string } {
-  const initial = getPatternActionPreview(state);
-  if (!initial.canSubmit || !initial.reward || !initial.analysis) return { success: false, error: 'No valid Loose Recipe to Submit.' };
-  const frozenIds = [...initial.blockIds];
-  const preview = getPatternActionPreview(state, frozenIds);
-  if (!preview.canSubmit || !preview.reward || !preview.analysis) return { success: false, error: 'Recipe changed before Submit.' };
-
-  state.currencies.ash += preview.reward.ash;
-  for (const block of preview.blocks) delete state.blocks[block.id];
-  state.learnedActions.submit = true;
-  if (state.recentFieldBlockId && frozenIds.includes(state.recentFieldBlockId)) state.recentFieldBlockId = null;
-  clearSelection(state);
-  return { success: true, reward: preview.reward };
-}
-
-export interface EngineExtractionPreview {
+export interface EngineSubmissionPreview {
   engine: EngineState;
   blocks: Block[];
   shards: number;
-  canExtract: boolean;
+  canSubmit: boolean;
   error?: string;
 }
 
-export function getEngineExtractionPreview(state: GameState, engineId: string): EngineExtractionPreview | null {
+export function getEngineSubmissionPreview(state: GameState, engineId: string): EngineSubmissionPreview | null {
   const engine = state.engines[engineId];
   if (!engine) return null;
   const blocks = engine.constituentBlockIds.map(id => state.blocks[id]).filter((block): block is Block => Boolean(block));
@@ -377,27 +356,34 @@ export function getEngineExtractionPreview(state: GameState, engineId: string): 
   return {
     engine,
     blocks,
-    shards: intact ? calculateEngineExtractionShards(blocks, engine.quality) : 0,
-    canExtract: engine.extractable && intact,
-    error: !engine.extractable ? 'Heart Engine is foundational.' : !intact ? 'Engine constituents are no longer intact.' : undefined,
+    shards: intact ? calculateEngineSubmissionShards(blocks, engine.quality) : 0,
+    canSubmit: engine.submittable && intact,
+    error: !engine.submittable ? 'Heart Engine is foundational.' : !intact ? 'Engine constituents are no longer intact.' : undefined,
   };
 }
 
-export function extractEngine(state: GameState, engineId: string): { success: boolean; shards?: number; error?: string } {
-  const initial = getEngineExtractionPreview(state, engineId);
-  if (!initial?.canExtract) return { success: false, error: initial?.error || 'Engine not found.' };
+export function submitEngine(state: GameState, engineId: string): { success: boolean; shards?: number; error?: string } {
+  const initial = getEngineSubmissionPreview(state, engineId);
+  if (!initial?.canSubmit) return { success: false, error: initial?.error || 'Engine not found.' };
+  const frozenEngineId = initial.engine.id;
   const frozenIds = [...initial.engine.constituentBlockIds];
-  const preview = getEngineExtractionPreview(state, engineId);
-  if (!preview?.canExtract || frozenIds.some((id, index) => preview.engine.constituentBlockIds[index] !== id)) {
-    return { success: false, error: 'Engine changed before Extraction.' };
+  const engine = state.engines[frozenEngineId];
+  const exactIdsMatch = Boolean(engine)
+    && engine.constituentBlockIds.length === frozenIds.length
+    && frozenIds.every((id, index) => engine.constituentBlockIds[index] === id);
+  const blocks = frozenIds.map(id => state.blocks[id]);
+  const intact = exactIdsMatch && blocks.every((block): block is Block => Boolean(block) && block.state === 'Bound');
+  if (!engine || !engine.submittable || !intact) {
+    return { success: false, error: 'Engine changed before Submit.' };
   }
+  const shards = calculateEngineSubmissionShards(blocks as Block[], engine.quality);
   for (const blockId of frozenIds) delete state.blocks[blockId];
-  delete state.engines[engineId];
-  state.currencies.shards += preview.shards;
-  state.learnedActions.extract = true;
-  if (state.selectedEngineId === engineId) state.selectedEngineId = null;
+  delete state.engines[frozenEngineId];
+  state.currencies.shards += shards;
+  state.learnedActions.submit = true;
+  if (state.selectedEngineId === frozenEngineId) state.selectedEngineId = null;
   refreshFieldPattern(state);
-  return { success: true, shards: preview.shards };
+  return { success: true, shards };
 }
 
 export function upgradeShapeGrade(state: GameState, shape: ShapeType): { success: boolean; grade?: number; cost?: number; error?: string } {

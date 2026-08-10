@@ -11,9 +11,9 @@ The `core` directory contains the pure, deterministic game model for **HL;BM —
 - **`topology`**: Canonical geometry resolver (connected components, inter-Block shared edges, Cohesion, bounding density, symmetry, holes, distance, aspect ratio, bridges).
 - **`patterns`**: Spatial pattern evaluation predicates, motif definitions, candidate selection, silhouette canonicalization.
 - **`recipes`**: Recipe validity predicates, Quality tier formulas (`0..1`).
-- **`submission`**: Atomic Bind, Loose Submit/Ash, and ordinary Engine Extract/Shard rules.
+- **`submission`**: Atomic Pattern Bind and ordinary Engine Submit/Shard rules.
 - **`progression`**: Shape Grade spending and BlockValue scaling; broader campaign progression is deferred.
-- **`economy`**: Pure currency math for Ash, Shards, Proofs.
+- **`economy`**: Pure Engine power, Shard reward, and Shape Grade math.
 - **`offline`**: Deterministic event-driven offline progress resolution and cap handling.
 - **`save`**: Save envelope schema definitions, serialization contracts, transaction ledger, atomic checksums.
 

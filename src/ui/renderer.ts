@@ -14,7 +14,6 @@ import {
   Position,
   ShapeType,
 } from '../core/index.ts';
-import { RecipeReward } from '../core/types.ts';
 import { GameState } from '../application/state.ts';
 import { VisualEvent, VisualBlockEvent } from '../application/store.ts';
 import { Camera } from './camera.ts';
@@ -52,11 +51,10 @@ export interface SelectionPreviewState {
 }
 
 interface TransientBlockEvent {
-  type: 'place' | 'return' | 'submit' | 'bind' | 'extract';
+  type: 'place' | 'return' | 'submit' | 'bind';
   blocks: VisualBlockEvent[];
   startedAt: number;
   duration: number;
-  reward?: RecipeReward;
   shards?: number;
 }
 
@@ -103,8 +101,8 @@ export class FieldRenderer {
             type: 'submit',
             blocks: event.blocks,
             startedAt: now,
-            duration: 500,
-            reward: event.reward,
+            duration: 560,
+            shards: event.shards,
           });
           break;
         case 'bind':
@@ -115,11 +113,6 @@ export class FieldRenderer {
             duration: 620,
           });
           this.enginePulseUntil.set(event.engineId, now + 460);
-          break;
-        case 'extract':
-          this.transientEvents.push({
-            type: 'extract', blocks: event.blocks, startedAt: now, duration: 560, shards: event.shards,
-          });
           break;
         case 'production':
           for (const output of event.outputs) this.enginePulseUntil.set(output.engineId, now + 460);
@@ -143,7 +136,6 @@ export class FieldRenderer {
     holdPreview: HoldPreviewState | null = null,
     selectionPreview: SelectionPreviewState | null = null,
     now: number = performance.now(),
-    consumptionPreviewBlockIds: readonly string[] = [],
   ): void {
     const ctx = this.ctx;
     const currentCellSize = camera.cellSize * camera.zoom;
@@ -177,7 +169,6 @@ export class FieldRenderer {
         block.rotation,
         camera,
         currentCellSize,
-        consumptionPreviewBlockIds.includes(block.id),
       );
     }
 
@@ -330,7 +321,6 @@ export class FieldRenderer {
     rotation: number,
     camera: Camera,
     currentCellSize: number,
-    consumptivePreview: boolean,
   ): void {
     const ctx = this.ctx;
     const colors = SHAPE_COLORS[shape];
@@ -359,16 +349,7 @@ export class FieldRenderer {
       ctx.globalAlpha = 1;
     }
 
-    if (consumptivePreview) {
-      const bounds = this.getScreenBounds(cells, camera, currentCellSize);
-      ctx.strokeStyle = CRIMSON;
-      ctx.globalAlpha = 0.95;
-      ctx.lineWidth = Math.max(2, 2.2 * camera.zoom);
-      ctx.setLineDash([4 * camera.zoom, 3 * camera.zoom]);
-      ctx.strokeRect(bounds.x + 1, bounds.y + 1, bounds.width - 2, bounds.height - 2);
-      ctx.setLineDash([]);
-      ctx.globalAlpha = 1;
-    } else if (selected) {
+    if (selected) {
       const bounds = this.getScreenBounds(cells, camera, currentCellSize);
       ctx.strokeStyle = BONE;
       ctx.globalAlpha = 0.95;
@@ -473,9 +454,16 @@ export class FieldRenderer {
       else this.drawEngineGlyph(center.x, center.y, Math.max(5, ringRadius * 0.52), pulse > 0 ? '#d9b3df' : '#b78dbc');
 
       if (state.selectedEngineId === engine.id) {
-        const bounds = this.getScreenBounds(engineCells, camera, currentCellSize);
-        ctx.strokeStyle = '#d9b3df'; ctx.lineWidth = Math.max(2, 2 * camera.zoom); ctx.globalAlpha = .9;
-        ctx.strokeRect(bounds.x - 3, bounds.y - 3, bounds.width + 6, bounds.height + 6); ctx.globalAlpha = 1;
+        ctx.save();
+        ctx.strokeStyle = '#d9b3df';
+        ctx.lineWidth = Math.max(1.5, 1.8 * camera.zoom);
+        ctx.globalAlpha = .92;
+        if (engine.submittable) ctx.setLineDash([4 * camera.zoom, 3 * camera.zoom]);
+        for (const cell of engineCells) {
+          const point = camera.gridToScreen(cell.x, cell.y);
+          ctx.strokeRect(point.x + 2, point.y + 2, currentCellSize - 4, currentCellSize - 4);
+        }
+        ctx.restore();
       }
 
       if (view.nextShape) {
@@ -612,7 +600,7 @@ export class FieldRenderer {
             ctx.stroke();
             ctx.restore();
           }
-        } else if (event.type === 'submit' || event.type === 'extract') {
+        } else if (event.type === 'submit') {
           this.drawEventSilhouette(
             block,
             camera,
@@ -620,7 +608,7 @@ export class FieldRenderer {
             1 - progress * 0.78,
             alpha * 0.9,
             SHAPE_COLORS[block.shape].fill,
-            event.type === 'extract' ? AMETHYST : CRIMSON,
+            AMETHYST,
             0,
             0,
             0.78,
@@ -628,7 +616,7 @@ export class FieldRenderer {
           if (progress < 0.28) {
             const bounds = this.getScreenBounds(cells, camera, currentCellSize);
             ctx.save();
-            ctx.strokeStyle = event.type === 'extract' ? AMETHYST : CRIMSON;
+            ctx.strokeStyle = AMETHYST;
             ctx.globalAlpha = alpha * 0.9;
             ctx.lineWidth = Math.max(1, 1.8 * camera.zoom);
             ctx.setLineDash([4 * camera.zoom, 3 * camera.zoom]);
@@ -685,7 +673,7 @@ export class FieldRenderer {
         }
       }
 
-      if ((event.type === 'submit' || event.type === 'extract') && event.blocks.length > 0) {
+      if (event.type === 'submit' && event.blocks.length > 0) {
         const average = event.blocks.reduce((center, block) => {
           const cells = getBlockOccupiedCells(block.shape, block.position, block.rotation);
           return {
@@ -702,8 +690,8 @@ export class FieldRenderer {
         ctx.font = `${Math.max(9, Math.round(11 * camera.zoom))}px ui-monospace, SFMono-Regular, monospace`;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
-        ctx.fillStyle = event.type === 'extract' ? '#d9b3df' : '#dc8151';
-        ctx.fillText(event.type === 'extract' ? `◆ +${event.shards || 0}` : `✦ +${event.reward?.ash || 0}`, rewardCenter.x + 8 * camera.zoom, rewardCenter.y);
+        ctx.fillStyle = '#d9b3df';
+        ctx.fillText(`◆ +${event.shards || 0}`, rewardCenter.x + 8 * camera.zoom, rewardCenter.y);
         ctx.restore();
       }
     }

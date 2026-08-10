@@ -4,6 +4,8 @@ import {
   advanceEngineProduction,
   createProductionBag,
   EngineState,
+  findNearestValidPlacement,
+  getBlockOccupiedCells,
   getEngineProductionView,
   getProductionIntervalSec,
   SHAPE_TYPES,
@@ -12,6 +14,7 @@ import {
 import { createInitialState, emptyShapeNumbers } from '../src/application/state.ts';
 import {
   decidePointerIntent,
+  decideLooseBlockRelease,
   gameplayCommandForCode,
   gameplayHotkeysEnabled,
   shapeForHotkey,
@@ -21,7 +24,7 @@ import {
 function engine(id: string = 'engine-test'): EngineState {
   return {
     id, name: 'Test Engine', sourcePatternId: 'compression_press', sourcePatternName: 'Compression Press',
-    foundational: false, extractable: true, quality: 1, accumulatedTimeSec: 0, constituentBlockIds: [],
+    foundational: false, submittable: true, quality: 1, boundValue: 16, accumulatedTimeSec: 0, constituentBlockIds: [],
     ...createProductionBag(stableEngineSeed(id)),
   };
 }
@@ -98,10 +101,10 @@ describe('Core Loop UX interaction contracts', () => {
     expect(state.selectedBlockIds).not.toContain('e');
   });
 
-  it('routes placement, inspection, selection, pan, and multi-touch distinctly', () => {
+  it('prioritizes Engine inspection and Loose hold candidates over active placement', () => {
     const base = { pointerType: 'mouse', pointerCount: 1, button: 0, spaceDown: false, hasSpawnShape: true };
-    expect(decidePointerIntent({ ...base, existingBlockState: 'Loose' })).toBe('place');
-    expect(decidePointerIntent({ ...base, existingBlockState: 'Bound' })).toBe('place');
+    expect(decidePointerIntent({ ...base, existingBlockState: 'Loose' })).toBe('existing-loose');
+    expect(decidePointerIntent({ ...base, existingBlockState: 'Bound' })).toBe('existing-engine');
     expect(decidePointerIntent({ ...base, existingBlockState: null })).toBe('place');
     expect(decidePointerIntent({ ...base, hasSpawnShape: false, existingBlockState: 'Loose' })).toBe('existing-loose');
     expect(decidePointerIntent({ ...base, hasSpawnShape: false, existingBlockState: 'Bound' })).toBe('existing-engine');
@@ -110,10 +113,58 @@ describe('Core Loop UX interaction contracts', () => {
     expect(decidePointerIntent({ ...base, pointerType: 'touch', pointerCount: 2, existingBlockState: null })).toBe('multi-touch');
   });
 
+  it('inspects a Bound Engine click without placing the active Shape', () => {
+    const store = new AppStore();
+    const state = store.getState();
+    state.blocks.bound = {
+      id: 'bound', shape: 'O', state: 'Bound', grade: 1, position: { x: 0, y: 0 }, rotation: 0,
+    };
+    state.engines['engine-test'] = { ...engine(), constituentBlockIds: ['bound'] };
+    const buffersBefore = structuredClone(state.buffers);
+    const intent = decidePointerIntent({
+      pointerType: 'mouse', pointerCount: 1, button: 0, spaceDown: false,
+      existingBlockState: 'Bound', hasSpawnShape: true,
+    });
+    expect(intent).toBe('existing-engine');
+    if (intent === 'existing-engine') store.selectEngineByBlockId('bound');
+    expect(state.selectedEngineId).toBe('engine-test');
+    expect(state.buffers).toEqual(buffersBefore);
+    expect(Object.keys(state.blocks)).toEqual(['bound']);
+  });
+
   it('uses a 450ms stationary long-press only', () => {
     expect(shouldCompleteLongPress(449, false)).toBe(false);
     expect(shouldCompleteLongPress(450, false)).toBe(true);
     expect(shouldCompleteLongPress(900, true)).toBe(false);
+  });
+
+  it('places at a valid snapped ghost on short Loose release and Returns on long hold', () => {
+    expect(decideLooseBlockRelease({
+      elapsedMs: 120, pointerMoved: false, hasSpawnShape: true, hasValidGhost: true,
+    })).toBe('place');
+    expect(decideLooseBlockRelease({
+      elapsedMs: 120, pointerMoved: false, hasSpawnShape: true, hasValidGhost: false,
+    })).toBe('select');
+    expect(decideLooseBlockRelease({
+      elapsedMs: 450, pointerMoved: false, hasSpawnShape: true, hasValidGhost: true,
+    })).toBe('return');
+  });
+
+  it('applies an active-Shape long hold to Return the existing Loose Block only', () => {
+    const store = new AppStore();
+    const state = store.getState();
+    state.blocks.existing = {
+      id: 'existing', shape: 'O', state: 'Loose', grade: 1, position: { x: 0, y: 0 }, rotation: 0,
+    };
+    state.buffers.O = 0;
+    const action = decideLooseBlockRelease({
+      elapsedMs: 500, pointerMoved: false, hasSpawnShape: true, hasValidGhost: true,
+    });
+    expect(action).toBe('return');
+    if (action === 'return') store.returnBlock('existing');
+    expect(state.blocks.existing).toBeUndefined();
+    expect(state.buffers.O).toBe(1);
+    expect(Object.keys(state.blocks)).toHaveLength(0);
   });
 
   it('does not notify subscribers on unproductive clock frames', () => {
@@ -127,5 +178,24 @@ describe('Core Loop UX interaction contracts', () => {
     const store = new AppStore();
     const result = store.placeBlock('I', { x: 8, y: 5 }, 1);
     expect(store.getState().blocks[result.blockId!].position).toEqual({ x: 8, y: 5 });
+  });
+
+  it('snaps active J/L/O placement around an occupied Loose Block without overlap', () => {
+    const store = new AppStore();
+    const state = store.getState();
+    state.blocks.existing = {
+      id: 'existing', shape: 'O', state: 'Loose', grade: 1, position: { x: 0, y: 0 }, rotation: 0,
+    };
+    state.buffers.J = 1;
+    const ghost = findNearestValidPlacement('J', 0, { x: 0, y: 0 }, new Set(['0,0', '1,0', '0,1', '1,1']), 3);
+    expect(ghost).not.toBeNull();
+    expect(decideLooseBlockRelease({
+      elapsedMs: 100, pointerMoved: false, hasSpawnShape: true, hasValidGhost: true,
+    })).toBe('place');
+    const placed = store.placeBlock('J', ghost!);
+    expect(placed.success).toBe(true);
+    expect(state.blocks[placed.blockId!].position).toEqual(ghost);
+    const occupied = new Set(getBlockOccupiedCells('O', { x: 0, y: 0 }, 0).map(cell => `${cell.x},${cell.y}`));
+    expect(getBlockOccupiedCells('J', ghost!, 0).some(cell => occupied.has(`${cell.x},${cell.y}`))).toBe(false);
   });
 });

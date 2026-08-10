@@ -6,7 +6,7 @@
 export interface RecipeDefinition {
   id: string;
   name: string;
-  type: 'Foundational' | 'BindOrSubmit';
+  type: 'Foundational' | 'Bind';
   description: string;
 }
 
@@ -20,14 +20,14 @@ export const STARTER_RECIPES: Record<string, RecipeDefinition> = {
   compression_press: {
     id: 'compression_press',
     name: 'Compression Press',
-    type: 'BindOrSubmit',
-    description: 'Four to ten connected Blocks. Bind as an Engine or Submit for Ash.',
+    type: 'Bind',
+    description: 'Four to ten connected Blocks. Bind as an Engine.',
   },
   twin_stars: {
     id: 'twin_stars',
     name: 'Twin Stars',
-    type: 'BindOrSubmit',
-    description: 'Two equal-sized separated components. Bind as an Engine or Submit for Ash.',
+    type: 'Bind',
+    description: 'Two equal separated groups with at least two Blocks each. Bind as an Engine.',
   },
 };
 

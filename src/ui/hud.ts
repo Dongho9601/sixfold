@@ -80,12 +80,6 @@ export class HUD {
           line-height: 20px;
         }
 
-        .rf-ash-icon {
-          color: #dc8151;
-          font-size: 24px;
-          line-height: 1;
-        }
-
         .rf-resource-icon {
           width: 24px;
           height: 24px;
@@ -209,7 +203,6 @@ export class HUD {
 
       <div class="rf-hud">
         <div class="rf-resource-strip" aria-label="Resources">
-          <span class="rf-resource" title="Ash"><span class="rf-ash-icon" aria-hidden="true">✦</span><span id="hud-ash">0</span></span>
           <span class="rf-resource" title="Shards"><img class="rf-resource-icon" src="/assets/hlbm/icon_gem.png" alt="" /><span id="hud-shards">0</span></span>
           <button class="rf-reset" id="btn-reset" type="button" title="Reset" aria-label="Reset">↺</button>
         </div>
@@ -260,9 +253,7 @@ export class HUD {
 
   update(): void {
     const state = this.store.getState();
-    const ashEl = this.container.querySelector('#hud-ash');
     const shardsEl = this.container.querySelector('#hud-shards');
-    if (ashEl) ashEl.textContent = compactNumber(state.currencies.ash);
     if (shardsEl) shardsEl.textContent = compactNumber(state.currencies.shards);
 
     for (const shape of AVAILABLE_SHAPES) {

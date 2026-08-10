@@ -1,4 +1,4 @@
-/** Compact goal/Recipe sidebar and contextual Bind, Submit, Extract, and Grade actions. */
+/** Compact goal/Recipe sidebar and contextual Bind, Engine Submit, and Grade actions. */
 
 import { getShapeGradeUpgradeCost, SHAPE_TYPES, ShapeType } from '../core/index.ts';
 import { AppStore } from '../application/store.ts';
@@ -59,7 +59,7 @@ export class InspectorPanel {
         .rf-action { flex:1; min-height:38px; border:0; font:inherit; font-size:11px; font-weight:900;
           letter-spacing:.07em; cursor:pointer; background:#e3b53c; color:#0a0a0a; }
         .rf-action:hover:not(:disabled){filter:brightness(1.15)} .rf-action:disabled{opacity:.35;cursor:not-allowed}
-        .rf-submit{background:#8bbbc2}.rf-extract{background:#b78dbc}.rf-bind{background:#e3b53c}
+        .rf-submit{background:#b78dbc}.rf-bind{background:#e3b53c}
         .rf-engine-card { padding:10px; border:1px solid #594563; background:rgba(89,69,99,.12); }
         .rf-engine-name { color:#d9b3df; font-size:13px; font-weight:850; }
         .rf-engine-meta { margin-top:4px; color:#8d7e91; font-size:11px; }
@@ -98,13 +98,9 @@ export class InspectorPanel {
       if (result.success && result.engine) this.feedback(`ENGINE → ${result.engine.nextShape}`);
       else this.feedback('BIND FAILED', true);
     } else if (action === 'submit') {
-      const result = this.store.submitRecipe();
-      if (result.success && result.reward) this.feedback(`SUBMIT → +${result.reward.ash} ASH`);
-      else this.feedback('SUBMIT FAILED', true);
-    } else if (action === 'extract') {
-      const result = this.store.extractEngine();
-      if (result.success) this.feedback(`EXTRACT → +${result.shards} SHARDS`);
-      else this.feedback(result.error || 'EXTRACT FAILED', true);
+      const result = this.store.submitEngine();
+      if (result.success) this.feedback(`SUBMIT → +${result.shards} SHARDS`);
+      else this.feedback(result.error || 'SUBMIT FAILED', true);
     } else if (action === 'upgrade') {
       const shape = target.dataset.shape as ShapeType;
       const result = this.store.upgradeShape(shape);
@@ -133,31 +129,30 @@ export class InspectorPanel {
         ? (preview.analysis.missingCells || []).map(cell => `${cell.x},${cell.y}`)
         : Array.from({ length: 16 }, (_, index) => `${index % 4},${Math.floor(index / 4)}`));
       goal.innerHTML = `
-        <div class="rf-step">1. BUILD</div><div class="rf-goal-name">HEART SEAL</div>
+        <div class="rf-step">1. BUILD HEART SEAL</div>
         <div class="rf-seal-row"><span class="rf-seal-grid">${Array.from({ length: 16 }, (_, index) => `<i class="${missing.has(`${index % 4},${Math.floor(index / 4)}`) ? '' : 'filled'}"></i>`).join('')}</span>
         <span class="rf-goal-progress">${count} / 16</span></div>
-        <div class="rf-teach">${preview.canBind ? `2. BIND → ENGINE<br>KEEP ON FIELD${transformDiagram()}` : 'FILL THE 4×4 SEAL'}</div>`;
+        <div class="rf-teach">${preview.canBind ? `2. BIND → ENGINE${transformDiagram()}` : 'FILL THE 4×4 SEAL'}</div>`;
     } else {
-      goal.innerHTML = `<div class="rf-step">BUILD A PATTERN</div><div class="rf-goal-name">CHOOSE YOUR OUTCOME</div>`;
+      goal.innerHTML = `<div class="rf-step">RECIPES</div><div class="rf-goal-name">BUILD A PATTERN</div>`;
     }
 
     const inspection = this.store.getEngineInspection();
     if (inspection) {
       contextual.innerHTML = `<div class="rf-engine-card">
+        <div class="rf-section-title">ENGINE</div>
         <div class="rf-engine-name">${inspection.foundational ? '♥ ' : '◇ '}${escapeHtml(inspection.name)}</div>
-        <div class="rf-engine-meta">NEXT ${inspection.nextShape} · Q ${Math.round(inspection.quality * 100)}%</div>
-        ${inspection.extractable
-          ? `<div class="rf-teach">${state.learnedActions.extract ? 'CONSUME ENGINE' : 'EXTRACT → SHARDS<br>PRODUCTION DISAPPEARS'}</div>
-             <div class="rf-actions"><button class="rf-action rf-extract" data-action="extract">EXTRACT +${inspection.shards}</button></div>`
-          : '<div class="rf-teach">FOUNDATIONAL · CANNOT EXTRACT</div>'}
+        <div class="rf-engine-meta">NEXT ${inspection.nextShape} · ${inspection.blocksPerMinute.toFixed(1)}/MIN · Q ${Math.round(inspection.quality * 100)}%</div>
+        ${inspection.submittable
+          ? `<div class="rf-teach">${state.learnedActions.submit ? 'PRODUCTION ENDS' : 'SUBMIT ENGINE → SHARDS<br>SHARDS → GRADE ↑'}</div>
+             <div class="rf-actions"><button class="rf-action rf-submit" data-action="submit">SUBMIT ENGINE<br>+${inspection.shards} SHARDS</button></div>`
+          : '<div class="rf-teach">FOUNDATIONAL · CANNOT SUBMIT</div>'}
       </div>`;
-    } else if (preview.analysis?.isValid && (preview.canBind || preview.canSubmit)) {
-      const firstChoice = !state.learnedActions.submit;
+    } else if (preview.analysis?.isValid && preview.canBind) {
       contextual.innerHTML = `
-        <div class="rf-teach">${firstChoice ? `BIND → ENGINE (KEEP)${transformDiagram()}<br>SUBMIT → ASH (CONSUME)` : escapeHtml(preview.analysis.patternName)}</div>
+        <div class="rf-teach">${state.learnedActions.bind ? escapeHtml(preview.analysis.patternName) : `BIND → ENGINE${transformDiagram()}`}</div>
         <div class="rf-actions">
-          ${preview.canBind ? '<button class="rf-action rf-bind" data-action="bind">BIND → ENGINE</button>' : ''}
-          ${preview.canSubmit ? `<button class="rf-action rf-submit" data-action="submit">SUBMIT +${preview.reward?.ash || 0}</button>` : ''}
+          <button class="rf-action rf-bind" data-action="bind">BIND → ENGINE</button>
         </div>`;
     } else if (state.currencies.shards > 0 && !state.learnedActions.upgrade) {
       contextual.innerHTML = '<div class="rf-teach">SHARDS → GRADE ↑<br>STRONGER BLOCKS</div>';
@@ -168,10 +163,10 @@ export class InspectorPanel {
     recipes.innerHTML = state.isHeartEngineBound ? `
       <h3 class="rf-section-title">RECIPES</h3>
       ${recipeCard('compression_press', 'COMPRESSION', '4–10 connected', preview.analysis?.patternId === 'compression_press')}
-      ${recipeCard('twin_stars', 'TWIN STARS', 'same size · separated', preview.analysis?.patternId === 'twin_stars')}
+      ${recipeCard('twin_stars', 'TWIN STARS', '2+2 or more<br>equal groups · separated', preview.analysis?.patternId === 'twin_stars')}
     ` : '<h3 class="rf-section-title">OPENING RECIPE</h3><div class="rf-recipe-outcome">HEART SEAL · exact 4×4</div>';
 
-    grades.innerHTML = `<h3 class="rf-section-title">BLOCK GRADES · SHARDS</h3>${SHAPE_TYPES.map(shape => {
+    grades.innerHTML = `<h3 class="rf-section-title">SHARDS → GRADE ↑</h3>${SHAPE_TYPES.map(shape => {
       const grade = state.shapeGrades[shape];
       const cost = getShapeGradeUpgradeCost(grade);
       return `<div class="rf-grade-row"><span class="rf-grade-shape">${shape}</span><span class="rf-grade-label">Grade ${grade}</span>
@@ -184,8 +179,8 @@ function recipeCard(id: string, name: string, rule: string, active: boolean): st
   const icon = id === 'compression_press'
     ? '<span class="rf-topology rf-compress"><i></i><i></i><i></i><i></i><i></i></span>'
     : '<span class="rf-topology rf-twins"><i></i><i></i></span>';
-  return `<article class="rf-recipe ${active ? 'active' : ''}" tabindex="0" aria-label="${name}, ${rule}, Bind to Engine or Submit for Ash">
-    ${icon}<div><div class="rf-recipe-name">${name}</div><div class="rf-recipe-rule">${rule}</div><div class="rf-recipe-outcome">BIND → ENGINE<br>SUBMIT → ASH</div></div></article>`;
+  return `<article class="rf-recipe ${active ? 'active' : ''}" tabindex="0" aria-label="${name}, ${rule.replace('<br>', ', ')}, Bind to Engine">
+    ${icon}<div><div class="rf-recipe-name">${name}</div><div class="rf-recipe-rule">${rule}</div><div class="rf-recipe-outcome">BIND → ENGINE</div></div></article>`;
 }
 
 function escapeHtml(value: string): string {

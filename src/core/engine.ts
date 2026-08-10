@@ -1,7 +1,7 @@
 /** Pure deterministic 7-bag production owned independently by each Engine. */
 
 import { BufferCounts, EngineState, SHAPE_TYPES, ShapeType } from './types.ts';
-import { calculateBlocksPerMinute } from './economy.ts';
+import { calculateBlocksPerMinute, calculateEngineMaterialMultiplier, calculateEnginePower } from './economy.ts';
 
 export const DEFAULT_BASE_PRODUCTION_RATE = 10;
 export const DEFAULT_ENGINE_SEED = 0x6d2b79f5;
@@ -16,6 +16,9 @@ export interface EngineProductionView {
   nextShape: ShapeType;
   progress: number;
   intervalSec: number;
+  blocksPerMinute: number;
+  materialMultiplier: number;
+  enginePower: number;
 }
 
 function nonZeroSeed(seed: number): number {
@@ -67,7 +70,7 @@ export function getProductionIntervalSec(
   engine: EngineState,
   baseRate: number = DEFAULT_BASE_PRODUCTION_RATE,
 ): number {
-  return 60 / calculateBlocksPerMinute(baseRate, engine.quality);
+  return 60 / calculateBlocksPerMinute(baseRate, engine.boundValue, engine.quality);
 }
 
 export function getEngineProductionView(
@@ -79,6 +82,9 @@ export function getEngineProductionView(
     nextShape: engine.nextShape,
     progress: Math.min(1, Math.max(0, engine.accumulatedTimeSec / intervalSec)),
     intervalSec,
+    blocksPerMinute: 60 / intervalSec,
+    materialMultiplier: calculateEngineMaterialMultiplier(engine.boundValue),
+    enginePower: calculateEnginePower(engine.boundValue, engine.quality),
   };
 }
 

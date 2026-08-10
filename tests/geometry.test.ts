@@ -101,21 +101,30 @@ describe('Pure Geometry Resolver', () => {
     expect(result.nearMatchReason).toBe('11 / 10');
   });
 
-  it('should evaluate Twin Stars twin component requirement & balance', () => {
-    // Component 1 at (10, 10), Component 2 at (15, 10)
-    const validTwin: Block[] = [
+  it('rejects 1+1 Twin Stars below the two-Blocks-per-component minimum', () => {
+    const tooSmall: Block[] = [
       { id: 'b1', shape: 'O', state: 'Loose', grade: 1, position: { x: 10, y: 10 }, rotation: 0 },
       { id: 'b2', shape: 'O', state: 'Loose', grade: 1, position: { x: 15, y: 10 }, rotation: 0 },
     ];
+    const result = evaluatePattern(tooSmall);
+    expect(result).toMatchObject({ patternId: 'twin_stars', isValid: false });
+    expect(result.nearMatchReason).toBe('1 / 2 each');
+  });
 
-    const resultValid = evaluatePattern(validTwin);
-    expect(resultValid.isValid).toBe(true);
-    expect(resultValid.patternId).toBe('twin_stars');
+  it('recognizes 2+2 equal separated Twin Stars', () => {
+    const validTwin: Block[] = [
+      { id: 'a1', shape: 'O', state: 'Loose', grade: 1, position: { x: 10, y: 10 }, rotation: 0 },
+      { id: 'a2', shape: 'O', state: 'Loose', grade: 1, position: { x: 12, y: 10 }, rotation: 0 },
+      { id: 'b1', shape: 'O', state: 'Loose', grade: 1, position: { x: 20, y: 10 }, rotation: 0 },
+      { id: 'b2', shape: 'O', state: 'Loose', grade: 1, position: { x: 22, y: 10 }, rotation: 0 },
+    ];
+    expect(evaluatePattern(validTwin)).toMatchObject({ patternId: 'twin_stars', isValid: true });
+  });
 
-    // Unequal block count should be near-match invalid
+  it('rejects unequal Twin Stars component sizes', () => {
     const invalidTwin: Block[] = [
       { id: 'b1', shape: 'O', state: 'Loose', grade: 1, position: { x: 10, y: 10 }, rotation: 0 },
-      { id: 'b2', shape: 'O', state: 'Loose', grade: 1, position: { x: 11, y: 10 }, rotation: 0 },
+      { id: 'b2', shape: 'O', state: 'Loose', grade: 1, position: { x: 12, y: 10 }, rotation: 0 },
       { id: 'b3', shape: 'O', state: 'Loose', grade: 1, position: { x: 20, y: 20 }, rotation: 0 },
     ];
 

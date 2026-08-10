@@ -34,8 +34,10 @@ export interface EngineState {
   sourcePatternId: string;
   sourcePatternName: string;
   foundational: boolean;
-  extractable: boolean;
+  submittable: boolean;
   quality: number;
+  /** Frozen material value of the Bound constituent snapshot at Bind time. */
+  boundValue: number;
   accumulatedTimeSec: number;
   constituentBlockIds: string[];
   rngState: number;
@@ -44,7 +46,6 @@ export interface EngineState {
 }
 
 export interface Currencies {
-  ash: number;
   shards: number;
 }
 
@@ -74,15 +75,8 @@ export interface PatternAnalysisResult {
   missingCells?: Position[];
 }
 
-export interface RecipeReward {
-  ash: number;
-  submissionPower: number;
-  qualityTier: 'Valid' | 'Strong' | 'Masterwork' | 'Perfect';
-}
-
 export interface LearnedActions {
   bind: boolean;
   submit: boolean;
-  extract: boolean;
   upgrade: boolean;
 }

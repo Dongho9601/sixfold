@@ -45,6 +45,23 @@ export function shouldCompleteLongPress(elapsedMs: number, pointerMoved: boolean
   return !pointerMoved && elapsedMs >= LONG_PRESS_RETURN_MS;
 }
 
+export type LooseBlockReleaseAction = 'return' | 'place' | 'select' | 'ignore';
+
+export interface LooseBlockReleaseContext {
+  elapsedMs: number;
+  pointerMoved: boolean;
+  hasSpawnShape: boolean;
+  hasValidGhost: boolean;
+}
+
+/** Pure release transition for the shared placement/Return gesture on Loose Blocks. */
+export function decideLooseBlockRelease(context: LooseBlockReleaseContext): LooseBlockReleaseAction {
+  if (context.pointerMoved) return 'ignore';
+  if (shouldCompleteLongPress(context.elapsedMs, false)) return 'return';
+  if (context.hasSpawnShape && context.hasValidGhost) return 'place';
+  return 'select';
+}
+
 export type PointerIntent =
   | 'multi-touch'
   | 'pan'
@@ -64,16 +81,16 @@ export interface PointerIntentContext {
 }
 
 /**
- * Pure primary-intent routing. Placement mode owns primary click everywhere;
- * selection and Engine inspection are available only after placement is off.
+ * Pure primary-intent routing. Existing Engines and Loose-Block holds take
+ * priority over placement; a short Loose release may still commit the ghost.
  */
 export function decidePointerIntent(context: PointerIntentContext): PointerIntent {
   if (context.pointerType === 'touch' && context.pointerCount >= 2) return 'multi-touch';
   if (context.button === 1 || context.button === 2 || (context.button === 0 && context.spaceDown)) return 'pan';
   if (context.button !== 0) return 'ignore';
-  if (context.hasSpawnShape) return 'place';
-  if (context.existingBlockState === 'Loose') return 'existing-loose';
   if (context.existingBlockState === 'Bound') return 'existing-engine';
+  if (context.existingBlockState === 'Loose') return 'existing-loose';
+  if (context.hasSpawnShape) return 'place';
   return 'deselect';
 }
 
@@ -190,6 +207,7 @@ export class InputController {
     this.lastGridPosition = gridPosition;
     const clickedBlock = this.findBlockAt(this.store.getState(), gridPosition);
     const activeShape = this.hud.getSelectedSpawnShape();
+    if (activeShape) this.updatePlacementPreview(gridPosition);
     const intent = decidePointerIntent({
       pointerType: event.pointerType,
       pointerCount: this.pointers.size,
@@ -332,10 +350,24 @@ export class InputController {
 
     if (this.heldBlockId) {
       const blockId = this.heldBlockId;
-      const completed = (this.holdPreview?.progress ?? 0) >= 1;
       const moved = this.holdMoved;
+      const elapsedMs = performance.now() - this.holdStartedAt;
+      const shape = this.hud.getSelectedSpawnShape();
+      const preview = this.placementPreview;
+      const action = decideLooseBlockRelease({
+        elapsedMs,
+        pointerMoved: moved,
+        hasSpawnShape: Boolean(shape),
+        hasValidGhost: Boolean(shape && preview?.shape === shape && preview.isValid),
+      });
       this.cancelHold(false);
-      if (!completed && !moved && this.store.getState().blocks[blockId]?.state === 'Loose') {
+      if (action === 'return') {
+        const result = this.store.returnBlock(blockId);
+        if (result.success) this.hud.showFeedback('↩');
+      } else if (action === 'place' && shape && preview?.shape === shape && preview.isValid) {
+        const result = this.store.placeBlock(shape, preview.position, preview.rotation);
+        if (!result.success) this.hud.showFeedback('×', true);
+      } else if (action === 'select' && this.store.getState().blocks[blockId]?.state === 'Loose') {
         this.selectLooseBlock(blockId, event.shiftKey);
       }
     }
@@ -451,7 +483,13 @@ export class InputController {
       progress: 0,
     };
     this.holdTimerId = window.setTimeout(() => {
-      if (!this.heldBlockId || !shouldCompleteLongPress(LONG_PRESS_RETURN_MS, this.holdMoved)) return;
+      const action = decideLooseBlockRelease({
+        elapsedMs: LONG_PRESS_RETURN_MS,
+        pointerMoved: this.holdMoved,
+        hasSpawnShape: Boolean(this.hud.getSelectedSpawnShape()),
+        hasValidGhost: Boolean(this.placementPreview?.isValid),
+      });
+      if (!this.heldBlockId || action !== 'return') return;
       const returnedId = this.heldBlockId;
       const result = this.store.returnBlock(returnedId);
       if (result.success) this.hud.showFeedback('↩');

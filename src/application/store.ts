@@ -1,13 +1,12 @@
 /** Observable application store and presentation-event boundary. */
 
-import { EngineState, Position, RecipeReward, ShapeType } from '../core/types.ts';
+import { EngineState, getEngineProductionView, Position, ShapeType } from '../core/index.ts';
 import { createInitialState, GameState, normalizeGameState } from './state.ts';
 import {
   advanceProductionTime,
   bindPattern,
   clearSelection,
-  extractEngine,
-  getEngineExtractionPreview,
+  getEngineSubmissionPreview,
   getEngineIdForBlock,
   getLooseBlockIdsIntersectingRect,
   getPatternActionPreview,
@@ -21,7 +20,7 @@ import {
   selectBlock,
   selectEngine,
   selectLooseBlocks,
-  submitRecipe,
+  submitEngine,
   upgradeShapeGrade,
 } from './actions.ts';
 
@@ -37,9 +36,8 @@ export interface VisualBlockEvent {
 export type VisualEvent =
   | { type: 'place'; block: VisualBlockEvent }
   | { type: 'return'; block: VisualBlockEvent }
-  | { type: 'submit'; blocks: VisualBlockEvent[]; reward: RecipeReward }
   | { type: 'bind'; blocks: VisualBlockEvent[]; engineId: string }
-  | { type: 'extract'; blocks: VisualBlockEvent[]; engineId: string; shards: number }
+  | { type: 'submit'; blocks: VisualBlockEvent[]; engineId: string; shards: number }
   | { type: 'production'; outputs: Array<{ engineId: string; shape: ShapeType }> }
   | { type: 'grade-up'; shape: ShapeType; grade: number }
   | { type: 'reset' };
@@ -49,10 +47,12 @@ export interface EngineInspectionView {
   name: string;
   sourcePatternName: string;
   foundational: boolean;
-  extractable: boolean;
+  submittable: boolean;
   quality: number;
   nextShape: ShapeType;
   shards: number;
+  constituentBlockIds: string[];
+  blocksPerMinute: number;
   error?: string;
 }
 
@@ -79,23 +79,21 @@ export class AppStore {
     return getPatternActionPreview(this.state, blockIds);
   }
 
-  getSubmissionPreview(blockIds?: readonly string[]) {
-    return getPatternActionPreview(this.state, blockIds);
-  }
-
   getEngineInspection(engineId: string | null = this.state.selectedEngineId): EngineInspectionView | null {
     if (!engineId) return null;
-    const preview = getEngineExtractionPreview(this.state, engineId);
+    const preview = getEngineSubmissionPreview(this.state, engineId);
     if (!preview) return null;
     return {
       id: preview.engine.id,
       name: preview.engine.name,
       sourcePatternName: preview.engine.sourcePatternName,
       foundational: preview.engine.foundational,
-      extractable: preview.engine.extractable,
+      submittable: preview.engine.submittable,
       quality: preview.engine.quality,
       nextShape: preview.engine.nextShape,
       shards: preview.shards,
+      constituentBlockIds: [...preview.engine.constituentBlockIds],
+      blocksPerMinute: getEngineProductionView(preview.engine).blocksPerMinute,
       error: preview.error,
     };
   }
@@ -205,23 +203,18 @@ export class AppStore {
     return result;
   }
 
-  submitRecipe() {
-    const preview = this.getPatternActionPreview();
-    const snapshots = preview.blocks.map(visualBlock).filter((block): block is VisualBlockEvent => Boolean(block));
-    const result = submitRecipe(this.state);
-    if (result.success && result.reward) {
-      this.visualEvents.push({ type: 'submit', blocks: snapshots, reward: result.reward });
-      this.notify(true);
-    }
-    return result;
-  }
-
-  extractEngine(engineId: string = this.state.selectedEngineId || '') {
-    const preview = getEngineExtractionPreview(this.state, engineId);
+  submitEngine(engineId: string = this.state.selectedEngineId || '') {
+    const preview = getEngineSubmissionPreview(this.state, engineId);
     const snapshots = preview?.blocks.map(visualBlock).filter((block): block is VisualBlockEvent => Boolean(block)) || [];
-    const result = extractEngine(this.state, engineId);
+    const result = submitEngine(this.state, engineId);
     if (result.success && result.shards !== undefined) {
-      this.visualEvents.push({ type: 'extract', blocks: snapshots, engineId, shards: result.shards });
+      const immutableSnapshots = Object.freeze(snapshots.map(block => Object.freeze({
+        ...block,
+        position: Object.freeze({ ...block.position }),
+      }))) as unknown as VisualBlockEvent[];
+      this.visualEvents.push(Object.freeze({
+        type: 'submit', blocks: immutableSnapshots, engineId, shards: result.shards,
+      }));
       this.notify(true);
     }
     return result;

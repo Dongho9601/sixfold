@@ -26,13 +26,13 @@ Implement the production software architecture and playable core loop so the gam
    - Loose Block state, placed cells, and Shape buffers.
    - Pure geometry resolver computing Cohesion, component count, and edge contact.
    - Pattern evaluator for initial Patterns (Heart Seal, Compression Press, Twin Stars).
-   - Atomic Pattern Bind, Loose Submit, and ordinary Engine Extract transactions.
-   - Ash submission, Shard extraction, and Shape Grade formulas; no Engine XP/Level.
+   - Atomic Pattern Bind and ordinary Engine Submit transactions.
+   - Engine power, Shard submission, and Shape Grade formulas; no Engine XP/Level.
 2. **Authored Starter Content (`src/content/`):**
    - Opening Cradle Sector.
    - Starter Pattern & Recipe definitions (Heart Seal, Compression Press, Twin Stars).
 3. **Application State & Actions (`src/application/`):**
-   - Action dispatchers (`PlaceBlock`, `ReturnBlock`, `AnalyzeSelection` fallback, `BindEngine`, `SubmitRecipe`) with placement treated as a commit rather than editor movement.
+   - Action dispatchers (`PlaceBlock`, `ReturnBlock`, `AnalyzeSelection` fallback, `BindEngine`, `SubmitEngine`) with placement treated as a commit rather than editor movement.
    - Session state container.
 4. **Platform Infrastructure (`src/platform/`):**
    - Versioned localStorage save adapter with safe malformed-state fallback.
@@ -40,7 +40,7 @@ Implement the production software architecture and playable core loop so the gam
 5. **Canvas 2D Renderer & UI (`src/ui/`):**
    - Sparse Field Canvas 2D renderer with pan and zoom camera.
    - Snapping Shape ghost placement/rotation, physical-code shortcuts, click/Shift/box selection.
-   - Compact, distinct Bind/Submit/Extract actions with exact consumption and payout previews.
+   - Compact, distinct Pattern Bind and Engine Submit actions with exact consumption and payout previews.
    - Legible minimal HUD plus collapsible goal/Recipe/Grade sidebar.
 
 ### Dependency Ordering
@@ -50,8 +50,8 @@ $$\text{Core Math \& Domain} \longrightarrow \text{Application Actions} \longrig
 - The game runs in the browser via `npm run dev`.
 - Player can place starter Blocks in the 4×4 Cradle to discover and Bind the Heart Engine.
 - Heart and ordinary Engines generate independent deterministic randomized 7-bags into uncapped inventory.
-- Player can Bind or Submit Compression/Twin Stars, Extract ordinary Engines for Shards, and upgrade Shape Grades.
-- **Submitted Loose Blocks are consumed and disappear from the board.**
+- Player can Bind Compression/Twin Stars, Submit ordinary Engines for Shards, and upgrade Shape Grades.
+- **Submitted Engine constituents are consumed and disappear from the board.**
 - Game state persists across browser reloads.
 
 ---
@@ -64,7 +64,7 @@ Play the live browser game, evaluate feel, and fix weaknesses in loop pacing, sp
 ### Major Deliverables
 1. **Core Loop Revision:**
    - Replace buffer balancing/caps with persisted per-Engine shuffled 7-bags.
-   - Support the foundational non-extractable Heart plus 0..N extractable ordinary Engines.
+   - Support the foundational non-submittable Heart plus 0..N submittable ordinary Engines.
 2. **Core Interaction Contract:**
    - Physical `Digit1..Digit7`/Numpad codes activate a snapping grid ghost; `KeyR` rotates; repeat activation toggles placement off.
    - Remove ordinary left-drag movement from gameplay. Right/middle/Space+left pan, the wheel zooms, and a 450 ms Loose Block hold Returns it.
@@ -74,13 +74,13 @@ Play the live browser game, evaluate feel, and fix weaknesses in loop pacing, sp
    - Highlight missing geometry and trace valid Patterns on the Field.
    - Distinguish Loose tetromino silhouettes from crystallized Bound Engine structures.
    - Show each Engine's actual next random Shape and progress locally; remove full/blocked state.
-   - Surface distinct Bind/Submit/Extract choices with exact consumption and payout.
+   - Surface Pattern Bind and selected-Engine Submit with exact consumption and payout.
 4. **Board Presentation:**
    - Refine camera pan/zoom and establish the two-finger mobile contract.
    - Keep a larger minimal resource/Shape HUD and add a quiet Recipe/onboarding/Grade sidebar.
 
 ### Exit Criteria
-- Playability testing confirms that new players immediately understand that **Bind keeps Blocks as an Engine** while **Submit consumes Loose Blocks**.
+- Playability testing confirms that new players understand that **Bind creates production** while **Submit sacrifices an Engine for Grade progression**.
 - Connected vs. separated topology choices feel distinct and visually intuitive.
 - Early game loop (5–30 minutes) is engaging, clear, and free of editor-like placement friction.
 

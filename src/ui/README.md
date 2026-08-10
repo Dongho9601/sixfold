@@ -9,7 +9,7 @@ The `ui` directory manages presentation, camera navigation, user input, overlays
 - **`overlays`**: Live Cohesion/Separation quality meters, resonance traces, fracture indicators.
 - **`codex`**: Discovered Pattern library view, rumors, hints, and saved Stencil browser.
 - **`inspector`**: Compact current-goal, Recipe, contextual action, Engine inspection, and Shape Grade sidebar.
-- **`renderer`**: Exact Submit/Extract silhouettes, Engine-local production state, snapping ghosts, and rectangle selection.
+- **`renderer`**: Exact Engine Submit silhouettes, Engine-local production state, snapping ghosts, and rectangle selection.
 - **`accessibility`**: High-contrast mode, reduced motion/flash settings, symbol-based shape indicators, keyboard focus navigation.
 - **`styles`**: CSS design tokens, typography, layout styles, and theme variables.
 

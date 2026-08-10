@@ -3,15 +3,19 @@
 import {
   Block,
   BufferCounts,
+  calculateBoundValue,
   createProductionBag,
   Currencies,
   EngineState,
+  ENGINE_MATERIAL_BASELINE_VALUE,
   LearnedActions,
   PatternAnalysisResult,
   SHAPE_TYPES,
   ShapeGrades,
   stableEngineSeed,
 } from '../core/index.ts';
+
+export const SAVE_VERSION = 3;
 
 export interface GameState {
   version: number;
@@ -40,8 +44,8 @@ export function emptyShapeNumbers(value: number): BufferCounts {
 
 export function createInitialState(): GameState {
   return {
-    version: 2,
-    currencies: { ash: 0, shards: 0 },
+    version: SAVE_VERSION,
+    currencies: { shards: 0 },
     buffers: { ...emptyShapeNumbers(0), I: 1, O: 1, L: 1, J: 1 },
     shapeGrades: emptyShapeNumbers(1),
     blocks: {},
@@ -49,7 +53,7 @@ export function createInitialState(): GameState {
     heartEngineId: null,
     isHeartEngineBound: false,
     selectedEngineId: null,
-    learnedActions: { bind: false, submit: false, extract: false, upgrade: false },
+    learnedActions: { bind: false, submit: false, upgrade: false },
     discoveredPatterns: [],
     selectedBlockIds: [],
     lastAnalysis: null,
@@ -61,18 +65,20 @@ export function createInitialState(): GameState {
   };
 }
 
-/** Adds current fields and migrates the previous single Heart Engine save shape. */
+/** Migrates v1/v2 saves while intentionally discarding the retired Ash field. */
 export function normalizeGameState(state: GameState): GameState {
+  const sourceVersion = state.version || 1;
   const legacy = state as GameState & { heartEngine?: {
     id: string; name: string; quality: number; accumulatedTimeSec: number; constituentBlockIds: string[];
-  } | null };
+  } | null; currencies?: Currencies & { ash?: number }; learnedActions?: LearnedActions & { extract?: boolean } };
 
-  state.version = 2;
-  state.currencies ??= { ash: 0, shards: 0 };
-  state.currencies.ash ??= 0;
+  state.version = SAVE_VERSION;
+  state.currencies ??= { shards: 0 };
   state.currencies.shards ??= 0;
+  delete legacy.currencies?.ash;
   state.buffers ??= emptyShapeNumbers(0);
   state.shapeGrades ??= emptyShapeNumbers(1);
+  state.blocks ??= {};
   for (const shape of SHAPE_TYPES) {
     state.buffers[shape] ??= 0;
     state.shapeGrades[shape] ??= 1;
@@ -87,8 +93,12 @@ export function normalizeGameState(state: GameState): GameState {
       sourcePatternId: 'heart_seal',
       sourcePatternName: 'Heart Seal',
       foundational: true,
-      extractable: false,
+      submittable: false,
       quality: old.quality ?? 1,
+      boundValue: Math.max(
+        ENGINE_MATERIAL_BASELINE_VALUE,
+        calculateBoundValue((old.constituentBlockIds || []).map(id => state.blocks[id]).filter(Boolean)),
+      ),
       accumulatedTimeSec: old.accumulatedTimeSec ?? 0,
       constituentBlockIds: [...(old.constituentBlockIds || [])],
       ...createProductionBag(stableEngineSeed(old.id)),
@@ -96,22 +106,30 @@ export function normalizeGameState(state: GameState): GameState {
   }
 
   for (const engine of Object.values(state.engines)) {
+    const legacyEngine = engine as EngineState & { extractable?: boolean };
     engine.rngState ??= stableEngineSeed(engine.id);
     if (!engine.productionBag?.length || !engine.nextShape) Object.assign(engine, createProductionBag(engine.rngState));
     engine.sourcePatternId ??= engine.id === 'engine-heart' ? 'heart_seal' : 'compression_press';
     engine.sourcePatternName ??= engine.id === 'engine-heart' ? 'Heart Seal' : 'Compression Press';
     engine.foundational ??= engine.id === 'engine-heart';
-    engine.extractable ??= !engine.foundational;
+    engine.submittable ??= legacyEngine.extractable ?? !engine.foundational;
+    engine.boundValue ??= Math.max(
+      ENGINE_MATERIAL_BASELINE_VALUE,
+      calculateBoundValue(engine.constituentBlockIds
+        .map(id => state.blocks[id])
+        .filter((block): block is Block => Boolean(block))),
+    );
+    delete legacyEngine.extractable;
   }
 
   state.heartEngineId ??= state.engines['engine-heart'] ? 'engine-heart' : null;
   state.isHeartEngineBound = Boolean(state.heartEngineId && state.engines[state.heartEngineId]);
   state.selectedEngineId ??= null;
-  state.learnedActions ??= {
-    bind: state.isHeartEngineBound,
-    submit: state.currencies.ash > 0,
-    extract: state.currencies.shards > 0,
-    upgrade: Object.values(state.shapeGrades).some(grade => grade > 1),
+  const oldLearned = legacy.learnedActions;
+  state.learnedActions = {
+    bind: oldLearned?.bind ?? state.isHeartEngineBound,
+    submit: (sourceVersion >= SAVE_VERSION ? oldLearned?.submit : oldLearned?.extract) ?? state.currencies.shards > 0,
+    upgrade: oldLearned?.upgrade ?? Object.values(state.shapeGrades).some(grade => grade > 1),
   };
   state.fieldAnalysis ??= null;
   state.fieldCandidateBlockIds ??= [];
