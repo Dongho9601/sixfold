@@ -1,7 +1,7 @@
-/** Compact goal/Recipe sidebar and contextual Bind, Engine Submit, and Grade actions. */
-
-import { getShapeGradeUpgradeCost, SHAPE_TYPES, ShapeType } from '../core/index.ts';
+import { getBlockOccupiedCells, getShapeGradeUpgradeCost, SHAPE_TYPES, ShapeType } from '../core/index.ts';
+import { STARTER_RECIPES, RecipeDefinition } from '../content/starter.ts';
 import { AppStore } from '../application/store.ts';
+import { SHAPE_COLORS } from './renderer.ts';
 
 export class InspectorPanel {
   private collapsed = false;
@@ -43,18 +43,14 @@ export class InspectorPanel {
         .rf-engine-glyph { width:17px; height:17px; box-sizing:border-box; border:2px solid #b78dbc; transform:rotate(45deg); }
         .rf-section { margin-top:16px; padding-top:12px; border-top:1px solid rgba(94,90,84,.38); }
         .rf-section-title { margin:0 0 9px; color:#8e8981; font-size:11px; letter-spacing:.14em; }
-        .rf-recipe { display:grid; grid-template-columns:34px 1fr; gap:9px; padding:9px 0; border-bottom:1px solid rgba(94,90,84,.24); }
+        .rf-recipe { display:grid; grid-template-columns:36px 1fr; gap:9px; padding:9px 0; border-bottom:1px solid rgba(94,90,84,.24); }
         .rf-recipe.active { color:#eef0df; background:rgba(80,96,71,.12); }
+        .rf-recipe-thumb { width:36px; height:36px; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.35); border:1px solid rgba(94,90,84,.32); border-radius:3px; padding:2px; box-sizing:border-box; }
+        .rf-recipe-thumb.exact { border-color:rgba(227,181,60,.4); }
+        .rf-recipe-tag { display:inline-block; font-size:9px; font-weight:900; letter-spacing:.08em; color:#8bbbc2; background:rgba(139,187,194,.14); padding:1px 4px; border-radius:2px; margin-top:2px; margin-bottom:2px; text-transform:uppercase; }
         .rf-recipe-name { color:#d6d1c8; font-size:12px; font-weight:850; letter-spacing:.04em; }
         .rf-recipe-rule,.rf-recipe-outcome { margin-top:3px; font-size:11px; color:#8e8981; line-height:1.4; }
         .rf-recipe-outcome { color:#9aac83; }
-        .rf-topology { position:relative; display:block; width:30px; height:28px; }
-        .rf-topology i { position:absolute; width:7px; height:7px; background:#8bbbc2; }
-        .rf-compress i:nth-child(1){left:1px;top:10px}.rf-compress i:nth-child(2){left:9px;top:10px}
-        .rf-compress i:nth-child(3){left:17px;top:10px}.rf-compress i:nth-child(4){left:9px;top:2px}
-        .rf-compress i:nth-child(5){left:9px;top:18px}
-        .rf-twins i:first-child{left:0;top:5px;box-shadow:7px 0 #e3b53c,0 7px #e3b53c,7px 7px #e3b53c;background:#e3b53c}
-        .rf-twins i:last-child{left:17px;top:13px;box-shadow:7px 0 #dc8151,0 7px #dc8151,7px 7px #dc8151;background:#dc8151}
         .rf-actions { display:flex; gap:7px; margin-top:10px; }
         .rf-action { flex:1; min-height:38px; border:0; font:inherit; font-size:11px; font-weight:900;
           letter-spacing:.07em; cursor:pointer; background:#e3b53c; color:#0a0a0a; }
@@ -162,9 +158,12 @@ export class InspectorPanel {
 
     recipes.innerHTML = state.isHeartEngineBound ? `
       <h3 class="rf-section-title">RECIPES</h3>
-      ${recipeCard('compression_press', 'COMPRESSION', '4–10 connected', preview.analysis?.patternId === 'compression_press')}
-      ${recipeCard('twin_stars', 'TWIN STARS', '2+2 or more<br>equal groups · separated', preview.analysis?.patternId === 'twin_stars')}
-    ` : '<h3 class="rf-section-title">OPENING RECIPE</h3><div class="rf-recipe-outcome">HEART SEAL · exact 4×4</div>';
+      ${recipeCard(STARTER_RECIPES['compression_press'], preview.analysis?.patternId === 'compression_press')}
+      ${recipeCard(STARTER_RECIPES['twin_stars'], preview.analysis?.patternId === 'twin_stars')}
+    ` : `
+      <h3 class="rf-section-title">OPENING RECIPE</h3>
+      ${recipeCard(STARTER_RECIPES['heart_seal'], preview.analysis?.patternId === 'heart_seal')}
+    `;
 
     grades.innerHTML = `<h3 class="rf-section-title">SHARDS → GRADE ↑</h3>${SHAPE_TYPES.map(shape => {
       const grade = state.shapeGrades[shape];
@@ -175,12 +174,58 @@ export class InspectorPanel {
   }
 }
 
-function recipeCard(id: string, name: string, rule: string, active: boolean): string {
-  const icon = id === 'compression_press'
-    ? '<span class="rf-topology rf-compress"><i></i><i></i><i></i><i></i><i></i></span>'
-    : '<span class="rf-topology rf-twins"><i></i><i></i></span>';
-  return `<article class="rf-recipe ${active ? 'active' : ''}" tabindex="0" aria-label="${name}, ${rule.replace('<br>', ', ')}, Bind to Engine">
-    ${icon}<div><div class="rf-recipe-name">${name}</div><div class="rf-recipe-rule">${rule}</div><div class="rf-recipe-outcome">BIND → ENGINE</div></div></article>`;
+function renderRecipePreview(recipe: RecipeDefinition): string {
+  if (recipe.previewKind === 'exact' || !recipe.previewBlocks || recipe.previewBlocks.length === 0) {
+    return `<div class="rf-recipe-thumb exact" aria-hidden="true">
+      <div class="rf-preview-grid" style="display:grid; grid-template-columns:repeat(4, 5px); grid-template-rows:repeat(4, 5px); gap:1px;">
+        ${Array.from({ length: 16 }, () => `<i style="background:#e3b53c; border:1px solid #f1cc66; box-sizing:border-box;"></i>`).join('')}
+      </div>
+    </div>`;
+  }
+
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  const rawCells: Array<{ x: number; y: number; shape: ShapeType }> = [];
+  for (const block of recipe.previewBlocks) {
+    const occupied = getBlockOccupiedCells(block.shape, block.position, block.rotation);
+    for (const pos of occupied) {
+      rawCells.push({ x: pos.x, y: pos.y, shape: block.shape });
+      if (pos.x < minX) minX = pos.x;
+      if (pos.x > maxX) maxX = pos.x;
+      if (pos.y < minY) minY = pos.y;
+      if (pos.y > maxY) maxY = pos.y;
+    }
+  }
+
+  const width = maxX - minX + 1;
+  const height = maxY - minY + 1;
+  const maxDim = Math.max(width, height);
+  const cellSize = Math.max(2, Math.floor(28 / maxDim));
+
+  const cellsHtml = rawCells.map(c => {
+    const nx = c.x - minX;
+    const ny = c.y - minY;
+    const colors = SHAPE_COLORS[c.shape];
+    return `<i style="grid-column:${nx + 1}; grid-row:${ny + 1}; background:${colors.fill}; border:1px solid ${colors.stroke}; box-sizing:border-box;"></i>`;
+  }).join('');
+
+  return `<div class="rf-recipe-thumb" aria-hidden="true">
+    <div class="rf-preview-grid" style="display:grid; grid-template-columns:repeat(${width}, ${cellSize}px); grid-template-rows:repeat(${height}, ${cellSize}px); gap:1px;">
+      ${cellsHtml}
+    </div>
+  </div>`;
+}
+
+function recipeCard(recipe: RecipeDefinition, active: boolean): string {
+  const icon = renderRecipePreview(recipe);
+  const tag = recipe.previewKind === 'example' ? '<div class="rf-recipe-tag">EXAMPLE</div>' : '';
+  const isOrdinary = recipe.type === 'Bind';
+  const cleanRuleText = recipe.description.replace(/<br\s*\/?>/gi, ', ');
+  return `<article class="rf-recipe ${active ? 'active' : ''}" tabindex="0" aria-label="${recipe.name}, ${recipe.previewKind === 'example' ? 'EXAMPLE, ' : ''}${cleanRuleText}, ${isOrdinary ? 'Bind to Engine' : 'Fill 4x4 Cradle'}">
+    ${icon}<div><div class="rf-recipe-name">${escapeHtml(recipe.name.toUpperCase())}</div>${tag}<div class="rf-recipe-rule">${recipe.description}</div><div class="rf-recipe-outcome">${isOrdinary ? 'BIND → ENGINE' : 'EXACT 4×4 CRADLE'}</div></div></article>`;
 }
 
 function escapeHtml(value: string): string {

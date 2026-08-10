@@ -3,11 +3,32 @@
  * Declarative definitions for Cradle, Starter Patterns, and Recipes.
  */
 
+import { Block, Position, ShapeType } from '../core/types.ts';
+
+export interface RecipePreviewBlock {
+  shape: ShapeType;
+  position: Position;
+  rotation: number;
+}
+
 export interface RecipeDefinition {
   id: string;
   name: string;
   type: 'Foundational' | 'Bind';
   description: string;
+  previewKind: 'exact' | 'example';
+  previewBlocks?: RecipePreviewBlock[];
+}
+
+export function materializeRecipePreviewBlocks(previewBlocks: RecipePreviewBlock[]): Block[] {
+  return previewBlocks.map((block, index) => ({
+    id: `preview_block_${index}`,
+    shape: block.shape,
+    state: 'Loose',
+    grade: 1,
+    position: block.position,
+    rotation: block.rotation,
+  }));
 }
 
 export const STARTER_RECIPES: Record<string, RecipeDefinition> = {
@@ -15,19 +36,34 @@ export const STARTER_RECIPES: Record<string, RecipeDefinition> = {
     id: 'heart_seal',
     name: 'Heart Seal',
     type: 'Foundational',
-    description: 'Exact 4x4 fill of the opening Cradle. Freezes starter blocks into a permanent Heart Engine.',
+    description: 'Exact 4x4 fill of opening Cradle.',
+    previewKind: 'exact',
   },
   compression_press: {
     id: 'compression_press',
     name: 'Compression Press',
     type: 'Bind',
-    description: 'Four to ten connected Blocks. Bind as an Engine.',
+    description: '4–10 connected',
+    previewKind: 'example',
+    previewBlocks: [
+      { shape: 'O', position: { x: 0, y: 10 }, rotation: 0 },
+      { shape: 'I', position: { x: 2, y: 10 }, rotation: 1 },
+      { shape: 'L', position: { x: 0, y: 12 }, rotation: 0 },
+      { shape: 'T', position: { x: 2, y: 14 }, rotation: 0 },
+    ],
   },
   twin_stars: {
     id: 'twin_stars',
     name: 'Twin Stars',
     type: 'Bind',
-    description: 'Two equal separated groups with at least two Blocks each. Bind as an Engine.',
+    description: '2+2 or more<br>equal groups · separated',
+    previewKind: 'example',
+    previewBlocks: [
+      { shape: 'O', position: { x: 0, y: 10 }, rotation: 0 },
+      { shape: 'I', position: { x: 0, y: 12 }, rotation: 0 },
+      { shape: 'O', position: { x: 2, y: 14 }, rotation: 0 },
+      { shape: 'J', position: { x: 2, y: 16 }, rotation: 1 },
+    ],
   },
 };
 

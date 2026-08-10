@@ -139,7 +139,7 @@ SUBMIT ENGINE → SHARDS
 SHARDS → GRADE ↑
 ```
 
-Before the Heart Engine it shows `1. BUILD HEART SEAL` and `2. BIND → ENGINE`. Afterward it shows the Compression and Twin Stars rules. Inspecting an ordinary Engine shows next-Shape/production context plus its exact Submit payout.
+Before the Heart Engine it shows `1. BUILD HEART SEAL` and `2. BIND → ENGINE`. Afterward it shows the Compression and Twin Stars rules with valid canonical example topology previews labeled EXAMPLE (Heart Seal remains an exact template target). Inspecting an ordinary Engine shows next-Shape/production context plus its exact Submit payout.
 
 ## 9. Save and Architecture
 
