@@ -1,6 +1,12 @@
 /** Observable application store and presentation-event boundary. */
 
-import { EngineState, getEngineProductionView, Position, ShapeType } from '../core/index.ts';
+import {
+  derivePoweredEngineIds,
+  EngineState,
+  getEngineProductionView,
+  Position,
+  ShapeType,
+} from '../core/index.ts';
 import { createInitialState, GameState, normalizeGameState } from './state.ts';
 import {
   advanceProductionTime,
@@ -53,6 +59,8 @@ export interface EngineInspectionView {
   shards: number;
   constituentBlockIds: string[];
   blocksPerMinute: number;
+  progress: number;
+  powered: boolean;
   error?: string;
 }
 
@@ -83,6 +91,12 @@ export class AppStore {
     if (!engineId) return null;
     const preview = getEngineSubmissionPreview(this.state, engineId);
     if (!preview) return null;
+    const powered = derivePoweredEngineIds(
+      this.state.engines,
+      this.state.blocks,
+      this.state.heartEngineId,
+    ).has(preview.engine.id);
+    const productionView = getEngineProductionView(preview.engine, undefined, powered);
     return {
       id: preview.engine.id,
       name: preview.engine.name,
@@ -93,9 +107,15 @@ export class AppStore {
       nextShape: preview.engine.nextShape,
       shards: preview.shards,
       constituentBlockIds: [...preview.engine.constituentBlockIds],
-      blocksPerMinute: getEngineProductionView(preview.engine).blocksPerMinute,
+      blocksPerMinute: productionView.blocksPerMinute,
+      progress: productionView.progress,
+      powered,
       error: preview.error,
     };
+  }
+
+  getPoweredEngineIds(): Set<string> {
+    return derivePoweredEngineIds(this.state.engines, this.state.blocks, this.state.heartEngineId);
   }
 
   setState(newState: GameState): void {

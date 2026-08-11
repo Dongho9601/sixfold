@@ -19,6 +19,7 @@ export interface EngineProductionView {
   blocksPerMinute: number;
   materialMultiplier: number;
   enginePower: number;
+  powered: boolean;
 }
 
 function nonZeroSeed(seed: number): number {
@@ -76,6 +77,7 @@ export function getProductionIntervalSec(
 export function getEngineProductionView(
   engine: EngineState,
   baseRate: number = DEFAULT_BASE_PRODUCTION_RATE,
+  powered: boolean = true,
 ): EngineProductionView {
   const intervalSec = getProductionIntervalSec(engine, baseRate);
   return {
@@ -85,6 +87,7 @@ export function getEngineProductionView(
     blocksPerMinute: 60 / intervalSec,
     materialMultiplier: calculateEngineMaterialMultiplier(engine.boundValue),
     enginePower: calculateEnginePower(engine.boundValue, engine.quality),
+    powered,
   };
 }
 
@@ -99,7 +102,16 @@ export function advanceEngineProduction(
   buffers: BufferCounts,
   deltaSeconds: number,
   baseRate: number = DEFAULT_BASE_PRODUCTION_RATE,
+  powered: boolean = true,
 ): EngineTickResult {
+  if (!powered) {
+    return {
+      engine: { ...sourceEngine, productionBag: [...sourceEngine.productionBag] },
+      buffers: { ...buffers },
+      generatedShapes: [],
+    };
+  }
+
   let engine = normalizeBag({ ...sourceEngine, productionBag: [...sourceEngine.productionBag] });
   const intervalSec = getProductionIntervalSec(engine, baseRate);
   let accumulatedTimeSec = engine.accumulatedTimeSec + Math.max(0, deltaSeconds);

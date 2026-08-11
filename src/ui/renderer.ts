@@ -7,6 +7,7 @@
 
 import {
   findConnectedComponents,
+  getPoweredEngineIds,
   EngineState,
   getBlockOccupiedCells,
   getEngineProductionView,
@@ -154,12 +155,23 @@ export class FieldRenderer {
       (block.state === 'Loose' || block.state === 'Bound') && block.position,
     );
     const looseBlocks = activeBlocks.filter(block => block.state === 'Loose');
+    const poweredEngineIds = getPoweredEngineIds(state.engines, state.blocks, state.heartEngineId);
 
     for (const engine of Object.values(state.engines)) {
       const engineBlocks = engine.constituentBlockIds
         .map(id => state.blocks[id])
         .filter(block => Boolean(block?.position) && block.state === 'Bound');
-      if (engineBlocks.length > 0) this.drawEngine(state, engine, engineBlocks, camera, currentCellSize, now);
+      if (engineBlocks.length > 0) {
+        this.drawEngine(
+          state,
+          engine,
+          engineBlocks,
+          camera,
+          currentCellSize,
+          now,
+          poweredEngineIds.has(engine.id),
+        );
+      }
     }
 
     for (const block of looseBlocks) {
@@ -392,6 +404,7 @@ export class FieldRenderer {
     camera: Camera,
     currentCellSize: number,
     now: number,
+    powered: boolean,
   ): void {
     const ctx = this.ctx;
     const engineCells = engineBlocks.flatMap(block => getBlockOccupiedCells(block.shape, block.position!, block.rotation));
@@ -405,7 +418,9 @@ export class FieldRenderer {
       const p = camera.gridToScreen(cell.x, cell.y);
       const padding = Math.max(1, 1.5 * camera.zoom);
       const size = currentCellSize - padding * 2;
-      ctx.fillStyle = pulse > 0 ? `rgba(89, 69, 99, ${0.68 + pulse * 0.2})` : '#29242c';
+      ctx.fillStyle = powered
+        ? pulse > 0 ? `rgba(89, 69, 99, ${0.68 + pulse * 0.2})` : '#29242c'
+        : '#202025';
       ctx.fillRect(p.x + padding, p.y + padding, size, size);
 
       const neighbors: Array<[number, number, number, number]> = [
@@ -414,7 +429,7 @@ export class FieldRenderer {
       ];
       for (const [dx, dy, nx, ny] of neighbors) {
         if (engineKeys.has(`${cell.x + dx},${cell.y + dy}`)) {
-          ctx.strokeStyle = AMETHYST;
+          ctx.strokeStyle = powered ? AMETHYST : '#4a454c';
           ctx.globalAlpha = 0.72;
           ctx.lineWidth = Math.max(1, camera.zoom);
           ctx.beginPath();
@@ -431,7 +446,7 @@ export class FieldRenderer {
         [0, 1, p.x, p.y + currentCellSize],
         [0, -1, p.x, p.y],
       ];
-      ctx.strokeStyle = '#735c79';
+      ctx.strokeStyle = powered ? '#735c79' : '#4a454c';
       ctx.globalAlpha = 0.8;
       ctx.lineWidth = Math.max(1, 1.3 * camera.zoom);
       for (const [dx, dy, x, y] of edgeChecks) {
@@ -458,18 +473,18 @@ export class FieldRenderer {
     const center = camera.gridToScreen(centerGrid.x, centerGrid.y);
     const engineWidth = (maxX - minX + 1) * currentCellSize;
     const engineHeight = (maxY - minY + 1) * currentCellSize;
-    const view = getEngineProductionView(engine);
+    const view = getEngineProductionView(engine, undefined, powered);
 
     {
       const ringRadius = Math.max(9, Math.min(engineWidth, engineHeight) * 0.29);
-      ctx.strokeStyle = '#413947';
+      ctx.strokeStyle = powered ? '#413947' : '#37343a';
       ctx.globalAlpha = 0.9;
       ctx.lineWidth = Math.max(1.5, 2 * camera.zoom);
       ctx.beginPath();
       ctx.arc(center.x, center.y, ringRadius, -Math.PI / 2, Math.PI * 1.5);
       ctx.stroke();
 
-      ctx.strokeStyle = GOLD;
+      ctx.strokeStyle = powered ? GOLD : '#6b626d';
       ctx.globalAlpha = 0.95;
       ctx.beginPath();
       ctx.arc(center.x, center.y, ringRadius, -Math.PI / 2, -Math.PI / 2 + view.progress * Math.PI * 2);
@@ -477,7 +492,17 @@ export class FieldRenderer {
       ctx.globalAlpha = 1;
 
       if (engine.foundational) this.drawHeartGlyph(center.x, center.y, Math.max(5, ringRadius * 0.48), pulse > 0 ? '#d9b3df' : '#b78dbc');
-      else this.drawEngineGlyph(center.x, center.y, Math.max(5, ringRadius * 0.52), pulse > 0 ? '#d9b3df' : '#b78dbc');
+      else this.drawEngineGlyph(center.x, center.y, Math.max(5, ringRadius * 0.52), powered && pulse > 0 ? '#d9b3df' : powered ? '#b78dbc' : '#6b626d');
+
+      if (camera.zoom >= 0.55) {
+        ctx.fillStyle = powered ? '#b78dbc' : '#d56e5f';
+        ctx.globalAlpha = 0.92;
+        ctx.font = `${Math.max(8, Math.round(9 * camera.zoom))}px ui-monospace, SFMono-Regular, monospace`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText(engine.foundational ? 'HEART' : powered ? 'POWERED' : 'UNPOWERED', center.x, center.y + ringRadius + 5 * camera.zoom);
+        ctx.globalAlpha = 1;
+      }
 
       if (state.selectedEngineId === engine.id) {
         ctx.save();

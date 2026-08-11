@@ -6,6 +6,8 @@ import {
   calculateBoundValue,
   calculateEngineSubmissionShards,
   createProductionBag,
+  derivePoweredEngineIds,
+  DEFAULT_BASE_PRODUCTION_RATE,
   EngineState,
   evaluatePattern,
   findConnectedComponents,
@@ -469,9 +471,16 @@ export function advanceProductionTime(
   deltaSeconds: number,
 ): { generatedShapes: ShapeType[]; outputs: EngineProductionOutput[]; changed: boolean } {
   const outputs: EngineProductionOutput[] = [];
+  const poweredEngineIds = derivePoweredEngineIds(state.engines, state.blocks, state.heartEngineId);
   let buffers = state.buffers;
   for (const engineId of Object.keys(state.engines).sort()) {
-    const result = advanceEngineProduction(state.engines[engineId], buffers, deltaSeconds);
+    const result = advanceEngineProduction(
+      state.engines[engineId],
+      buffers,
+      deltaSeconds,
+      DEFAULT_BASE_PRODUCTION_RATE,
+      poweredEngineIds.has(engineId),
+    );
     state.engines[engineId] = result.engine;
     buffers = result.buffers;
     outputs.push(...result.generatedShapes.map(shape => ({ engineId, shape })));

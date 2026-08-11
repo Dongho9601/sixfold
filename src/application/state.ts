@@ -147,6 +147,7 @@ export function normalizeGameState(state: GameState): GameState {
 
   for (const engine of Object.values(state.engines)) {
     const legacyEngine = engine as EngineState & { extractable?: boolean };
+    delete (legacyEngine as EngineState & { powered?: boolean }).powered;
     engine.rngState ??= stableEngineSeed(engine.id);
     if (!engine.productionBag?.length || !engine.nextShape) Object.assign(engine, createProductionBag(engine.rngState));
     engine.sourcePatternId ??= engine.id === 'engine-heart' ? 'heart_seal' : 'compression_press';
