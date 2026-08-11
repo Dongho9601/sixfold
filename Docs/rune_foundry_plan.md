@@ -64,8 +64,8 @@ Revise the live core loop so spatial production, Power connectivity, resource pa
 ### Major Deliverables
 1. **Limited Field and Expansion:**
    - Replace unlimited placement with a set of unlocked 4×4 chunks.
-   - Start with roughly an 8×8 opening field around the Heart Cradle.
-   - Add Frontier Seal activation as the authored expansion path; allow non-rectangular unlocked layouts.
+   - Start with an 8×8 core plus one adjacent 4×4 staging chunk so the early Heart-to-Frontier route has legal space without exact packing.
+   - Add Frontier Seal activation as the authored expansion path; require direct contact with the specifically selected locked target chunk and allow non-rectangular unlocked layouts.
 2. **Heart-Rooted Power:**
    - Make the Heart Engine the Power root and gate ordinary production on orthogonal Bound-cell reachability.
    - Preserve partial progress while unpowered without disconnected-time backlog or catch-up.
@@ -77,7 +77,7 @@ Revise the live core loop so spatial production, Power connectivity, resource pa
 4. **Directed Progression and Economy:**
    - Add authored NOW/NEXT Foundry Directives.
    - Keep Shards for repeatable Shape Grades and add Core only for milestone progression.
-   - Author the early Heart → Compression → Submit → Grade → Powered Engine → Core → Frontier → Twin Stars sequence.
+   - Author the early Heart → Compression → Submit → Grade → direct Engine → relay Engine → Core → Frontier → Twin Stars sequence.
 5. **Core Interaction Contract:**
    - Physical `Digit1..Digit7`/Numpad codes activate a snapping grid ghost; `KeyR` rotates; repeat activation toggles placement off.
    - Remove ordinary left-drag movement from gameplay. Right/middle/Space+left pan, the wheel zooms, and a 450 ms Loose Block hold Returns it.
@@ -96,7 +96,7 @@ Revise the live core loop so spatial production, Power connectivity, resource pa
 
 ### Exit Criteria
 - Playability testing confirms that new players understand that **Bind creates production** while **Submit sacrifices an Engine for Grade progression**.
-- The opening 8×8 field has a deterministic, buildable Frontier Seal route to a chosen adjacent 4×4 chunk.
+- The 8×8 core plus staging chunk has a deterministic, buildable Frontier Seal route to a chosen adjacent 4×4 chunk.
 - A kept ordinary Engine produces only when Heart-connected; submitting a bridge visibly disconnects downstream Engines without catch-up output.
 - Heart production lands at roughly one Block every 12–16 seconds and pauses cleanly at Stock 12.
 - NOW/NEXT Directives provide an obvious goal through the first expansion and Twin Stars milestone.

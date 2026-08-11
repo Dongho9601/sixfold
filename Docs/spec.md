@@ -38,7 +38,7 @@ Production creates Blocks, never resources directly.
 The world and camera may extend indefinitely, but Blocks may occupy only unlocked cells.
 
 - Expansion unit: one 4×4 chunk.
-- The opening field is roughly 8×8 usable cells, authored as four starting chunks around the Heart Cradle.
+- The opening unlock set is an 8×8 core (four chunks) plus one adjacent 4×4 staging chunk on its south side: 80 usable cells total. This is the smallest one-chunk buffer that makes the early Heart-to-Frontier route independent of exact packing.
 - The 4×4 Heart Cradle remains the exact Heart Seal target. Its coordinate origin is an authored map detail; it sits inside the opening field with usable cells around it.
 - Opening inventory is one each of I, O, L, and J; T, S, and Z begin at zero. These four real Blocks fill the Heart Seal.
 - The resulting Heart Engine is unique, foundational, remains on the Field, cannot be Submitted, and ensures the player retains a permanent Block-production root.
@@ -82,13 +82,13 @@ Canonical normalized pattern:
 Activation also requires:
 
 - the selected 2×8 footprint is entirely inside currently unlocked, unoccupied cells;
-- the chosen target is a locked 4×4 chunk sharing a side with the current unlocked field;
-- the long side of the Seal has at least four orthogonal edge contacts with that target chunk. A corner or diagonal contact cannot activate it;
+- the player explicitly selects one locked 4×4 target chunk that shares a side with the current unlocked field;
+- the Seal is built on the unlocked side of that frontier, with its outward long edge directly touching the boundary of the selected target. At least four orthogonal edge contacts must be with cells of that specific target chunk; contact with another locked chunk, a corner, or a diagonal does not qualify;
 - the player has at least **1 Core and 12 Shards**.
 
-Activation validates the pattern, target, and costs in one transaction, then consumes the four I Blocks, removes 1 Core, removes 12 Shards, and unlocks exactly the chosen target chunk. A failed validation removes nothing.
+Activation validates the pattern, the specific target contact, and the costs in one transaction, then consumes the four I Blocks, removes 1 Core, removes 12 Shards, and unlocks exactly that adjacent target chunk—no other locked chunk is unlocked. A failed validation removes nothing.
 
-**Verified buildable example:** use an opening frame of x:-2..5, y:-2..5, with the Heart Cradle at x:0..3, y:0..3. Choose the locked east chunk x:6..9, y:-2..1. Place vertical I Blocks with origins (4,-2), (5,-2), (4,2), and (5,2), using rotation 1 from the repository's canonical I geometry. Their occupied cells are exactly {x:4,5} × {y:-2..5}: they do not overlap the Cradle, all 16 cells are in the opening field, and the x:5, y:-2..1 edge is orthogonally adjacent to the target's x:6, y:-2..1 side. This is a valid Frontier Seal made from four real tetrominoes.
+**Verified buildable example:** use the 8×8 opening core frame x:-2..5, y:-2..5, with the Heart Cradle at x:0..3, y:0..3, plus the starting staging chunk x:0..3, y:6..9. Keep the locked east target chunk x:6..9, y:-2..1. Place vertical I Blocks with origins (4,-2), (5,-2), (4,2), and (5,2), using rotation 1 from the repository's canonical I geometry. Their occupied cells are exactly {x:4,5} × {y:-2..5}: they do not overlap the Cradle, all 16 cells are in currently unlocked cells, and the x:5, y:-2..1 edge directly touches the boundary of the selected target at x:6, y:-2..1. This is a valid Frontier Seal made from four real tetrominoes.
 
 The example is an authored layout illustration; the general rule is the normalized footprint and frontier contact, not those absolute coordinates.
 
@@ -104,8 +104,8 @@ The intended early sequence is:
 | 2 | Build and Bind Compression Press | First ordinary Engine exists |
 | 3 | Submit an ordinary Engine | Grants the normal Shard payout and teaches that Submit frees its cells |
 | 4 | Upgrade a Shape to Grade 2 | Teaches the repeatable Shard sink |
-| 5 | Keep a Powered ordinary Engine | An ordinary Engine is Bound, connected to Heart, and not Submitted |
-| 6 | Complete **Stabilize the Line** | While kept and powered, the ordinary Engine completes one real production output; award exactly 1 Core |
+| 5 | Rebuild and Keep a Powered ordinary Engine | Rebuild Engine A with a direct Heart path and keep it Bound; this demonstrates direct Heart connectivity |
+| 6 | Complete **Stabilize the Line** | Keep a second ordinary Engine B whose only Heart path runs through A; when B completes one real output through that relay, award exactly 1 Core |
 | 7 | Build a Frontier Seal | Show the 1 Core, 12 Shard, and four-I-Block requirements |
 | 8 | Activate it at the frontier | Unlock one chosen adjacent 4×4 chunk |
 | 9 | Build Twin Stars with expanded space | Bind two equal components, with one component wholly in the newly unlocked chunk and the other in pre-expansion space |
@@ -113,7 +113,7 @@ The intended early sequence is:
 
 The order can be represented by authored Directive IDs, but the player sees only NOW and NEXT. If a resource is missing, NOW shows the relevant requirement and the shortest available route: produce/place Blocks, Submit an ordinary Engine for Shards, or complete the current milestone for Core.
 
-The first Core is awarded by the authored **Stabilize the Line** milestone, not by passive time, production output in general, or normal Engine submission. Later Cores follow the same authored-milestone rule.
+The first Core is awarded by the authored **Stabilize the Line** milestone, not by passive time, production output in general, or normal Engine submission. The milestone is not complete when A is merely Heart-connected: B must be powered through the existing ordinary Engine A and emit a real Block. Later Cores follow the same authored-milestone rule.
 
 ## 5. Power Network
 
@@ -226,10 +226,11 @@ All geometry, recipe validation, Power reachability, economy, production, RNG, a
 
 ## 10. Safety checks and invariants
 
-- **Spatial softlock:** the opening field leaves usable space around the Cradle, and the authored Frontier Seal example provides a valid first route. Any later expansion must be side-adjacent to an already unlocked chunk.
-- **Expansion reachability:** the first Core milestone is completable using the Heart and a powered ordinary Engine before expansion. The Frontier Seal requires only real Blocks, Shards, Core, and an existing frontier; it never requires land that is already locked.
-- **Stock deadlock:** Stock-full production pauses rather than accumulating. Placement, Bind, ordinary Submit, and the explicit full-Stock Loose-block discard all provide ways to reduce pressure.
-- **Impossible Seal placement:** both the canonical geometry and the target frontier are checked at activation time; costs and Blocks are removed only after every check succeeds.
+- **Guaranteed early route:** the 80-cell opening supports Heart (16 cells), direct Engine A (16), relay Engine B (16), and a spare ordinary Engine if needed (16), with the 16-cell Frontier Seal still fitting after B and the spare are Submitted. A verified legal arrangement uses four O Blocks for A at origins (-2,-2), (-2,0), (-2,2), and (-2,4), and four O Blocks for B at (0,5), (0,7), (2,5), and (2,7): A touches Heart along its west edge, B touches A at row 5 but is not adjacent to Heart, and the east Seal lane remains clear. The first Compression is Submitted before A is rebuilt, so its cells are available.
+- **Expansion reachability:** the first Core milestone is completable before expansion: A is directly Heart-powered, B is powered only through A, and the verified Seal lane stays in the original 8×8 core. After Stabilize, B and an optional spare ordinary Engine are normal Shard sources for the Seal; each minimum four-Block Grade-1 ordinary submission pays at least 6 Shards, so three such submissions total 18 gross, less the 3-Shard Grade 2 upgrade, leave at least 15 Shards for the 12-Shard Seal cost.
+- **Stock deadlock:** the 12-Block Stock cap is enough to hold the four-I Seal material or the eight Blocks needed to rebuild A and B, while Blocks are placed/Bound as they arrive. Stock-full production pauses rather than accumulating, and ordinary Submit frees both cells and future Stock room.
+- **Spatial softlock:** the starting staging chunk removes exact-packing dependence; the authored Frontier Seal example provides a valid first route, and any later expansion must be side-adjacent to an already unlocked chunk.
+- **Impossible Seal placement:** the Seal footprint, its contact with the specifically selected target chunk, and its costs are checked at activation time; costs and Blocks are removed only after every check succeeds.
 - **Power exploit:** Power is recomputed from Bound-cell adjacency after every Bind and Submit. Unpowered Engines neither produce nor conduct; disconnected time and repeated Submit never create extra output or payout.
 - **Core collapse:** Core is a milestone gate with no Shard conversion, so it cannot become a second name for Shards or be farmed through production.
 - **No-goal states:** every Directive transition immediately supplies a new NOW and NEXT. Missing resources show their source action, and a full Stock state explains how to make room.
