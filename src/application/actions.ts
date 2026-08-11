@@ -1,7 +1,7 @@
 /** Pure deterministic state transitions for placement, Patterns, Engines, and progression. */
 
 import {
-  advanceEngineProduction,
+  advanceEngineShape,
   Block,
   calculateBoundValue,
   calculateEngineSubmissionShards,
@@ -12,12 +12,16 @@ import {
   evaluatePattern,
   findConnectedComponents,
   getBlockOccupiedCells,
+  getProductionIntervalSec,
   getShapeGradeUpgradeCost,
   isCradleCell,
   OPENING_UNLOCKED_CHUNK_IDS,
   Position,
   ShapeType,
+  STOCK_CAPACITY,
   stableEngineSeed,
+  isStockFull,
+  normalizeEngineProduction,
   validateTetrominoPlacement,
 } from '../core/index.ts';
 import { GameState } from './state.ts';
@@ -228,15 +232,16 @@ export function rotateBlock(state: GameState, blockId: string): { success: boole
   return { success: true, newRotation: nextRotation };
 }
 
-export function returnBlockToBuffer(state: GameState, blockId: string): { success: boolean; error?: string } {
+export function returnBlockToBuffer(state: GameState, blockId: string): { success: boolean; discarded?: boolean; error?: string } {
   const block = state.blocks[blockId];
   if (!block || block.state !== 'Loose') return { success: false, error: 'Only Loose Blocks can Return.' };
   delete state.blocks[blockId];
-  state.buffers[block.shape] += 1;
+  const discarded = isStockFull(state.buffers, STOCK_CAPACITY);
+  if (!discarded) state.buffers[block.shape] += 1;
   state.selectedBlockIds = state.selectedBlockIds.filter(id => id !== blockId);
   if (state.recentFieldBlockId === blockId) state.recentFieldBlockId = null;
   state.selectedBlockIds.length > 0 ? analyzeSelection(state) : refreshFieldPattern(state);
-  return { success: true };
+  return { success: true, discarded };
 }
 
 export function selectBlock(state: GameState, blockId: string, toggle: boolean = false): void {
@@ -472,19 +477,95 @@ export function advanceProductionTime(
 ): { generatedShapes: ShapeType[]; outputs: EngineProductionOutput[]; changed: boolean } {
   const outputs: EngineProductionOutput[] = [];
   const poweredEngineIds = derivePoweredEngineIds(state.engines, state.blocks, state.heartEngineId);
-  let buffers = state.buffers;
-  for (const engineId of Object.keys(state.engines).sort()) {
-    const result = advanceEngineProduction(
-      state.engines[engineId],
-      buffers,
-      deltaSeconds,
-      DEFAULT_BASE_PRODUCTION_RATE,
-      poweredEngineIds.has(engineId),
-    );
-    state.engines[engineId] = result.engine;
-    buffers = result.buffers;
-    outputs.push(...result.generatedShapes.map(shape => ({ engineId, shape })));
+  const engineIds = Object.keys(state.engines).sort();
+  const poweredIds = engineIds.filter(engineId => poweredEngineIds.has(engineId));
+  const intervals = new Map<string, number>();
+  let buffers = { ...state.buffers };
+  let remainingSeconds = Number.isFinite(deltaSeconds) ? Math.max(0, deltaSeconds) : 0;
+  let changed = false;
+
+  // Normalize persisted bag pairs before the synchronized clock walk. Power
+  // is already derived above, so an unpowered Engine remains completely idle.
+  for (const engineId of poweredIds) {
+    const normalized = normalizeEngineProduction(state.engines[engineId]);
+    state.engines[engineId] = normalized;
+    intervals.set(engineId, getProductionIntervalSec(normalized, DEFAULT_BASE_PRODUCTION_RATE));
   }
+
+  // At full Stock, no elapsed time is applied. Preserve an existing partial or
+  // single ready interval, but discard any malformed multi-interval backlog.
+  if (isStockFull(buffers, STOCK_CAPACITY)) {
+    for (const engineId of poweredIds) {
+      const engine = state.engines[engineId];
+      const interval = intervals.get(engineId)!;
+      const preserved = Math.min(Math.max(0, engine.accumulatedTimeSec), interval);
+      if (preserved !== engine.accumulatedTimeSec) {
+        state.engines[engineId] = { ...engine, accumulatedTimeSec: preserved };
+        changed = true;
+      }
+    }
+    state.buffers = buffers;
+    return { generatedShapes: [], outputs, changed };
+  }
+
+  // All powered clocks advance together until the next completion event. At
+  // that event, ready outputs are committed in stable Engine-ID order. This
+  // makes a large tick equivalent to its smaller subdivisions while retaining
+  // deterministic capacity contention.
+  while (!isStockFull(buffers, STOCK_CAPACITY)) {
+    const readyIds = poweredIds.filter(engineId => {
+      const engine = state.engines[engineId];
+      return engine.accumulatedTimeSec + 1e-9 >= intervals.get(engineId)!;
+    });
+
+    if (readyIds.length === 0) {
+      if (remainingSeconds <= 1e-9 || poweredIds.length === 0) break;
+      let stepSeconds = remainingSeconds;
+      for (const engineId of poweredIds) {
+        const engine = state.engines[engineId];
+        const interval = intervals.get(engineId)!;
+        stepSeconds = Math.min(stepSeconds, Math.max(0, interval - engine.accumulatedTimeSec));
+      }
+      if (stepSeconds <= 1e-9) continue;
+      for (const engineId of poweredIds) {
+        const engine = state.engines[engineId];
+        state.engines[engineId] = {
+          ...engine,
+          accumulatedTimeSec: engine.accumulatedTimeSec + stepSeconds,
+        };
+      }
+      remainingSeconds = Math.max(0, remainingSeconds - stepSeconds);
+      continue;
+    }
+
+    for (const engineId of readyIds) {
+      let engine = state.engines[engineId];
+      const interval = intervals.get(engineId)!;
+      while (engine.accumulatedTimeSec + 1e-9 >= interval && !isStockFull(buffers, STOCK_CAPACITY)) {
+        const output = advanceEngineShape(engine);
+        buffers[output.shape] += 1;
+        outputs.push({ engineId, shape: output.shape });
+        engine = {
+          ...output.engine,
+          accumulatedTimeSec: Math.max(0, engine.accumulatedTimeSec - interval),
+        };
+        changed = true;
+      }
+
+      if (isStockFull(buffers, STOCK_CAPACITY)) {
+        // Any remainder after the output that filled Stock belongs to blocked
+        // time. Preserve only progress that existed at that exact event.
+        engine = {
+          ...engine,
+          accumulatedTimeSec: Math.min(Math.max(0, engine.accumulatedTimeSec), interval),
+        };
+        state.engines[engineId] = engine;
+        break;
+      }
+      state.engines[engineId] = engine;
+    }
+  }
+
   state.buffers = buffers;
-  return { generatedShapes: outputs.map(output => output.shape), outputs, changed: outputs.length > 0 };
+  return { generatedShapes: outputs.map(output => output.shape), outputs, changed };
 }

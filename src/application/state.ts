@@ -19,7 +19,9 @@ import {
   stableEngineSeed,
 } from '../core/index.ts';
 
-export const SAVE_VERSION = 4;
+// Pass 3C changes production behavior but persists no capacity field: Stock
+// remains a fixed global rule, so existing buffer counts can migrate verbatim.
+export const SAVE_VERSION = 5;
 
 export interface GameState {
   version: number;

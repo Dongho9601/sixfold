@@ -10,3 +10,4 @@ export * from './geometry.ts';
 export * from './economy.ts';
 export * from './engine.ts';
 export * from './power.ts';
+export * from './stock.ts';

@@ -3,7 +3,7 @@
  * Resources and Shape buffers stay visible; engine and Pattern detail live on the Field.
  */
 
-import { getBlockOccupiedCells, SHAPE_TYPES, ShapeType } from '../core/index.ts';
+import { getBlockOccupiedCells, getStockUsage, isStockFull, SHAPE_TYPES, ShapeType, STOCK_CAPACITY } from '../core/index.ts';
 import { AppStore } from '../application/store.ts';
 
 const AVAILABLE_SHAPES: readonly ShapeType[] = SHAPE_TYPES;
@@ -79,6 +79,11 @@ export class HUD {
           font-weight: 700;
           line-height: 20px;
         }
+
+        .rf-stock-resource { gap: 7px; }
+        .rf-stock-resource.full { color: #d56e5f; }
+        .rf-stock-label { color: #8e8981; font-size: 11px; letter-spacing: .08em; }
+        .rf-stock-full { font-size: 11px; font-weight: 900; letter-spacing: .06em; }
 
         .rf-resource-icon {
           width: 24px;
@@ -204,6 +209,9 @@ export class HUD {
       <div class="rf-hud">
         <div class="rf-resource-strip" aria-label="Resources">
           <span class="rf-resource" title="Shards"><img class="rf-resource-icon" src="/assets/hlbm/icon_gem.png" alt="" /><span id="hud-shards">0</span></span>
+          <span class="rf-resource rf-stock-resource" id="hud-stock-resource" title="Buffered Block Stock">
+            <span class="rf-stock-label">STOCK</span><span id="hud-stock">0 / ${STOCK_CAPACITY}</span><span class="rf-stock-full" id="hud-stock-full" hidden>STOCK FULL</span>
+          </span>
           <button class="rf-reset" id="btn-reset" type="button" title="Reset" aria-label="Reset">↺</button>
         </div>
 
@@ -255,6 +263,17 @@ export class HUD {
     const state = this.store.getState();
     const shardsEl = this.container.querySelector('#hud-shards');
     if (shardsEl) shardsEl.textContent = compactNumber(state.currencies.shards);
+    const stockUsed = getStockUsage(state.buffers);
+    const stockFull = isStockFull(state.buffers, STOCK_CAPACITY);
+    const stockEl = this.container.querySelector('#hud-stock');
+    const stockResourceEl = this.container.querySelector('#hud-stock-resource');
+    const stockFullEl = this.container.querySelector('#hud-stock-full') as HTMLElement | null;
+    if (stockEl) stockEl.textContent = `${stockUsed} / ${STOCK_CAPACITY}`;
+    stockResourceEl?.classList.toggle('full', stockFull);
+    if (stockFullEl) {
+      stockFullEl.hidden = !stockFull;
+      stockFullEl.setAttribute('aria-label', stockFull ? 'Stock full; production paused' : '');
+    }
 
     for (const shape of AVAILABLE_SHAPES) {
       const button = this.container.querySelector(`#btn-shape-${shape}`) as HTMLButtonElement | null;

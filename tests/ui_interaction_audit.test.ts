@@ -64,22 +64,23 @@ describe('Core Loop UX interaction contracts', () => {
     expect(new Set(result.generatedShapes)).toEqual(new Set(SHAPE_TYPES));
   });
 
-  it('is deterministic from the same persisted Engine state and ignores buffer counts', () => {
+  it('is deterministic from the same persisted Engine state while Stock has room', () => {
     const source = engine();
-    const seconds = getProductionIntervalSec(source) * 12;
+    const seconds = getProductionIntervalSec(source) * 3;
     const low = advanceEngineProduction(source, emptyShapeNumbers(0), seconds);
-    const highBuffers = emptyShapeNumbers(99); highBuffers.I = 10000;
+    const highBuffers = emptyShapeNumbers(0); highBuffers.I = 5;
     const high = advanceEngineProduction(source, highBuffers, seconds);
     expect(low.generatedShapes).toEqual(high.generatedShapes);
     expect(low.engine).toEqual(high.engine);
   });
 
-  it('never blocks production at former buffer caps', () => {
+  it('blocks at the global Stock capacity rather than former per-buffer caps', () => {
     const source = engine();
-    const buffers = emptyShapeNumbers(3);
+    const buffers = emptyShapeNumbers(0);
+    buffers.I = 3;
     const result = advanceEngineProduction(source, buffers, getProductionIntervalSec(source) * 20);
-    expect(result.generatedShapes).toHaveLength(20);
-    expect(Object.values(result.buffers).reduce((sum, count) => sum + count, 0)).toBe(41);
+    expect(result.generatedShapes).toHaveLength(9);
+    expect(Object.values(result.buffers).reduce((sum, count) => sum + count, 0)).toBe(12);
     expect(getEngineProductionView(result.engine).nextShape).toBeTruthy();
   });
 

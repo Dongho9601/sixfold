@@ -2,8 +2,11 @@
 
 import { BufferCounts, EngineState, SHAPE_TYPES, ShapeType } from './types.ts';
 import { calculateBlocksPerMinute, calculateEngineMaterialMultiplier, calculateEnginePower } from './economy.ts';
+import { canAddToStock, isStockFull, STOCK_CAPACITY } from './stock.ts';
 
-export const DEFAULT_BASE_PRODUCTION_RATE = 10;
+/** Canonical production pacing: Blocks per minute before material/Quality scaling. */
+export const BASE_RATE = 3.5;
+export const DEFAULT_BASE_PRODUCTION_RATE = BASE_RATE;
 export const DEFAULT_ENGINE_SEED = 0x6d2b79f5;
 
 export interface EngineTickResult {
@@ -20,6 +23,11 @@ export interface EngineProductionView {
   materialMultiplier: number;
   enginePower: number;
   powered: boolean;
+}
+
+export interface EngineShapeOutput {
+  engine: EngineState;
+  shape: ShapeType;
 }
 
 function nonZeroSeed(seed: number): number {
@@ -97,12 +105,32 @@ function normalizeBag(engine: EngineState): EngineState {
   return { ...engine, ...refill };
 }
 
+/** Returns a cloned Engine with a valid persisted bag/next-Shape pair. */
+export function normalizeEngineProduction(sourceEngine: EngineState): EngineState {
+  return normalizeBag({ ...sourceEngine, productionBag: [...sourceEngine.productionBag] });
+}
+
+/** Advances only the deterministic bag after one completed output. */
+export function advanceEngineShape(sourceEngine: EngineState): EngineShapeOutput {
+  let engine = normalizeEngineProduction(sourceEngine);
+  const shape = engine.nextShape;
+  const remaining = engine.productionBag.slice(1);
+  if (remaining.length > 0) {
+    engine = { ...engine, productionBag: remaining, nextShape: remaining[0] };
+  } else {
+    const refill = createProductionBag(engine.rngState);
+    engine = { ...engine, ...refill };
+  }
+  return { engine, shape };
+}
+
 export function advanceEngineProduction(
   sourceEngine: EngineState,
   buffers: BufferCounts,
   deltaSeconds: number,
   baseRate: number = DEFAULT_BASE_PRODUCTION_RATE,
   powered: boolean = true,
+  stockCapacity: number = STOCK_CAPACITY,
 ): EngineTickResult {
   if (!powered) {
     return {
@@ -112,24 +140,41 @@ export function advanceEngineProduction(
     };
   }
 
-  let engine = normalizeBag({ ...sourceEngine, productionBag: [...sourceEngine.productionBag] });
+  let engine = normalizeEngineProduction(sourceEngine);
   const intervalSec = getProductionIntervalSec(engine, baseRate);
-  let accumulatedTimeSec = engine.accumulatedTimeSec + Math.max(0, deltaSeconds);
+  const elapsedSeconds = Number.isFinite(deltaSeconds) ? Math.max(0, deltaSeconds) : 0;
   const generatedShapes: ShapeType[] = [];
   const updatedBuffers = { ...buffers };
 
-  while (accumulatedTimeSec + 1e-9 >= intervalSec) {
-    const output = engine.nextShape;
-    updatedBuffers[output] += 1;
-    generatedShapes.push(output);
-    accumulatedTimeSec = Math.max(0, accumulatedTimeSec - intervalSec);
+  // A full Stock does not advance the clock. Preserve fractional progress and
+  // at most one already-completed interval; elapsed time spent blocked never
+  // creates additional ready outputs.
+  if (isStockFull(updatedBuffers, stockCapacity)) {
+    const preservedProgress = preserveBlockedProgress(engine.accumulatedTimeSec, intervalSec);
+    return {
+      engine: { ...engine, accumulatedTimeSec: preservedProgress },
+      buffers: updatedBuffers,
+      generatedShapes,
+    };
+  }
 
-    const remaining = engine.productionBag.slice(1);
-    if (remaining.length > 0) {
-      engine = { ...engine, productionBag: remaining, nextShape: remaining[0] };
-    } else {
-      const refill = createProductionBag(engine.rngState);
-      engine = { ...engine, ...refill };
+  let accumulatedTimeSec = engine.accumulatedTimeSec + elapsedSeconds;
+
+  while (accumulatedTimeSec + 1e-9 >= intervalSec) {
+    if (!canAddToStock(updatedBuffers, 1, stockCapacity)) break;
+
+    const output = advanceEngineShape(engine);
+    updatedBuffers[output.shape] += 1;
+    generatedShapes.push(output.shape);
+    accumulatedTimeSec = Math.max(0, accumulatedTimeSec - intervalSec);
+    engine = output.engine;
+
+    // This Engine's output filled Stock. The output completed exactly at the
+    // moment backpressure began, so elapsed time after it is blocked time and
+    // must be discarded rather than converted into future production.
+    if (isStockFull(updatedBuffers, stockCapacity)) {
+      accumulatedTimeSec = 0;
+      break;
     }
   }
 
@@ -138,4 +183,9 @@ export function advanceEngineProduction(
     buffers: updatedBuffers,
     generatedShapes,
   };
+}
+
+function preserveBlockedProgress(accumulatedTimeSec: number, intervalSec: number): number {
+  const normalized = Math.max(0, accumulatedTimeSec);
+  return Math.min(normalized, intervalSec);
 }

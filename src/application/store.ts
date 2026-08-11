@@ -4,7 +4,10 @@ import {
   derivePoweredEngineIds,
   EngineState,
   getEngineProductionView,
+  getStockUsage,
+  isStockFull,
   Position,
+  STOCK_CAPACITY,
   ShapeType,
 } from '../core/index.ts';
 import { createInitialState, GameState, normalizeGameState } from './state.ts';
@@ -61,6 +64,9 @@ export interface EngineInspectionView {
   blocksPerMinute: number;
   progress: number;
   powered: boolean;
+  stockUsed: number;
+  stockCapacity: number;
+  productionPausedByStock: boolean;
   error?: string;
 }
 
@@ -97,6 +103,8 @@ export class AppStore {
       this.state.heartEngineId,
     ).has(preview.engine.id);
     const productionView = getEngineProductionView(preview.engine, undefined, powered);
+    const stockUsed = getStockUsage(this.state.buffers);
+    const stockFull = isStockFull(this.state.buffers, STOCK_CAPACITY);
     return {
       id: preview.engine.id,
       name: preview.engine.name,
@@ -110,6 +118,9 @@ export class AppStore {
       blocksPerMinute: productionView.blocksPerMinute,
       progress: productionView.progress,
       powered,
+      stockUsed,
+      stockCapacity: STOCK_CAPACITY,
+      productionPausedByStock: powered && stockFull,
       error: preview.error,
     };
   }
@@ -252,7 +263,9 @@ export class AppStore {
   tick(deltaSeconds: number): void {
     const result = advanceProductionTime(this.state, deltaSeconds);
     if (result.changed) {
-      this.visualEvents.push({ type: 'production', outputs: result.outputs });
+      if (result.outputs.length > 0) {
+        this.visualEvents.push({ type: 'production', outputs: result.outputs });
+      }
       this.notify(true);
     }
   }

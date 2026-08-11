@@ -62,6 +62,7 @@ export class InspectorPanel {
         .rf-engine-power { margin-top:8px; font-size:11px; font-weight:900; letter-spacing:.08em; }
         .rf-engine-power.powered { color:#b78dbc; }
         .rf-engine-power.unpowered { color:#d56e5f; }
+        .rf-engine-stock { margin-top:7px; color:#c99a52; font-size:11px; font-weight:900; letter-spacing:.07em; }
         .rf-grade-row { display:grid; grid-template-columns:22px 1fr auto; align-items:center; gap:8px; min-height:32px; }
         .rf-grade-shape { font-weight:900; color:#d6d1c8; }.rf-grade-label{font-size:11px;color:#9a958d}
         .rf-upgrade { min-width:78px; height:27px; border:1px solid #53666d; color:#8bbbc2; background:transparent;
@@ -138,12 +139,18 @@ export class InspectorPanel {
 
     const inspection = this.store.getEngineInspection();
     if (inspection) {
+      const powerLabel = inspection.powered
+        ? inspection.productionPausedByStock
+          ? 'POWERED · STOCK FULL · PRODUCTION PAUSED'
+          : inspection.foundational ? 'POWERED · HEART ROOT' : 'POWERED · CLOCK RUNNING'
+        : 'UNPOWERED · POWER PAUSED';
       contextual.innerHTML = `<div class="rf-engine-card">
         <div class="rf-section-title">ENGINE</div>
         <div class="rf-engine-name">${inspection.foundational ? '♥ ' : '◇ '}${escapeHtml(inspection.name)}</div>
-        <div class="rf-engine-power ${inspection.powered ? 'powered' : 'unpowered'}">${inspection.foundational ? 'POWERED · HEART ROOT' : inspection.powered ? 'POWERED · CLOCK RUNNING' : 'UNPOWERED · CLOCK PAUSED'}</div>
+        <div class="rf-engine-power ${inspection.powered ? 'powered' : 'unpowered'}">${powerLabel}</div>
         <div class="rf-engine-meta">NEXT ${inspection.nextShape} · ${inspection.blocksPerMinute.toFixed(1)}/MIN · PROGRESS ${Math.round(inspection.progress * 100)}% · Q ${Math.round(inspection.quality * 100)}%</div>
-        ${inspection.powered ? '' : '<div class="rf-teach">PROGRESS PRESERVED<br>RECONNECT TO RESUME</div>'}
+        <div class="rf-engine-stock">STOCK ${inspection.stockUsed} / ${inspection.stockCapacity}</div>
+        ${inspection.productionPausedByStock ? '<div class="rf-teach">STOCK FULL<br>PROGRESS PRESERVED</div>' : inspection.powered ? '' : '<div class="rf-teach">POWER PAUSED<br>PROGRESS PRESERVED · RECONNECT TO RESUME</div>'}
         ${inspection.submittable
           ? `<div class="rf-teach">${state.learnedActions.submit ? 'PRODUCTION ENDS' : 'SUBMIT ENGINE → SHARDS<br>SHARDS → GRADE ↑'}</div>
              <div class="rf-actions"><button class="rf-action rf-submit" data-action="submit">SUBMIT ENGINE<br>+${inspection.shards} SHARDS</button></div>`
