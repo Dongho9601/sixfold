@@ -8,6 +8,10 @@ import {
   Currencies,
   EngineState,
   ENGINE_MATERIAL_BASELINE_VALUE,
+  getBlockOccupiedCells,
+  getOpeningUnlockedChunkIds,
+  getPreservationChunkIdForCell,
+  isCellUnlocked,
   LearnedActions,
   PatternAnalysisResult,
   SHAPE_TYPES,
@@ -15,10 +19,12 @@ import {
   stableEngineSeed,
 } from '../core/index.ts';
 
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 export interface GameState {
   version: number;
+  /** Persisted set of authored 4x4 chunk IDs currently unlocked for play. */
+  unlockedChunks: string[];
   currencies: Currencies;
   buffers: BufferCounts;
   shapeGrades: ShapeGrades;
@@ -45,6 +51,7 @@ export function emptyShapeNumbers(value: number): BufferCounts {
 export function createInitialState(): GameState {
   return {
     version: SAVE_VERSION,
+    unlockedChunks: getOpeningUnlockedChunkIds(),
     currencies: { shards: 0 },
     buffers: { ...emptyShapeNumbers(0), I: 1, O: 1, L: 1, J: 1 },
     shapeGrades: emptyShapeNumbers(1),
@@ -65,12 +72,20 @@ export function createInitialState(): GameState {
   };
 }
 
-/** Migrates v1/v2 saves while intentionally discarding the retired Ash field. */
+/**
+ * Migrates legacy saves while intentionally discarding the retired Ash field.
+ *
+ * Saves written before the limited field existed receive the canonical
+ * opening chunks. Active legacy Blocks outside that opening are preserved by
+ * adding stable globally aligned 4x4 preservation chunks for their occupied
+ * cells; nothing is deleted or silently relocated.
+ */
 export function normalizeGameState(state: GameState): GameState {
   const sourceVersion = state.version || 1;
   const legacy = state as GameState & { heartEngine?: {
     id: string; name: string; quality: number; accumulatedTimeSec: number; constituentBlockIds: string[];
-  } | null; currencies?: Currencies & { ash?: number }; learnedActions?: LearnedActions & { extract?: boolean } };
+  } | null; currencies?: Currencies & { ash?: number }; learnedActions?: LearnedActions & { extract?: boolean };
+    unlockedChunkIds?: string[] };
 
   state.version = SAVE_VERSION;
   state.currencies ??= { shards: 0 };
@@ -79,6 +94,31 @@ export function normalizeGameState(state: GameState): GameState {
   state.buffers ??= emptyShapeNumbers(0);
   state.shapeGrades ??= emptyShapeNumbers(1);
   state.blocks ??= {};
+
+  const persistedChunks = Array.isArray(state.unlockedChunks)
+    ? state.unlockedChunks
+    : Array.isArray(legacy.unlockedChunkIds) ? legacy.unlockedChunkIds : null;
+  if (persistedChunks === null) {
+    const openingChunks = getOpeningUnlockedChunkIds();
+    const migratedChunks = new Set(openingChunks);
+    for (const block of Object.values(state.blocks)) {
+      if (!block.position || (block.state !== 'Loose' && block.state !== 'Bound')) continue;
+      for (const cell of getBlockOccupiedCells(block.shape, block.position, block.rotation)) {
+        if (!isCellUnlocked(cell.x, cell.y, migratedChunks)) {
+          migratedChunks.add(getPreservationChunkIdForCell(cell.x, cell.y));
+        }
+      }
+    }
+    const preservationChunks = [...migratedChunks]
+      .filter(chunkId => !openingChunks.includes(chunkId))
+      .sort((left, right) => left.localeCompare(right));
+    state.unlockedChunks = [...openingChunks, ...preservationChunks];
+  } else {
+    state.unlockedChunks = [...new Set(persistedChunks)];
+    if (state.unlockedChunks.length === 0) state.unlockedChunks = getOpeningUnlockedChunkIds();
+  }
+  delete legacy.unlockedChunkIds;
+
   for (const shape of SHAPE_TYPES) {
     state.buffers[shape] ??= 0;
     state.shapeGrades[shape] ??= 1;
@@ -128,7 +168,7 @@ export function normalizeGameState(state: GameState): GameState {
   const oldLearned = legacy.learnedActions;
   state.learnedActions = {
     bind: oldLearned?.bind ?? state.isHeartEngineBound,
-    submit: (sourceVersion >= SAVE_VERSION ? oldLearned?.submit : oldLearned?.extract) ?? state.currencies.shards > 0,
+    submit: (sourceVersion >= 3 ? oldLearned?.submit : oldLearned?.extract) ?? state.currencies.shards > 0,
     upgrade: oldLearned?.upgrade ?? Object.values(state.shapeGrades).some(grade => grade > 1),
   };
   state.fieldAnalysis ??= null;

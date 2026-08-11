@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { AppStore } from '../src/application/store.ts';
+import { SAVE_VERSION } from '../src/application/state.ts';
 import { loadGameState, saveGameState } from '../src/platform/storage.ts';
 
 function mockStorage(): void {
@@ -31,7 +32,7 @@ describe('Local persistence', () => {
 
     const reloaded = loadGameState()!;
     expect(reloaded.currencies).toEqual({ shards: 18 });
-    expect(reloaded.version).toBe(3);
+    expect(reloaded.version).toBe(SAVE_VERSION);
     expect(reloaded.shapeGrades.T).toBe(3);
     expect(reloaded.buffers.Z).toBe(9);
     expect(reloaded.engines['engine-heart']).toEqual(engineBefore);
@@ -67,7 +68,7 @@ describe('Local persistence', () => {
     const ordinaryIds = [0, 1, 2, 3].map(index => `ordinary-${index}`);
     Object.assign(state.blocks, Object.fromEntries(ordinaryIds.map((id, index) => [id, {
       id, shape: 'O' as const, state: 'Loose' as const, grade: 1,
-      position: { x: 10 + index * 2, y: 10 }, rotation: 0,
+      position: { x: -2 + index * 2, y: 4 }, rotation: 0,
     }])));
     original.selectBlocks(ordinaryIds);
     original.bindEngine();
@@ -89,7 +90,7 @@ describe('Local persistence', () => {
     localStorage.setItem('rune_foundry_save_v1', JSON.stringify(legacy));
 
     const migrated = new AppStore(loadGameState()!).getState();
-    expect(migrated.version).toBe(3);
+    expect(migrated.version).toBe(SAVE_VERSION);
     expect(migrated.currencies).toEqual({ shards: 12 });
     expect(migrated.shapeGrades.J).toBe(4);
     expect(migrated.buffers.Z).toBe(7);

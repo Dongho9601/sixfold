@@ -176,8 +176,8 @@ describe('Core Loop UX interaction contracts', () => {
 
   it('commits placement at the exact supplied ghost origin', () => {
     const store = new AppStore();
-    const result = store.placeBlock('I', { x: 8, y: 5 }, 1);
-    expect(store.getState().blocks[result.blockId!].position).toEqual({ x: 8, y: 5 });
+    const result = store.placeBlock('I', { x: 4, y: 1 }, 1);
+    expect(store.getState().blocks[result.blockId!].position).toEqual({ x: 4, y: 1 });
   });
 
   it('snaps active J/L/O placement around an occupied Loose Block without overlap', () => {

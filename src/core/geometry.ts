@@ -5,7 +5,7 @@
 
 import { Block, PatternAnalysisResult, Position, ShapeType } from './types.ts';
 import { getBlockOccupiedCells } from './shapes.ts';
-import { coordKey, isCradleCell } from './field.ts';
+import { areCellsUnlocked, coordKey, isCradleCell } from './field.ts';
 
 export interface ConnectedComponent {
   id: number;
@@ -25,6 +25,35 @@ function occupiedKeys(source: OccupiedCellSource): Set<string> {
   return keys;
 }
 
+export type PlacementViolation = 'locked' | 'occupied';
+
+export interface PlacementValidation {
+  valid: boolean;
+  violation?: PlacementViolation;
+}
+
+/**
+ * Central placement legality check shared by direct actions and ghost search.
+ * An omitted chunk set keeps this pure resolver backwards-compatible for
+ * generic geometry callers; application gameplay always supplies its field.
+ */
+export function validateTetrominoPlacement(
+  cells: Position[],
+  occupiedCells: OccupiedCellSource,
+  unlockedChunkIds?: Iterable<string>,
+): PlacementValidation {
+  if (unlockedChunkIds !== undefined && !areCellsUnlocked(cells, unlockedChunkIds)) {
+    return { valid: false, violation: 'locked' };
+  }
+
+  const occupied = occupiedKeys(occupiedCells);
+  if (cells.some(cell => occupied.has(coordKey(cell.x, cell.y)))) {
+    return { valid: false, violation: 'occupied' };
+  }
+
+  return { valid: true };
+}
+
 /**
  * Resolves a cursor's desired origin to a nearby legal origin. Candidates use
  * Euclidean distance, then y/x ordering for a stable and testable tie-break.
@@ -35,8 +64,10 @@ export function findNearestValidPlacement(
   desiredOrigin: Position,
   occupiedCells: OccupiedCellSource,
   searchRadius: number = 3,
+  unlockedChunkIds?: Iterable<string>,
 ): Position | null {
   const occupied = occupiedKeys(occupiedCells);
+  const chunks = unlockedChunkIds === undefined ? undefined : [...unlockedChunkIds];
   const radius = Math.max(0, Math.floor(searchRadius));
   const candidates: Position[] = [];
 
@@ -57,7 +88,7 @@ export function findNearestValidPlacement(
 
   for (const origin of candidates) {
     const cells = getBlockOccupiedCells(shape, origin, rotation);
-    if (cells.every(cell => !occupied.has(coordKey(cell.x, cell.y)))) return origin;
+    if (validateTetrominoPlacement(cells, occupied, chunks).valid) return origin;
   }
   return null;
 }

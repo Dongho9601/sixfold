@@ -12,9 +12,11 @@ import {
   getBlockOccupiedCells,
   getShapeGradeUpgradeCost,
   isCradleCell,
+  OPENING_UNLOCKED_CHUNK_IDS,
   Position,
   ShapeType,
   stableEngineSeed,
+  validateTetrominoPlacement,
 } from '../core/index.ts';
 import { GameState } from './state.ts';
 
@@ -110,6 +112,52 @@ export function getAllOccupiedCells(state: GameState, ignoreBlockId?: string): M
   return cellMap;
 }
 
+function getStateUnlockedChunks(state: GameState): readonly string[] {
+  return state.unlockedChunks?.length ? state.unlockedChunks : OPENING_UNLOCKED_CHUNK_IDS;
+}
+
+function validateStatePlacement(
+  state: GameState,
+  cells: Position[],
+  ignoreBlockId?: string,
+): ReturnType<typeof validateTetrominoPlacement> {
+  return validateTetrominoPlacement(cells, getAllOccupiedCells(state, ignoreBlockId), getStateUnlockedChunks(state));
+}
+
+function placementError(violation: ReturnType<typeof validateTetrominoPlacement>['violation']): string {
+  return violation === 'locked'
+    ? 'Placement crosses locked Field cells.'
+    : 'Position overlaps existing Field cells.';
+}
+
+function isPatternFieldLegal(state: GameState, blocks: Block[]): boolean {
+  const selectedIds = new Set(blocks.map(block => block.id));
+  const externalOccupancy = new Map<string, { blockId: string; isEngine: boolean }>();
+  for (const block of getActiveBlocksList(state)) {
+    if (selectedIds.has(block.id)) continue;
+    for (const cell of blockCells(block)) {
+      externalOccupancy.set(`${cell.x},${cell.y}`, { blockId: block.id, isEngine: block.state === 'Bound' });
+    }
+  }
+
+  const selectedCells = new Set<string>();
+  for (const block of blocks) {
+    const cells = blockCells(block);
+    const validation = validateTetrominoPlacement(
+      cells,
+      externalOccupancy,
+      getStateUnlockedChunks(state),
+    );
+    if (!validation.valid) return false;
+    for (const cell of cells) {
+      const key = `${cell.x},${cell.y}`;
+      if (selectedCells.has(key)) return false;
+      selectedCells.add(key);
+    }
+  }
+  return true;
+}
+
 export function hasCollisionAt(state: GameState, cells: Position[], ignoreBlockId?: string): boolean {
   const occupied = getAllOccupiedCells(state, ignoreBlockId);
   return cells.some(cell => occupied.has(`${cell.x},${cell.y}`));
@@ -122,8 +170,10 @@ export function placeBlockFromBuffer(
   rotation: number = 0,
 ): { success: boolean; blockId?: string; error?: string } {
   if ((state.buffers[shape] || 0) <= 0) return { success: false, error: `No ${shape} Blocks in inventory.` };
-  if (hasCollisionAt(state, getBlockOccupiedCells(shape, position, rotation))) {
-    return { success: false, error: 'Position overlaps existing Field cells.' };
+  const cells = getBlockOccupiedCells(shape, position, rotation);
+  const validation = validateStatePlacement(state, cells);
+  if (!validation.valid) {
+    return { success: false, error: placementError(validation.violation) };
   }
 
   const blockId = `block-${state.nextBlockSeq}`;
@@ -146,8 +196,13 @@ export function placeBlockFromBuffer(
 export function moveBlock(state: GameState, blockId: string, newPosition: Position): { success: boolean; error?: string } {
   const block = state.blocks[blockId];
   if (!block || block.state !== 'Loose') return { success: false, error: 'Block is not Loose.' };
-  if (hasCollisionAt(state, getBlockOccupiedCells(block.shape, newPosition, block.rotation), blockId)) {
-    return { success: false, error: 'Target overlaps existing Field cells.' };
+  const validation = validateStatePlacement(
+    state,
+    getBlockOccupiedCells(block.shape, newPosition, block.rotation),
+    blockId,
+  );
+  if (!validation.valid) {
+    return { success: false, error: placementError(validation.violation) };
   }
   block.position = { ...newPosition };
   state.selectedBlockIds.includes(blockId) ? analyzeSelection(state) : refreshFieldPattern(state, blockId);
@@ -158,8 +213,13 @@ export function rotateBlock(state: GameState, blockId: string): { success: boole
   const block = state.blocks[blockId];
   if (!block || block.state !== 'Loose' || !block.position) return { success: false, error: 'Block is not editable.' };
   const nextRotation = (block.rotation + 1) % 4;
-  if (hasCollisionAt(state, getBlockOccupiedCells(block.shape, block.position, nextRotation), blockId)) {
-    return { success: false, error: 'Rotation overlaps existing Field cells.' };
+  const validation = validateStatePlacement(
+    state,
+    getBlockOccupiedCells(block.shape, block.position, nextRotation),
+    blockId,
+  );
+  if (!validation.valid) {
+    return { success: false, error: placementError(validation.violation) };
   }
   block.rotation = nextRotation;
   state.selectedBlockIds.includes(blockId) ? analyzeSelection(state) : refreshFieldPattern(state, blockId);
@@ -272,12 +332,13 @@ function previewForIds(state: GameState, blockIds: readonly string[], source: Pa
   const analysis = evaluatePattern(blocks);
   const isOrdinaryRecipe = analysis.isValid && BINDABLE_RECIPE_IDS.has(analysis.patternId);
   const isHeart = analysis.isValid && analysis.patternId === 'heart_seal' && !state.isHeartEngineBound;
+  const fieldLegal = isPatternFieldLegal(state, blocks);
   return {
     blockIds: blocks.map(block => block.id),
     blocks,
     analysis,
     source,
-    canBind: isHeart || (state.isHeartEngineBound && isOrdinaryRecipe),
+    canBind: fieldLegal && (isHeart || (state.isHeartEngineBound && isOrdinaryRecipe)),
   };
 }
 
@@ -315,6 +376,7 @@ export function bindPattern(state: GameState): { success: boolean; engine?: Engi
   const frozenIds = [...initial.blockIds];
   const preview = getPatternActionPreview(state, frozenIds);
   if (!preview.canBind || !preview.analysis) return { success: false, error: 'Pattern changed before Bind.' };
+  if (!isPatternFieldLegal(state, preview.blocks)) return { success: false, error: 'Pattern crosses locked or occupied Field cells.' };
 
   const foundational = preview.analysis.patternId === 'heart_seal';
   if (foundational && state.isHeartEngineBound) return { success: false, error: 'Heart Engine already exists.' };

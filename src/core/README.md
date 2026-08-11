@@ -22,3 +22,12 @@ The `core` directory contains the pure, deterministic game model for **HL;BM —
 - **Zero Outside Imports**: `core` imports nothing outside core (never imports `application`, `ui`, or `platform`).
 - **No UI/DOM/Platform dependencies**: Zero imports from `window`, `document`, Canvas, WebGL, CSS, UI components, IndexedDB, or localStorage.
 - **Single Source of Truth**: All game rules, geometry math, and formulas live exclusively in `core`.
+
+## Pass 3A limited field
+
+The playable field is the persisted set of authored 4x4 chunk IDs in
+`GameState.unlockedChunks`. The canonical opening contains four chunks covering
+the 8x8 core at `x:-2..5, y:-2..5` plus the south staging chunk at
+`x:0..3, y:6..9`, for 80 cells. Placement validation and nearest-ghost search
+share the same deterministic cell legality check; the renderer only draws the
+one-cell locked ring around those chunks.

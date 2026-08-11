@@ -520,14 +520,18 @@ export class InputController {
 
     const state = this.store.getState();
     const resolved = (state.buffers[shape] || 0) > 0
-      ? findNearestValidPlacement(shape, this.spawnRotation, gridPosition, getAllOccupiedCells(state), 3)
+      ? findNearestValidPlacement(
+        shape,
+        this.spawnRotation,
+        gridPosition,
+        getAllOccupiedCells(state),
+        3,
+        state.unlockedChunks,
+      )
       : null;
-    this.placementPreview = {
-      shape,
-      position: resolved ? { ...resolved } : { ...gridPosition },
-      rotation: this.spawnRotation,
-      isValid: resolved !== null,
-    };
+    this.placementPreview = resolved
+      ? { shape, position: { ...resolved }, rotation: this.spawnRotation, isValid: true }
+      : null;
   }
 
   private cancelRectangleSelection(): void {

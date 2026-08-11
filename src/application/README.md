@@ -11,3 +11,10 @@ The `application` directory orchestrates game interactions, typed consequential 
 - **Side-Effect Ports**: Defines side-effect ports/interfaces (e.g. storage, clock, analytics sinks) when needed by application orchestration.
 - **Pure Actions**: Actions validate inputs against `core` rules before committing state changes.
 - **No Direct UI/Platform References**: Does not import DOM elements, Canvas rendering routines, or browser platform side-effect adapters directly.
+
+## Pass 3A migration
+
+Legacy saves without `unlockedChunks` receive the canonical opening field. Any
+active legacy Block outside that field is preserved by adding the stable,
+globally aligned 4x4 chunk containing each off-opening occupied cell. Blocks
+are not deleted or relocated during migration.

@@ -10,6 +10,7 @@ import {
   EngineState,
   getBlockOccupiedCells,
   getEngineProductionView,
+  getAdjacentLockedFrontierCells,
   isCradleCell,
   Position,
   ShapeType,
@@ -145,6 +146,7 @@ export class FieldRenderer {
     ctx.fillRect(0, 0, screenWidth, screenHeight);
 
     this.drawGrid(camera, screenWidth, screenHeight, currentCellSize);
+    this.drawLockedFrontier(state, camera, currentCellSize);
     this.drawCradle(state, camera, currentCellSize, now);
     this.drawPatternFeedback(state, camera, currentCellSize, now);
 
@@ -209,6 +211,30 @@ export class FieldRenderer {
       ctx.lineTo(screenWidth, Math.round(p.y) + 0.5);
       ctx.stroke();
     }
+  }
+
+  private drawLockedFrontier(state: GameState, camera: Camera, currentCellSize: number): void {
+    const frontierCells = getAdjacentLockedFrontierCells(state.unlockedChunks);
+    const ctx = this.ctx;
+    ctx.save();
+    for (const cell of frontierCells) {
+      const point = camera.gridToScreen(cell.x, cell.y);
+      ctx.fillStyle = 'rgba(30, 27, 34, 0.82)';
+      ctx.fillRect(point.x, point.y, currentCellSize, currentCellSize);
+      ctx.strokeStyle = '#3b3540';
+      ctx.globalAlpha = 0.92;
+      ctx.lineWidth = Math.max(1, camera.zoom);
+      ctx.strokeRect(point.x + 0.5, point.y + 0.5, currentCellSize - 1, currentCellSize - 1);
+      if (currentCellSize >= 12) {
+        ctx.strokeStyle = '#514957';
+        ctx.globalAlpha = 0.52;
+        ctx.beginPath();
+        ctx.moveTo(point.x + currentCellSize * 0.2, point.y + currentCellSize * 0.8);
+        ctx.lineTo(point.x + currentCellSize * 0.8, point.y + currentCellSize * 0.2);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
   }
 
   private drawCradle(state: GameState, camera: Camera, currentCellSize: number, now: number): void {

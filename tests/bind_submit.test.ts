@@ -26,14 +26,14 @@ function bindHeart(store: AppStore): void {
 function addCompression(
   store: AppStore,
   prefix: string = 'loose',
-  y: number = 10,
+  y: number = 4,
   count: number = 4,
   grade: number = 1,
 ): string[] {
   const ids = Array.from({ length: count }, (_, index) => `${prefix}-${index}`);
   Object.assign(store.getState().blocks, Object.fromEntries(ids.map((id, index) => [
     id,
-    { id, shape: 'O' as const, state: 'Loose' as const, grade, position: { x: 10 + index * 2, y }, rotation: 0 },
+    { id, shape: 'O' as const, state: 'Loose' as const, grade, position: { x: -2 + index * 2, y }, rotation: 0 },
   ])));
   store.selectBlocks(ids);
   return ids;
@@ -88,7 +88,7 @@ describe('Bind, Engine Submit, production power, and Grade transactions', () => 
     bindHeart(store);
     addCompression(store, 'first');
     expect(store.bindEngine().success).toBe(true);
-    addCompression(store, 'second', 20);
+    addCompression(store, 'second', -2);
     expect(store.bindEngine().success).toBe(true);
     expect(Object.keys(store.getState().engines)).toEqual(['engine-heart', 'engine-1', 'engine-2']);
   });
@@ -180,12 +180,12 @@ describe('Bind, Engine Submit, production power, and Grade transactions', () => 
     const store = new AppStore();
     const state = store.getState();
     state.currencies.shards = 3;
-    state.blocks.loose = { id: 'loose', shape: 'I', state: 'Loose', grade: 1, position: { x: 10, y: 10 }, rotation: 0 };
+    state.blocks.loose = { id: 'loose', shape: 'I', state: 'Loose', grade: 1, position: { x: -2, y: 4 }, rotation: 0 };
     expect(store.upgradeShape('I')).toMatchObject({ success: true, cost: 3, grade: 2 });
     expect(state.blocks.loose.grade).toBe(2);
     expect(getBlockValue(state.blocks.loose.grade)).toBe(8);
     state.buffers.I = 1;
-    const placed = store.placeBlock('I', { x: 20, y: 20 });
+    const placed = store.placeBlock('I', { x: 0, y: 8 });
     expect(state.blocks[placed.blockId!].grade).toBe(2);
   });
 
