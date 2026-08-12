@@ -4,6 +4,7 @@
  */
 
 import { Block, PatternAnalysisResult, Position, ShapeType } from './types.ts';
+import { analyzeFrontierSeal } from './frontier.ts';
 import { getBlockOccupiedCells } from './shapes.ts';
 import { areCellsUnlocked, coordKey, isCradleCell } from './field.ts';
 
@@ -241,6 +242,21 @@ export function evaluatePattern(selectedBlocks: Block[]): PatternAnalysisResult 
         missingCells: getMissingCradleCells(allCells),
       };
     }
+  }
+
+  // Frontier Seal is a distinct exact recipe. Keep malformed four-I layouts
+  // available to the ordinary Compression resolver, but surface the exact
+  // canonical footprint as its own recipe when it is complete.
+  const frontier = analyzeFrontierSeal(looseBlocks);
+  if (frontier.valid) {
+    return {
+      patternId: 'frontier_seal',
+      patternName: 'Frontier Seal',
+      isValid: true,
+      quality: 1.0,
+      metrics: { blockCount, cellCount, componentCount },
+      involvedBlockIds,
+    };
   }
 
   // 2. Test Twin Stars: exactly 2 components, equal size, at least 2 Blocks each.

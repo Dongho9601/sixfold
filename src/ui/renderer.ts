@@ -7,14 +7,18 @@
 
 import {
   findConnectedComponents,
+  getAdjacentLockedChunkIds,
+  getChunkCells,
   getPoweredEngineIds,
   EngineState,
   getBlockOccupiedCells,
   getEngineProductionView,
   getAdjacentLockedFrontierCells,
   isCradleCell,
+  parseCoordKey,
   Position,
   ShapeType,
+  validateFrontierSeal,
 } from '../core/index.ts';
 import { GameState } from '../application/state.ts';
 import { VisualEvent, VisualBlockEvent } from '../application/store.ts';
@@ -125,6 +129,10 @@ export class FieldRenderer {
           this.transientEvents = [];
           this.enginePulseUntil.clear();
           break;
+        case 'frontier-unlock':
+          // The consumed Seal Blocks are already removed from the authoritative
+          // state; the unlocked chunk becomes ordinary Field space on redraw.
+          break;
       }
     }
   }
@@ -227,13 +235,26 @@ export class FieldRenderer {
 
   private drawLockedFrontier(state: GameState, camera: Camera, currentCellSize: number): void {
     const frontierCells = getAdjacentLockedFrontierCells(state.unlockedChunks);
+    const candidate = state.fieldCandidateBlockIds
+      .map(id => state.blocks[id])
+      .filter((block): block is NonNullable<typeof block> => Boolean(block?.position));
+    const selectedTarget = state.selectedFrontierChunkId;
+    const selectedValidation = selectedTarget
+      ? validateFrontierSeal(candidate, state.unlockedChunks, selectedTarget)
+      : null;
+    const selectedCells = selectedTarget ? new Set(getChunkCells(selectedTarget).map(cell => `${cell.x},${cell.y}`)) : null;
     const ctx = this.ctx;
     ctx.save();
     for (const cell of frontierCells) {
       const point = camera.gridToScreen(cell.x, cell.y);
-      ctx.fillStyle = 'rgba(30, 27, 34, 0.82)';
+      const selected = Boolean(selectedCells?.has(`${cell.x},${cell.y}`));
+      ctx.fillStyle = selected
+        ? selectedValidation?.valid ? 'rgba(80, 96, 71, 0.34)' : 'rgba(127, 26, 15, 0.28)'
+        : 'rgba(30, 27, 34, 0.82)';
       ctx.fillRect(point.x, point.y, currentCellSize, currentCellSize);
-      ctx.strokeStyle = '#3b3540';
+      ctx.strokeStyle = selected
+        ? selectedValidation?.valid ? '#9aac83' : '#7f1a0f'
+        : '#3b3540';
       ctx.globalAlpha = 0.92;
       ctx.lineWidth = Math.max(1, camera.zoom);
       ctx.strokeRect(point.x + 0.5, point.y + 0.5, currentCellSize - 1, currentCellSize - 1);
@@ -244,6 +265,40 @@ export class FieldRenderer {
         ctx.moveTo(point.x + currentCellSize * 0.2, point.y + currentCellSize * 0.8);
         ctx.lineTo(point.x + currentCellSize * 0.8, point.y + currentCellSize * 0.2);
         ctx.stroke();
+      }
+    }
+
+    if (selectedTarget) {
+      ctx.fillStyle = selectedValidation?.valid ? 'rgba(80, 96, 71, 0.18)' : 'rgba(127, 26, 15, 0.16)';
+      ctx.globalAlpha = 1;
+      for (const cell of getChunkCells(selectedTarget)) {
+        const point = camera.gridToScreen(cell.x, cell.y);
+        ctx.fillRect(point.x, point.y, currentCellSize, currentCellSize);
+      }
+    }
+
+    // Chunk outlines make the explicit target readable as a 4x4 destination,
+    // rather than a generic one-cell locked ring.
+    for (const chunkId of getAdjacentLockedChunkIds(state.unlockedChunks)) {
+      const origin = parseCoordKey(chunkId);
+      const point = camera.gridToScreen(origin.x, origin.y);
+      const selected = chunkId === selectedTarget;
+      ctx.strokeStyle = selected
+        ? selectedValidation?.valid ? '#9aac83' : '#d56e5f'
+        : '#514957';
+      ctx.globalAlpha = selected ? 0.95 : 0.62;
+      ctx.lineWidth = Math.max(1.2, 1.5 * camera.zoom);
+      ctx.strokeRect(point.x + 1, point.y + 1, currentCellSize * 4 - 2, currentCellSize * 4 - 2);
+    }
+
+    if (selectedValidation?.valid) {
+      ctx.fillStyle = '#9aac83';
+      ctx.globalAlpha = 0.9;
+      for (const contact of selectedValidation.target.contacts) {
+        const point = camera.gridToScreen(contact.targetCell.x + 0.5, contact.targetCell.y + 0.5);
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, Math.max(2, camera.zoom * 2), 0, Math.PI * 2);
+        ctx.fill();
       }
     }
     ctx.restore();

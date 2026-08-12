@@ -2,6 +2,9 @@
 
 import {
   advanceEngineShape,
+  analyzeFrontierSeal,
+  FrontierSealGeometryResult,
+  FrontierTargetValidation,
   Block,
   calculateBoundValue,
   calculateEngineSubmissionShards,
@@ -15,6 +18,7 @@ import {
   getProductionIntervalSec,
   getShapeGradeUpgradeCost,
   isCradleCell,
+  getAdjacentLockedChunkIds,
   OPENING_UNLOCKED_CHUNK_IDS,
   Position,
   ShapeType,
@@ -23,6 +27,7 @@ import {
   isStockFull,
   normalizeEngineProduction,
   validateTetrominoPlacement,
+  validateFrontierSeal,
 } from '../core/index.ts';
 import { advanceDirectiveProgress } from './directives.ts';
 import { GameState } from './state.ts';
@@ -329,6 +334,20 @@ export interface PatternActionPreview {
   canBind: boolean;
 }
 
+export interface FrontierSealPreview {
+  blockIds: string[];
+  blocks: Block[];
+  geometry: FrontierSealGeometryResult;
+  target: FrontierTargetValidation;
+  targetChunkId: string | null;
+  targetOptions: string[];
+  validGeometry: boolean;
+  hasCore: boolean;
+  hasShards: boolean;
+  canActivate: boolean;
+  error?: string;
+}
+
 function exactLooseBlocks(state: GameState, blockIds: readonly string[]): Block[] | null {
   if (blockIds.length === 0 || new Set(blockIds).size !== blockIds.length) return null;
   const blocks = blockIds.map(id => state.blocks[id]);
@@ -358,6 +377,127 @@ export function getPatternActionPreview(state: GameState, blockIds?: readonly st
   if (state.selectedBlockIds.length > 0) return previewForIds(state, state.selectedBlockIds, 'explicit');
   if (state.fieldCandidateBlockIds.length > 0) return previewForIds(state, state.fieldCandidateBlockIds, 'field');
   return previewForIds(state, [], 'none');
+}
+
+function frontierCandidateBlocks(state: GameState, blockIds?: readonly string[]): Block[] {
+  const ids = blockIds
+    ? [...blockIds]
+    : state.selectedBlockIds.length > 0
+      ? [...state.selectedBlockIds]
+      : [...state.fieldCandidateBlockIds];
+  return exactLooseBlocks(state, ids) || [];
+}
+
+/** Read-only Frontier Seal and target preview used by both UI and activation. */
+export function getFrontierSealPreview(
+  state: GameState,
+  blockIds?: readonly string[],
+  targetChunkId?: string | null,
+): FrontierSealPreview {
+  const blocks = frontierCandidateBlocks(state, blockIds);
+  const geometry = analyzeFrontierSeal(blocks);
+  const selectedTarget = targetChunkId === undefined
+    ? state.selectedFrontierChunkId
+    : targetChunkId;
+  const target = validateFrontierSeal(blocks, getStateUnlockedChunks(state), selectedTarget).target;
+  const fieldLegal = blocks.length > 0 && isPatternFieldLegal(state, blocks);
+  const validGeometry = geometry.valid && fieldLegal;
+  const hasCore = state.currencies.cores >= 1;
+  const hasShards = state.currencies.shards >= 12;
+  const canActivate = validGeometry && target.valid && hasCore && hasShards;
+
+  let error: string | undefined;
+  if (!geometry.valid) error = geometry.reason;
+  else if (!fieldLegal) error = 'Frontier Seal overlaps another Block or crosses locked Field cells.';
+  else if (!target.valid) error = target.reason;
+  else if (!hasCore) error = 'Need 1 Core to activate the Frontier Seal.';
+  else if (!hasShards) error = 'Need 12 Shards to activate the Frontier Seal.';
+
+  return {
+    blockIds: blocks.map(block => block.id),
+    blocks,
+    geometry,
+    target,
+    targetChunkId: selectedTarget,
+    targetOptions: getAdjacentLockedChunkIds(getStateUnlockedChunks(state)),
+    validGeometry,
+    hasCore,
+    hasShards,
+    canActivate,
+    error,
+  };
+}
+
+export function selectFrontierTarget(
+  state: GameState,
+  targetChunkId: string | null,
+): { success: boolean; targetChunkId?: string | null; error?: string } {
+  if (targetChunkId === null) {
+    state.selectedFrontierChunkId = null;
+    return { success: true, targetChunkId: null };
+  }
+  if (!getAdjacentLockedChunkIds(getStateUnlockedChunks(state)).includes(targetChunkId)) {
+    return { success: false, error: 'Target must be a locked chunk sharing a full side with the Field.' };
+  }
+  state.selectedFrontierChunkId = targetChunkId;
+  state.selectedEngineId = null;
+  return { success: true, targetChunkId };
+}
+
+export interface FrontierSealActivationResult {
+  success: boolean;
+  targetChunkId?: string;
+  blockIds?: string[];
+  error?: string;
+}
+
+/**
+ * Atomic Frontier Seal transaction. Every read-only check happens before the
+ * first mutation so failed activation cannot spend a resource or consume a
+ * contributing Block.
+ */
+export function activateFrontierSeal(
+  state: GameState,
+  targetChunkId?: string | null,
+): FrontierSealActivationResult {
+  const initial = getFrontierSealPreview(state, undefined, targetChunkId);
+  if (!initial.geometry.valid) return { success: false, error: initial.geometry.reason };
+
+  const frozenIds = [...initial.blockIds];
+  const frozenTarget = initial.targetChunkId;
+  const blocks = exactLooseBlocks(state, frozenIds);
+  if (!blocks) return { success: false, error: 'Frontier Seal changed before activation.' };
+
+  // Re-run the exact checks against the frozen IDs and selected target. The
+  // ordinary field legality check includes external Loose and Bound cells.
+  const geometry = analyzeFrontierSeal(blocks);
+  if (!geometry.valid) return { success: false, error: geometry.reason };
+  if (!isPatternFieldLegal(state, blocks)) {
+    return { success: false, error: 'Frontier Seal crosses locked or occupied Field cells.' };
+  }
+  const validation = validateFrontierSeal(blocks, getStateUnlockedChunks(state), frozenTarget);
+  if (!validation.target.valid) return { success: false, error: validation.target.reason };
+  if (state.currencies.cores < 1) return { success: false, error: 'Need 1 Core to activate the Frontier Seal.' };
+  if (state.currencies.shards < 12) return { success: false, error: 'Need 12 Shards to activate the Frontier Seal.' };
+  if (!frozenTarget || state.unlockedChunks.includes(frozenTarget)) {
+    return { success: false, error: 'Selected frontier target is no longer locked.' };
+  }
+
+  // Commit only after all exact checks pass.
+  for (const blockId of frozenIds) delete state.blocks[blockId];
+  state.currencies.cores -= 1;
+  state.currencies.shards -= 12;
+  state.unlockedChunks = [...state.unlockedChunks, frozenTarget];
+  state.selectedBlockIds = state.selectedBlockIds.filter(id => !frozenIds.includes(id));
+  state.selectedFrontierChunkId = null;
+  state.selectedEngineId = null;
+  state.fieldAnalysis = null;
+  state.fieldCandidateBlockIds = [];
+  state.recentFieldBlockId = null;
+  refreshFieldPattern(state);
+  advanceDirectiveProgress(state, { frontierChunkId: frozenTarget });
+
+  return { success: true, targetChunkId: frozenTarget, blockIds: frozenIds };
 }
 
 function createBoundEngine(
@@ -404,7 +544,7 @@ export function bindPattern(state: GameState): { success: boolean; engine?: Engi
   state.fieldAnalysis = null;
   state.fieldCandidateBlockIds = [];
   state.recentFieldBlockId = null;
-  advanceDirectiveProgress(state);
+  advanceDirectiveProgress(state, { boundEngineId: engine.id });
   return { success: true, engine };
 }
 

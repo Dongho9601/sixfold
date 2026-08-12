@@ -45,6 +45,16 @@ export function parseCoordKey(key: string): Position {
   };
 }
 
+/** Returns whether a value is a well-formed integer coordinate/chunk ID. */
+export function isCoordKey(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const parts = value.split(',');
+  if (parts.length !== 2 || parts.some(part => part.trim() === '')) return false;
+  const position = parseCoordKey(value);
+  return Number.isInteger(position.x) && Number.isInteger(position.y)
+    && `${position.x},${position.y}` === value;
+}
+
 export function isCradleCell(x: number, y: number): boolean {
   return x >= CRADLE_BOUNDS.minX && x <= CRADLE_BOUNDS.maxX &&
          y >= CRADLE_BOUNDS.minY && y <= CRADLE_BOUNDS.maxY;
@@ -67,6 +77,58 @@ export function getChunkCells(chunkId: string): Position[] {
     }
   }
   return cells;
+}
+
+export function isCellInChunk(x: number, y: number, chunkId: string): boolean {
+  const origin = parseCoordKey(chunkId);
+  return x >= origin.x && x < origin.x + CHUNK_SIZE
+    && y >= origin.y && y < origin.y + CHUNK_SIZE;
+}
+
+/** A locked chunk is a candidate only when its ID is not already unlocked. */
+export function isChunkUnlocked(chunkId: string, unlockedChunkIds: Iterable<string>): boolean {
+  return new Set(unlockedChunkIds).has(chunkId);
+}
+
+/** Two authored chunks are side-adjacent only when they share a full 4-cell side. */
+export function areChunksSideAdjacent(leftChunkId: string, rightChunkId: string): boolean {
+  const left = parseCoordKey(leftChunkId);
+  const right = parseCoordKey(rightChunkId);
+  return (Math.abs(left.x - right.x) === CHUNK_SIZE && left.y === right.y)
+    || (Math.abs(left.y - right.y) === CHUNK_SIZE && left.x === right.x);
+}
+
+/** Returns the locked 4x4 chunks that share a complete side with the field. */
+export function getAdjacentLockedChunkIds(unlockedChunkIds: Iterable<string>): string[] {
+  const unlockedIds = [...new Set(unlockedChunkIds)];
+  const unlocked = new Set(unlockedIds);
+  const unlockedCells = getUnlockedCellKeys(unlockedIds);
+  const candidates = new Set<string>();
+
+  for (const chunkId of unlockedIds) {
+    const origin = parseCoordKey(chunkId);
+    const adjacentOrigins = [
+      { x: origin.x - CHUNK_SIZE, y: origin.y },
+      { x: origin.x + CHUNK_SIZE, y: origin.y },
+      { x: origin.x, y: origin.y - CHUNK_SIZE },
+      { x: origin.x, y: origin.y + CHUNK_SIZE },
+    ];
+    for (const adjacent of adjacentOrigins) {
+      const candidateId = coordKey(adjacent.x, adjacent.y);
+      if (unlocked.has(candidateId)) continue;
+      // A malformed/hand-edited save may contain overlapping chunk IDs. Such a
+      // target is not fully locked and must not become an expansion option.
+      if (getChunkCells(candidateId).some(cell => unlockedCells.has(coordKey(cell.x, cell.y)))) continue;
+      candidates.add(candidateId);
+    }
+  }
+
+  return [...candidates]
+    .sort((left, right) => {
+      const a = parseCoordKey(left);
+      const b = parseCoordKey(right);
+      return a.y - b.y || a.x - b.x;
+    });
 }
 
 export function getUnlockedCellKeys(unlockedChunkIds: Iterable<string>): Set<string> {

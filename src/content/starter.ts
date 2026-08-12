@@ -14,7 +14,7 @@ export interface RecipePreviewBlock {
 export interface RecipeDefinition {
   id: string;
   name: string;
-  type: 'Foundational' | 'Bind';
+  type: 'Foundational' | 'Bind' | 'Frontier';
   description: string;
   previewKind: 'exact' | 'example';
   previewBlocks?: RecipePreviewBlock[];
@@ -63,6 +63,19 @@ export const STARTER_RECIPES: Record<string, RecipeDefinition> = {
       { shape: 'I', position: { x: 0, y: 12 }, rotation: 0 },
       { shape: 'O', position: { x: 2, y: 14 }, rotation: 0 },
       { shape: 'J', position: { x: 2, y: 16 }, rotation: 1 },
+    ],
+  },
+  frontier_seal: {
+    id: 'frontier_seal',
+    name: 'Frontier Seal',
+    type: 'Frontier',
+    description: 'Four I Blocks · complete 2×8 rectangle',
+    previewKind: 'exact',
+    previewBlocks: [
+      { shape: 'I', position: { x: 0, y: 0 }, rotation: 1 },
+      { shape: 'I', position: { x: 1, y: 0 }, rotation: 1 },
+      { shape: 'I', position: { x: 0, y: 4 }, rotation: 1 },
+      { shape: 'I', position: { x: 1, y: 4 }, rotation: 1 },
     ],
   },
 };

@@ -27,7 +27,8 @@ import {
 
 // Pass 3C changes production behavior but persists no capacity field: Stock
 // remains a fixed global rule, so existing buffer counts can migrate verbatim.
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7;
+const DIRECTIVE_STATE_VERSION = 6;
 
 export interface GameState {
   version: number;
@@ -42,6 +43,8 @@ export interface GameState {
   isHeartEngineBound: boolean;
   directive: DirectiveState;
   selectedEngineId: string | null;
+  /** Explicit, transient target selection used by the Frontier Seal preview/action. */
+  selectedFrontierChunkId: string | null;
   learnedActions: LearnedActions;
   discoveredPatterns: string[];
   selectedBlockIds: string[];
@@ -74,6 +77,7 @@ export function createInitialState(): GameState {
       stabilizeLineCoreAwarded: false,
     },
     selectedEngineId: null,
+    selectedFrontierChunkId: null,
     learnedActions: { bind: false, submit: false, upgrade: false },
     discoveredPatterns: [],
     selectedBlockIds: [],
@@ -193,7 +197,7 @@ export function normalizeGameState(state: GameState): GameState {
   // Directive data did not exist before this pass. Ignore a stale field on a
   // hand-carried/fixture object with an older version and infer from the
   // authoritative legacy state instead.
-  const rawDirective = sourceVersion >= SAVE_VERSION
+  const rawDirective = sourceVersion >= DIRECTIVE_STATE_VERSION
     ? legacy.directive ?? legacy.directiveState
     : undefined;
   if (rawDirective !== undefined) {
@@ -202,7 +206,7 @@ export function normalizeGameState(state: GameState): GameState {
     // Existing authored state may have been saved just before a consequential
     // action flushed. Catch up on reliable early conditions, but never treat a
     // load as Stabilize's real production output.
-    advanceDirectiveProgress(state);
+    advanceDirectiveProgress(state, { legacyMigration: sourceVersion < SAVE_VERSION });
   } else {
     inferDirectiveState(state);
   }
@@ -210,6 +214,9 @@ export function normalizeGameState(state: GameState): GameState {
   state.fieldCandidateBlockIds ??= [];
   state.recentFieldBlockId ??= null;
   state.selectedBlockIds ??= [];
+  state.selectedFrontierChunkId = typeof state.selectedFrontierChunkId === 'string'
+    ? state.selectedFrontierChunkId
+    : null;
   state.discoveredPatterns ??= [];
   state.nextBlockSeq ??= 1;
   state.nextEngineSeq ??= Math.max(1, Object.keys(state.engines).filter(id => id !== 'engine-heart').length + 1);

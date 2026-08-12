@@ -6,6 +6,7 @@
 export * from './types.ts';
 export * from './shapes.ts';
 export * from './field.ts';
+export * from './frontier.ts';
 export * from './geometry.ts';
 export * from './economy.ts';
 export * from './engine.ts';

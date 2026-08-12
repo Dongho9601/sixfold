@@ -68,6 +68,16 @@ export class InspectorPanel {
         .rf-engine-power.powered { color:#b78dbc; }
         .rf-engine-power.unpowered { color:#d56e5f; }
         .rf-engine-stock { margin-top:7px; color:#c99a52; font-size:11px; font-weight:900; letter-spacing:.07em; }
+        .rf-frontier-card { padding:10px; border:1px solid #80672d; background:rgba(227,181,60,.07); }
+        .rf-frontier-status { color:#d9b3df; font-size:11px; line-height:1.45; }
+        .rf-frontier-cost { display:flex; gap:10px; margin:8px 0; color:#b7b4ae; font-size:11px; font-weight:800; }
+        .rf-frontier-cost .ready { color:#9aac83; }.rf-frontier-cost .missing { color:#d56e5f; }
+        .rf-frontier-targets { display:grid; gap:5px; margin-top:8px; }
+        .rf-frontier-target { display:flex; justify-content:space-between; gap:6px; width:100%; padding:7px 8px;
+          border:1px solid #3b3540; color:#b7b4ae; background:rgba(30,27,34,.72); font:inherit; font-size:10px; text-align:left; cursor:pointer; }
+        .rf-frontier-target:hover { border-color:#8bbbc2; }.rf-frontier-target.selected { border-color:#e3b53c; color:#f1cc66; }
+        .rf-frontier-target.valid { border-color:#9aac83; }.rf-frontier-target.invalid { border-color:#7f1a0f; }
+        .rf-frontier-target small { color:#8e8981; }.rf-frontier-target.valid small { color:#9aac83; }
         .rf-grade-row { display:grid; grid-template-columns:22px 1fr auto; align-items:center; gap:8px; min-height:32px; }
         .rf-grade-shape { font-weight:900; color:#d6d1c8; }.rf-grade-label{font-size:11px;color:#9a958d}
         .rf-upgrade { min-width:78px; height:27px; border:1px solid #53666d; color:#8bbbc2; background:transparent;
@@ -111,6 +121,14 @@ export class InspectorPanel {
       const result = this.store.upgradeShape(shape);
       if (result.success) this.feedback(`${shape} GRADE ${result.grade}`);
       else this.feedback(result.error || 'UPGRADE FAILED', true);
+    } else if (action === 'select-frontier') {
+      const targetChunkId = target.dataset.chunk || null;
+      const result = this.store.selectFrontierTarget(targetChunkId);
+      if (!result.success) this.feedback(result.error || 'TARGET INVALID', true);
+    } else if (action === 'activate-frontier') {
+      const result = this.store.activateFrontierSeal();
+      if (result.success) this.feedback(`FRONTIER OPENED · ${result.targetChunkId}`);
+      else this.feedback(result.error || 'FRONTIER SEAL FAILED', true);
     }
   }
 
@@ -129,6 +147,7 @@ export class InspectorPanel {
 
     const preview = this.store.getPatternActionPreview();
     const directive = this.store.getDirectivePresentation();
+    const frontier = this.store.getFrontierSealPreview();
     const cradleProgress = getHeartCradleProgress(state);
     if (directive.currentId === 'bind_heart_seal') {
       const missing = new Set(preview.analysis?.patternId === 'heart_seal'
@@ -142,7 +161,9 @@ export class InspectorPanel {
     }
 
     const inspection = this.store.getEngineInspection();
-    if (inspection) {
+    if (directive.currentId === 'frontier_seal') {
+      contextual.innerHTML = frontierMarkup(frontier);
+    } else if (inspection) {
       const powerLabel = inspection.powered
         ? inspection.productionPausedByStock
           ? 'POWERED · STOCK FULL · PRODUCTION PAUSED'
@@ -176,6 +197,7 @@ export class InspectorPanel {
       <h3 class="rf-section-title">RECIPES</h3>
       ${recipeCard(STARTER_RECIPES['compression_press'], preview.analysis?.patternId === 'compression_press')}
       ${recipeCard(STARTER_RECIPES['twin_stars'], preview.analysis?.patternId === 'twin_stars')}
+      ${recipeCard(STARTER_RECIPES['frontier_seal'], directive.currentId === 'frontier_seal' || frontier.geometry.valid)}
     ` : `
       <h3 class="rf-section-title">OPENING RECIPE</h3>
       ${recipeCard(STARTER_RECIPES['heart_seal'], preview.analysis?.patternId === 'heart_seal')}
@@ -203,7 +225,7 @@ function directiveMarkup(directive: DirectivePresentation, context: string = '')
 }
 
 function renderRecipePreview(recipe: RecipeDefinition): string {
-  if (recipe.previewKind === 'exact' || !recipe.previewBlocks || recipe.previewBlocks.length === 0) {
+  if (!recipe.previewBlocks || recipe.previewBlocks.length === 0) {
     return `<div class="rf-recipe-thumb exact" aria-hidden="true">
       <div class="rf-preview-grid" style="display:grid; grid-template-columns:repeat(4, 5px); grid-template-rows:repeat(4, 5px); gap:1px;">
         ${Array.from({ length: 16 }, () => `<i style="background:#e3b53c; border:1px solid #f1cc66; box-sizing:border-box;"></i>`).join('')}
@@ -252,8 +274,40 @@ function recipeCard(recipe: RecipeDefinition, active: boolean): string {
   const tag = recipe.previewKind === 'example' ? '<div class="rf-recipe-tag">EXAMPLE</div>' : '';
   const isOrdinary = recipe.type === 'Bind';
   const cleanRuleText = recipe.description.replace(/<br\s*\/?>/gi, ', ');
-  return `<article class="rf-recipe ${active ? 'active' : ''}" tabindex="0" aria-label="${recipe.name}, ${recipe.previewKind === 'example' ? 'EXAMPLE, ' : ''}${cleanRuleText}, ${isOrdinary ? 'Bind to Engine' : 'Fill 4x4 Cradle'}">
-    ${icon}<div><div class="rf-recipe-name">${escapeHtml(recipe.name.toUpperCase())}</div>${tag}<div class="rf-recipe-rule">${recipe.description}</div><div class="rf-recipe-outcome">${isOrdinary ? 'BIND → ENGINE' : 'EXACT 4×4 CRADLE'}</div></div></article>`;
+  const outcome = isOrdinary ? 'BIND → ENGINE' : recipe.type === 'Frontier' ? 'UNLOCK ONE 4×4 CHUNK' : 'EXACT 4×4 CRADLE';
+  return `<article class="rf-recipe ${active ? 'active' : ''}" tabindex="0" aria-label="${recipe.name}, ${recipe.previewKind === 'example' ? 'EXAMPLE, ' : ''}${cleanRuleText}, ${outcome}">
+    ${icon}<div><div class="rf-recipe-name">${escapeHtml(recipe.name.toUpperCase())}</div>${tag}<div class="rf-recipe-rule">${recipe.description}</div><div class="rf-recipe-outcome">${outcome}</div></div></article>`;
+}
+
+function frontierMarkup(preview: ReturnType<AppStore['getFrontierSealPreview']>): string {
+  const geometryStatus = preview.geometry.valid
+    ? 'VALID FOUR-I 2×8 SEAL'
+    : escapeHtml(preview.geometry.reason || 'SELECT FOUR LOOSE I BLOCKS');
+  const targetButtons = preview.targetOptions.length > 0
+    ? preview.targetOptions.map(chunkId => {
+      const selected = chunkId === preview.targetChunkId;
+      const valid = selected && preview.target.valid;
+      const contactLabel = selected ? `${preview.target.contactCount} / 4 CONTACTS` : 'SELECT TARGET';
+      return `<button class="rf-frontier-target ${selected ? 'selected ' : ''}${valid ? 'valid' : ''}" data-action="select-frontier" data-chunk="${escapeHtml(chunkId)}" type="button">
+        <span>CHUNK ${escapeHtml(chunkId)}</span><small>${contactLabel}</small>
+      </button>`;
+    }).join('')
+    : '<div class="rf-frontier-status">NO ADJACENT LOCKED CHUNK</div>';
+  const targetStatus = preview.targetChunkId && !preview.target.valid
+    ? `<div class="rf-frontier-status">${escapeHtml(preview.target.reason || 'TARGET DOES NOT CONTACT THIS SEAL')}</div>`
+    : '';
+  return `<div class="rf-frontier-card">
+    <div class="rf-section-title">FRONTIER SEAL</div>
+    <div class="rf-frontier-status">${geometryStatus}</div>
+    <div class="rf-frontier-cost">
+      <span class="${preview.hasCore ? 'ready' : 'missing'}">CORE ${preview.hasCore ? '1 / 1' : '0 / 1'}</span>
+      <span class="${preview.hasShards ? 'ready' : 'missing'}">SHARDS ${preview.hasShards ? '12 / 12' : 'NEED 12'}</span>
+    </div>
+    <div class="rf-frontier-status">SELECT THE LOCKED CHUNK TO OPEN</div>
+    <div class="rf-frontier-targets">${targetButtons}</div>
+    ${targetStatus}
+    <div class="rf-actions"><button class="rf-action rf-bind" data-action="activate-frontier" ${preview.canActivate ? '' : 'disabled'}>ACTIVATE FRONTIER SEAL</button></div>
+  </div>`;
 }
 
 function escapeHtml(value: string): string {

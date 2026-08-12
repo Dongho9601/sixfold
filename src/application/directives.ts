@@ -9,8 +9,12 @@
 import {
   derivePowerNetwork,
   EngineState,
+  findConnectedComponents,
   getBlockOccupiedCells,
   isCradleCell,
+  isCellInChunk,
+  areCellsInChunk,
+  OPENING_UNLOCKED_CHUNK_IDS,
 } from '../core/index.ts';
 import type { GameState } from './state.ts';
 
@@ -22,6 +26,8 @@ export const DIRECTIVE_IDS = [
   'rebuild_powered_engine',
   'stabilize_line',
   'frontier_seal',
+  'build_expanded_twin_stars',
+  'next_recipe_tier',
 ] as const;
 
 export type DirectiveId = typeof DIRECTIVE_IDS[number];
@@ -37,6 +43,8 @@ export interface DirectiveState {
   completedIds: DirectiveId[];
   /** The one-time Core reward has been committed. */
   stabilizeLineCoreAwarded: boolean;
+  /** The exact chunk opened by the first Frontier Seal, used by the next authored objective. */
+  frontierTargetChunkId?: string | null;
 }
 
 export interface DirectiveProductionOutput {
@@ -46,6 +54,12 @@ export interface DirectiveProductionOutput {
 export interface DirectiveEvaluationContext {
   /** Outputs committed by the current production transition, if any. */
   productionOutputs?: readonly DirectiveProductionOutput[];
+  /** The ordinary Engine created by the current Bind transition, if any. */
+  boundEngineId?: string;
+  /** The chunk committed by the current Frontier Seal activation, if any. */
+  frontierChunkId?: string;
+  /** Allows legacy save migration to infer the old direct-powered step. */
+  legacyMigration?: boolean;
 }
 
 export interface DirectiveEvaluationResult {
@@ -112,7 +126,19 @@ const DIRECTIVE_COPY: Record<DirectiveId, DirectiveCopy> = {
     now: 'BUILD A FRONTIER SEAL',
     nowDetail: '1 CORE · 12 SHARDS · FOUR I BLOCKS',
     next: 'ACTIVATE IT AT THE FRONTIER',
-    nextDetail: 'PASS 3E FRONTIER EXPANSION',
+    nextDetail: 'SELECT A LOCKED ADJACENT 4×4 CHUNK',
+  },
+  build_expanded_twin_stars: {
+    now: 'BUILD TWIN STARS WITH EXPANDED SPACE',
+    nowDetail: 'ONE COMPONENT IN THE NEW CHUNK · ONE IN THE OLD FIELD',
+    next: 'ADVANCE TO THE NEXT RECIPE TIER',
+    nextDetail: 'TWIN STARS OPENS THE NEXT PROGRESSION TIER',
+  },
+  next_recipe_tier: {
+    now: 'ADVANCE TO THE NEXT RECIPE TIER',
+    nowDetail: 'THE NEXT AUTHORED PATTERN AWAITS',
+    next: 'A DEEPER FRONTIER',
+    nextDetail: 'NEW PATTERN SEALS AWAIT DISCOVERY',
   },
 };
 
@@ -147,7 +173,11 @@ export function normalizeDirectiveState(value: unknown): DirectiveState {
     .sort((left, right) => DIRECTIVE_INDEX.get(left)! - DIRECTIVE_INDEX.get(right)!);
   const stabilizeLineCoreAwarded = source.stabilizeLineCoreAwarded === true
     || source.coreAwarded === true;
-  return { currentId, completedIds, stabilizeLineCoreAwarded };
+  const normalized: DirectiveState = { currentId, completedIds, stabilizeLineCoreAwarded };
+  if (typeof source.frontierTargetChunkId === 'string') {
+    normalized.frontierTargetChunkId = source.frontierTargetChunkId;
+  }
+  return normalized;
 }
 
 function getHeartEngineId(state: GameState): string | null {
@@ -207,6 +237,41 @@ export function getDirectHeartPoweredEngineIds(state: GameState): string[] {
 
 export function hasDirectHeartPoweredEngine(state: GameState): boolean {
   return getDirectHeartPoweredEngineIds(state).length > 0;
+}
+
+function isDirectHeartPoweredEngineId(state: GameState, engineId: string | undefined): boolean {
+  if (!engineId) return false;
+  const engine = state.engines[engineId];
+  return Boolean(engine && !engine.foundational && getDirectHeartPoweredEngineIds(state).includes(engineId));
+}
+
+/**
+ * The first post-expansion Twin Stars must use the exact opened chunk. The
+ * other component must remain in the authored opening field, so a pre-existing
+ * layout cannot satisfy the Directive merely because a chunk was unlocked.
+ */
+function isExpandedTwinStarsEngine(state: GameState, engineId: string | undefined): boolean {
+  const engine = engineId ? state.engines[engineId] : undefined;
+  const targetChunkId = state.directive.frontierTargetChunkId;
+  if (!engine || engine.foundational || engine.sourcePatternId !== 'twin_stars' || !targetChunkId) return false;
+  if (!state.unlockedChunks.includes(targetChunkId)) return false;
+
+  const blocks = engine.constituentBlockIds
+    .map(id => state.blocks[id])
+    .filter((block): block is NonNullable<typeof block> => Boolean(block) && block.position !== null)
+    .map(block => ({ ...block, state: 'Loose' as const }));
+  if (blocks.length !== engine.constituentBlockIds.length) return false;
+
+  const components = findConnectedComponents(blocks);
+  if (components.length !== 2 || components[0].blockIds.length !== components[1].blockIds.length) return false;
+  if (components.some(component => component.blockIds.length < 2)) return false;
+
+  const usesExpandedChunk = components.some(component => areCellsInChunk(component.cells, targetChunkId));
+  const usesOpeningField = components.some(component =>
+      !areCellsInChunk(component.cells, targetChunkId)
+      && component.cells.every(cell => OPENING_UNLOCKED_CHUNK_IDS.some(chunkId => isCellInChunk(cell.x, cell.y, chunkId))),
+  );
+  return usesExpandedChunk && usesOpeningField;
 }
 
 function isReachableWithout(
@@ -280,9 +345,13 @@ function isEarlyDirectiveConditionMet(state: GameState, id: DirectiveId): boolea
     case 'bind_compression_engine': return hasCompressionEngine(state) || hasSubmittedOrdinaryEngine(state);
     case 'submit_ordinary_engine': return hasSubmittedOrdinaryEngine(state);
     case 'upgrade_shape_grade_2': return hasGradeTwoShape(state);
-    case 'rebuild_powered_engine': return hasDirectHeartPoweredEngine(state);
+    // Live completion is event-gated below: an Engine that predates entry to
+    // this Directive must not auto-complete the rebuild step.
+    case 'rebuild_powered_engine': return false;
     case 'stabilize_line':
     case 'frontier_seal':
+    case 'build_expanded_twin_stars':
+    case 'next_recipe_tier':
       return false;
     default:
       return false;
@@ -315,8 +384,20 @@ export function advanceDirectiveProgress(
   let changed = false;
   let awardedCore = false;
 
-  while (state.directive.currentId !== 'frontier_seal') {
+  while (true) {
     const currentId = state.directive.currentId;
+
+    if (currentId === 'rebuild_powered_engine') {
+      const canComplete = context.legacyMigration
+        ? hasDirectHeartPoweredEngine(state)
+        : previousCurrentId === 'rebuild_powered_engine'
+          && isDirectHeartPoweredEngineId(state, context.boundEngineId);
+      if (!canComplete) break;
+      changed = markCompleted(state, currentId) || changed;
+      state.directive.currentId = nextDirectiveId(currentId);
+      changed = true;
+      continue;
+    }
 
     if (currentId === 'stabilize_line') {
       if (state.directive.stabilizeLineCoreAwarded) {
@@ -336,6 +417,25 @@ export function advanceDirectiveProgress(
       state.directive.currentId = nextDirectiveId(currentId);
       changed = true;
       awardedCore = true;
+      continue;
+    }
+
+    if (currentId === 'frontier_seal') {
+      const chunkId = context.frontierChunkId;
+      if (!chunkId || !state.unlockedChunks.includes(chunkId)) break;
+      state.directive.frontierTargetChunkId = chunkId;
+      changed = markCompleted(state, currentId) || changed;
+      state.directive.currentId = nextDirectiveId(currentId);
+      changed = true;
+      continue;
+    }
+
+    if (currentId === 'build_expanded_twin_stars') {
+      if (previousCurrentId !== 'build_expanded_twin_stars'
+        || !isExpandedTwinStarsEngine(state, context.boundEngineId)) break;
+      changed = markCompleted(state, currentId) || changed;
+      state.directive.currentId = nextDirectiveId(currentId);
+      changed = true;
       continue;
     }
 
@@ -364,7 +464,7 @@ export function advanceDirectiveProgress(
 export function inferDirectiveState(state: GameState): DirectiveState {
   const directive = createInitialDirectiveState();
   state.directive = directive;
-  advanceDirectiveProgress(state);
+  advanceDirectiveProgress(state, { legacyMigration: true });
   return state.directive;
 }
 

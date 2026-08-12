@@ -14,12 +14,15 @@ import { createInitialState, GameState, normalizeGameState } from './state.ts';
 import { getDirectivePresentation } from './directives.ts';
 import {
   advanceProductionTime,
+  activateFrontierSeal,
   bindPattern,
   clearSelection,
+  getFrontierSealPreview,
   getEngineSubmissionPreview,
   getEngineIdForBlock,
   getLooseBlockIdsIntersectingRect,
   getPatternActionPreview,
+  selectFrontierTarget,
   GridSelectionRect,
   moveBlock,
   placeBlockFromBuffer,
@@ -50,6 +53,7 @@ export type VisualEvent =
   | { type: 'submit'; blocks: VisualBlockEvent[]; engineId: string; shards: number }
   | { type: 'production'; outputs: Array<{ engineId: string; shape: ShapeType }> }
   | { type: 'grade-up'; shape: ShapeType; grade: number }
+  | { type: 'frontier-unlock'; targetChunkId: string; blockIds: string[] }
   | { type: 'reset' };
 
 export interface EngineInspectionView {
@@ -96,6 +100,14 @@ export class AppStore {
 
   getPatternActionPreview(blockIds?: readonly string[]) {
     return getPatternActionPreview(this.state, blockIds);
+  }
+
+  getFrontierSealPreview(blockIds?: readonly string[], targetChunkId?: string | null) {
+    return getFrontierSealPreview(this.state, blockIds, targetChunkId);
+  }
+
+  getFrontierTargetOptions(): string[] {
+    return this.getFrontierSealPreview().targetOptions;
   }
 
   getEngineInspection(engineId: string | null = this.state.selectedEngineId): EngineInspectionView | null {
@@ -226,6 +238,25 @@ export class AppStore {
   clearEngineSelection(): void {
     selectEngine(this.state, null);
     this.notify(false);
+  }
+
+  selectFrontierTarget(targetChunkId: string | null): ReturnType<typeof selectFrontierTarget> {
+    const result = selectFrontierTarget(this.state, targetChunkId);
+    if (result.success) this.notify(false);
+    return result;
+  }
+
+  activateFrontierSeal(targetChunkId?: string | null) {
+    const result = activateFrontierSeal(this.state, targetChunkId);
+    if (result.success && result.targetChunkId && result.blockIds) {
+      this.visualEvents.push({
+        type: 'frontier-unlock',
+        targetChunkId: result.targetChunkId,
+        blockIds: [...result.blockIds],
+      });
+      this.notify(true);
+    }
+    return result;
   }
 
   bindEngine() {
