@@ -166,7 +166,7 @@ The opening four starter Blocks count toward Stock. Loose and Bound Blocks do no
 - If an output would make Stock 12, emit up to the available room and pause at full.
 - At Stock 12, production progress is preserved and no blocked time is added.
 - When a Block is placed, Bound, Submitted, or otherwise leaves a buffer, production can resume from the preserved partial progress.
-- A Loose Block can always be deliberately abandoned as a last-resort escape; when Stock is full, that action discards the Loose Block rather than exceeding capacity and grants no resource.
+- Normal Return never destroys a Loose Block. If Stock is at or above 12, Return fails cleanly with clear STOCK FULL feedback, leaves the Loose Block on the Field, and does not modify Stock. There is no Discard action in this pass.
 
 Process simultaneous Engine outputs in stable Engine-ID order so capacity contention is deterministic. Stock-full feedback must name the condition; it must never silently accelerate or lose a completed interval.
 

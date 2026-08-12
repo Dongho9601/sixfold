@@ -232,16 +232,19 @@ export function rotateBlock(state: GameState, blockId: string): { success: boole
   return { success: true, newRotation: nextRotation };
 }
 
-export function returnBlockToBuffer(state: GameState, blockId: string): { success: boolean; discarded?: boolean; error?: string } {
+export function returnBlockToBuffer(state: GameState, blockId: string): { success: boolean; error?: string } {
   const block = state.blocks[blockId];
   if (!block || block.state !== 'Loose') return { success: false, error: 'Only Loose Blocks can Return.' };
+  if (isStockFull(state.buffers, STOCK_CAPACITY)) {
+    return { success: false, error: 'STOCK FULL — RETURN FAILED.' };
+  }
+
   delete state.blocks[blockId];
-  const discarded = isStockFull(state.buffers, STOCK_CAPACITY);
-  if (!discarded) state.buffers[block.shape] += 1;
+  state.buffers[block.shape] += 1;
   state.selectedBlockIds = state.selectedBlockIds.filter(id => id !== blockId);
   if (state.recentFieldBlockId === blockId) state.recentFieldBlockId = null;
   state.selectedBlockIds.length > 0 ? analyzeSelection(state) : refreshFieldPattern(state);
-  return { success: true, discarded };
+  return { success: true };
 }
 
 export function selectBlock(state: GameState, blockId: string, toggle: boolean = false): void {
@@ -474,7 +477,14 @@ export interface EngineProductionOutput { engineId: string; shape: ShapeType }
 export function advanceProductionTime(
   state: GameState,
   deltaSeconds: number,
-): { generatedShapes: ShapeType[]; outputs: EngineProductionOutput[]; changed: boolean } {
+): {
+  generatedShapes: ShapeType[];
+  outputs: EngineProductionOutput[];
+  /** True when subscribers need a current-state/UI update. */
+  changed: boolean;
+  /** True only when the update should write through the persistence boundary. */
+  requiresPersistence: boolean;
+} {
   const outputs: EngineProductionOutput[] = [];
   const poweredEngineIds = derivePoweredEngineIds(state.engines, state.blocks, state.heartEngineId);
   const engineIds = Object.keys(state.engines).sort();
@@ -483,12 +493,21 @@ export function advanceProductionTime(
   let buffers = { ...state.buffers };
   let remainingSeconds = Number.isFinite(deltaSeconds) ? Math.max(0, deltaSeconds) : 0;
   let changed = false;
+  let requiresPersistence = false;
 
   // Normalize persisted bag pairs before the synchronized clock walk. Power
   // is already derived above, so an unpowered Engine remains completely idle.
   for (const engineId of poweredIds) {
-    const normalized = normalizeEngineProduction(state.engines[engineId]);
-    state.engines[engineId] = normalized;
+    const sourceEngine = state.engines[engineId];
+    const normalized = normalizeEngineProduction(sourceEngine);
+    const productionPairChanged = sourceEngine.nextShape !== normalized.nextShape
+      || sourceEngine.productionBag.length !== normalized.productionBag.length
+      || sourceEngine.productionBag.some((shape, index) => shape !== normalized.productionBag[index]);
+    if (productionPairChanged) {
+      state.engines[engineId] = normalized;
+      changed = true;
+      requiresPersistence = true;
+    }
     intervals.set(engineId, getProductionIntervalSec(normalized, DEFAULT_BASE_PRODUCTION_RATE));
   }
 
@@ -505,7 +524,7 @@ export function advanceProductionTime(
       }
     }
     state.buffers = buffers;
-    return { generatedShapes: [], outputs, changed };
+    return { generatedShapes: [], outputs, changed, requiresPersistence };
   }
 
   // All powered clocks advance together until the next completion event. At
@@ -534,6 +553,7 @@ export function advanceProductionTime(
           accumulatedTimeSec: engine.accumulatedTimeSec + stepSeconds,
         };
       }
+      changed = true;
       remainingSeconds = Math.max(0, remainingSeconds - stepSeconds);
       continue;
     }
@@ -550,6 +570,7 @@ export function advanceProductionTime(
           accumulatedTimeSec: Math.max(0, engine.accumulatedTimeSec - interval),
         };
         changed = true;
+        requiresPersistence = true;
       }
 
       if (isStockFull(buffers, STOCK_CAPACITY)) {
@@ -567,5 +588,10 @@ export function advanceProductionTime(
   }
 
   state.buffers = buffers;
-  return { generatedShapes: outputs.map(output => output.shape), outputs, changed };
+  return {
+    generatedShapes: outputs.map(output => output.shape),
+    outputs,
+    changed,
+    requiresPersistence,
+  };
 }

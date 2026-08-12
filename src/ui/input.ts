@@ -98,6 +98,11 @@ export function gameplayHotkeysEnabled(event: Pick<KeyboardEvent, 'ctrlKey' | 'm
   return !event.ctrlKey && !event.metaKey && !event.altKey;
 }
 
+function showReturnFeedback(hud: HUD, result: ReturnType<AppStore['returnBlock']>): void {
+  if (result.success) hud.showFeedback('↩');
+  else if (result.error) hud.showFeedback(result.error, true);
+}
+
 interface PointerPosition {
   x: number;
   y: number;
@@ -363,7 +368,7 @@ export class InputController {
       this.cancelHold(false);
       if (action === 'return') {
         const result = this.store.returnBlock(blockId);
-        if (result.success) this.hud.showFeedback('↩');
+        showReturnFeedback(this.hud, result);
       } else if (action === 'place' && shape && preview?.shape === shape && preview.isValid) {
         const result = this.store.placeBlock(shape, preview.position, preview.rotation);
         if (!result.success) this.hud.showFeedback('×', true);
@@ -430,8 +435,15 @@ export class InputController {
 
     if (event.code === 'Delete' || event.code === 'Backspace') {
       const ids = [...this.store.getState().selectedBlockIds];
-      for (const id of ids) this.store.returnBlock(id);
-      if (ids.length > 0) this.hud.showFeedback('↩');
+      let returnedCount = 0;
+      let firstFailure: ReturnType<AppStore['returnBlock']> | null = null;
+      for (const id of ids) {
+        const result = this.store.returnBlock(id);
+        if (result.success) returnedCount += 1;
+        else if (!firstFailure) firstFailure = result;
+      }
+      if (firstFailure) showReturnFeedback(this.hud, firstFailure);
+      else if (returnedCount > 0) this.hud.showFeedback('↩');
       event.preventDefault();
       return;
     }
@@ -492,7 +504,7 @@ export class InputController {
       if (!this.heldBlockId || action !== 'return') return;
       const returnedId = this.heldBlockId;
       const result = this.store.returnBlock(returnedId);
-      if (result.success) this.hud.showFeedback('↩');
+      showReturnFeedback(this.hud, result);
       this.holdPreview = null;
       this.heldBlockId = null;
       this.holdTimerId = null;

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AppStore } from '../src/application/store.ts';
 import { createInitialState, emptyShapeNumbers, normalizeGameState } from '../src/application/state.ts';
 import {
@@ -249,7 +249,7 @@ describe('Pass 3C production pacing and Stock backpressure', () => {
     expect(store.getState().engines['engine-a'].accumulatedTimeSec).toBe(0);
   });
 
-  it('does not exceed Stock when a Loose Block Returns at full capacity', () => {
+  it('rejects a Loose Block Return at full capacity without changing the Block or inventory', () => {
     const state = createInitialState();
     state.buffers = emptyShapeNumbers(0);
     state.buffers.I = STOCK_CAPACITY;
@@ -258,10 +258,87 @@ describe('Pass 3C production pacing and Stock backpressure', () => {
     state.blocks[looseId] = {
       id: looseId, shape: 'O', state: 'Loose', grade: 1, position: { x: 0, y: 0 }, rotation: 0,
     };
+    const blockBefore = structuredClone(state.blocks[looseId]);
+    const buffersBefore = structuredClone(state.buffers);
 
     const result = store.returnBlock(looseId);
-    expect(result).toMatchObject({ success: true, discarded: true });
-    expect(state.blocks[looseId]).toBeUndefined();
+    expect(result).toMatchObject({ success: false, error: expect.stringContaining('STOCK FULL') });
+    expect(state.blocks[looseId]).toEqual(blockBefore);
+    expect(state.buffers).toEqual(buffersBefore);
     expect(getStockUsage(state.buffers)).toBe(STOCK_CAPACITY);
+  });
+
+  it('notifies the UI for partial powered progress without persisting every tick', () => {
+    const state = poweredChainState(['engine-a']);
+    const store = new AppStore(state);
+    const subscriber = vi.fn();
+    const save = vi.fn();
+    store.subscribe(subscriber);
+    store.onSave(save);
+
+    const interval = getProductionIntervalSec(state.engines['engine-a']);
+    store.tick(interval * 0.25);
+
+    expect(subscriber).toHaveBeenCalledTimes(1);
+    expect(save).not.toHaveBeenCalled();
+    expect(state.engines['engine-a'].accumulatedTimeSec).toBeCloseTo(interval * 0.25);
+  });
+
+  it('persists a completed production output', () => {
+    const state = poweredChainState(['engine-a']);
+    const store = new AppStore(state);
+    const subscriber = vi.fn();
+    const save = vi.fn();
+    store.subscribe(subscriber);
+    store.onSave(save);
+
+    const interval = getProductionIntervalSec(state.engines['engine-a']);
+    store.tick(interval);
+
+    expect(subscriber).toHaveBeenCalledTimes(1);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(getStockUsage(state.buffers)).toBe(1);
+  });
+
+  it('does not notify or persist a powered Engine while Stock is full', () => {
+    const state = poweredChainState(['engine-a']);
+    state.buffers = emptyShapeNumbers(0);
+    state.buffers.I = STOCK_CAPACITY;
+    const interval = getProductionIntervalSec(state.engines['engine-a']);
+    state.engines['engine-a'].accumulatedTimeSec = interval * 0.4;
+    const store = new AppStore(state);
+    const subscriber = vi.fn();
+    const save = vi.fn();
+    store.subscribe(subscriber);
+    store.onSave(save);
+
+    store.tick(interval * 10);
+
+    expect(subscriber).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    expect(state.engines['engine-a'].accumulatedTimeSec).toBeCloseTo(interval * 0.4);
+    expect(getStockUsage(state.buffers)).toBe(STOCK_CAPACITY);
+  });
+
+  it('does not notify or persist a Power-paused Engine', () => {
+    const state = createInitialState();
+    state.buffers = emptyShapeNumbers(0);
+    state.blocks = {};
+    state.engines = {};
+    const ordinary = addBoundEngine(state, 'engine-a', 0);
+    const interval = getProductionIntervalSec(ordinary);
+    ordinary.accumulatedTimeSec = interval * 0.4;
+    const store = new AppStore(state);
+    const subscriber = vi.fn();
+    const save = vi.fn();
+    store.subscribe(subscriber);
+    store.onSave(save);
+
+    store.tick(interval * 10);
+
+    expect(subscriber).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+    expect(state.engines['engine-a'].accumulatedTimeSec).toBeCloseTo(interval * 0.4);
+    expect(getStockUsage(state.buffers)).toBe(0);
   });
 });

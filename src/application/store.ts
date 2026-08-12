@@ -266,7 +266,7 @@ export class AppStore {
       if (result.outputs.length > 0) {
         this.visualEvents.push({ type: 'production', outputs: result.outputs });
       }
-      this.notify(true);
+      this.notify(result.requiresPersistence);
     }
   }
 
