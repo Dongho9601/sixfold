@@ -47,6 +47,7 @@ export interface EngineState {
 
 export interface Currencies {
   shards: number;
+  cores: number;
 }
 
 export type ShapeNumbers = Record<ShapeType, number>;

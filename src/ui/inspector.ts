@@ -1,6 +1,7 @@
 import { getBlockOccupiedCells, getShapeGradeUpgradeCost, SHAPE_TYPES, ShapeType } from '../core/index.ts';
 import { STARTER_RECIPES, RecipeDefinition } from '../content/starter.ts';
 import { AppStore } from '../application/store.ts';
+import { DirectivePresentation, getHeartCradleProgress } from '../application/directives.ts';
 import { SHAPE_COLORS } from './renderer.ts';
 
 export class InspectorPanel {
@@ -28,8 +29,12 @@ export class InspectorPanel {
         .rf-side-toggle { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px;
           border: 1px solid #4b4742; color: #b7b4ae; background: #121216; cursor: pointer; }
         .rf-side-title { margin: 0 36px 12px 0; color: #d6d1c8; font-size: 13px; letter-spacing: .13em; }
-        .rf-step { margin-bottom: 10px; color: #e3b53c; font-size: 12px; font-weight: 800; letter-spacing: .08em; }
+        .rf-directive-label { margin-bottom: 5px; color: #8e8981; font-size: 10px; font-weight: 900; letter-spacing: .16em; }
         .rf-goal-name { margin: 0 0 9px; color: #e4e0da; font-size: 17px; font-weight: 850; }
+        .rf-directive-detail { margin: -2px 0 11px; color: #d9b3df; font-size: 11px; line-height: 1.45; }
+        .rf-next-block { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(94,90,84,.38); }
+        .rf-next-name { color: #e3b53c; font-size: 13px; font-weight: 850; letter-spacing: .05em; }
+        .rf-next-detail { margin-top: 4px; color: #8e8981; font-size: 11px; line-height: 1.45; }
         .rf-seal-row { display:flex; align-items:center; gap:12px; margin: 8px 0 12px; }
         .rf-seal-grid { display:grid; grid-template-columns:repeat(4,10px); gap:2px; padding:5px; border:1px solid #80672d; }
         .rf-seal-grid i { width:10px; height:10px; background:#302a22; }
@@ -72,9 +77,9 @@ export class InspectorPanel {
           .rf-sidebar.collapsed{transform:translateX(calc(100% - 34px));}
         }
       </style>
-      <aside class="rf-sidebar" id="rf-sidebar" aria-label="Goals and Recipes">
+      <aside class="rf-sidebar" id="rf-sidebar" aria-label="NOW and NEXT Directives">
         <button class="rf-side-toggle" id="rf-side-toggle" type="button" aria-label="Collapse goals">›</button>
-        <h2 class="rf-side-title">GOAL</h2>
+        <h2 class="rf-side-title">DIRECTIVE</h2>
         <div id="rf-goal"></div>
         <div id="rf-contextual"></div>
         <section class="rf-section" id="rf-recipes"></section>
@@ -123,18 +128,17 @@ export class InspectorPanel {
     toggle.setAttribute('aria-label', this.collapsed ? 'Open goals' : 'Collapse goals');
 
     const preview = this.store.getPatternActionPreview();
-    if (!state.isHeartEngineBound) {
-      const count = preview.analysis?.patternId === 'heart_seal' ? preview.analysis.metrics.cellCount : 0;
+    const directive = this.store.getDirectivePresentation();
+    const cradleProgress = getHeartCradleProgress(state);
+    if (directive.currentId === 'bind_heart_seal') {
       const missing = new Set(preview.analysis?.patternId === 'heart_seal'
         ? (preview.analysis.missingCells || []).map(cell => `${cell.x},${cell.y}`)
         : Array.from({ length: 16 }, (_, index) => `${index % 4},${Math.floor(index / 4)}`));
-      goal.innerHTML = `
-        <div class="rf-step">1. BUILD HEART SEAL</div>
+      goal.innerHTML = directiveMarkup(directive, `
         <div class="rf-seal-row"><span class="rf-seal-grid">${Array.from({ length: 16 }, (_, index) => `<i class="${missing.has(`${index % 4},${Math.floor(index / 4)}`) ? '' : 'filled'}"></i>`).join('')}</span>
-        <span class="rf-goal-progress">${count} / 16</span></div>
-        <div class="rf-teach">${preview.canBind ? `2. BIND → ENGINE${transformDiagram()}` : 'FILL THE 4×4 SEAL'}</div>`;
+        <span class="rf-goal-progress">${cradleProgress.filled} / ${cradleProgress.total}</span></div>`);
     } else {
-      goal.innerHTML = `<div class="rf-step">RECIPES</div><div class="rf-goal-name">BUILD A PATTERN</div>`;
+      goal.innerHTML = directiveMarkup(directive);
     }
 
     const inspection = this.store.getEngineInspection();
@@ -184,6 +188,18 @@ export class InspectorPanel {
         <button class="rf-upgrade" data-action="upgrade" data-shape="${shape}" ${state.currencies.shards < cost ? 'disabled' : ''} aria-label="Upgrade ${shape} to Grade ${grade + 1} for ${cost} Shards">↑ ${cost} ◆</button></div>`;
     }).join('')}`;
   }
+}
+
+function directiveMarkup(directive: DirectivePresentation, context: string = ''): string {
+  return `<div class="rf-directive-label">NOW</div>
+    <div class="rf-goal-name">${escapeHtml(directive.now)}</div>
+    <div class="rf-directive-detail">${escapeHtml(directive.nowDetail)}</div>
+    ${context}
+    <div class="rf-next-block">
+      <div class="rf-directive-label">NEXT</div>
+      <div class="rf-next-name">${escapeHtml(directive.next)}</div>
+      <div class="rf-next-detail">${escapeHtml(directive.nextDetail)}</div>
+    </div>`;
 }
 
 function renderRecipePreview(recipe: RecipeDefinition): string {

@@ -191,7 +191,7 @@ describe('Bind, Engine Submit, production power, and Grade transactions', () => 
 
   it('has no Ash currency or player-facing legacy verb in authoritative UI/docs', () => {
     const store = new AppStore();
-    expect(store.getState().currencies).toEqual({ shards: 0 });
+    expect(store.getState().currencies).toEqual({ shards: 0, cores: 0 });
     const authoritativeFiles = import.meta.glob([
       '../src/ui/*.{ts,md}',
       '../src/{application,core}/README.md',

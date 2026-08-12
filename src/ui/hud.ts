@@ -80,6 +80,8 @@ export class HUD {
           line-height: 20px;
         }
 
+        .rf-core-resource { color: #d9b3df; }
+
         .rf-stock-resource { gap: 7px; }
         .rf-stock-resource.full { color: #d56e5f; }
         .rf-stock-label { color: #8e8981; font-size: 11px; letter-spacing: .08em; }
@@ -209,6 +211,7 @@ export class HUD {
       <div class="rf-hud">
         <div class="rf-resource-strip" aria-label="Resources">
           <span class="rf-resource" title="Shards"><img class="rf-resource-icon" src="/assets/hlbm/icon_gem.png" alt="" /><span id="hud-shards">0</span></span>
+          <span class="rf-resource rf-core-resource" title="Core"><img class="rf-resource-icon" src="/assets/hlbm/icon_seal.png" alt="" /><span id="hud-cores">0</span></span>
           <span class="rf-resource rf-stock-resource" id="hud-stock-resource" title="Buffered Block Stock">
             <span class="rf-stock-label">STOCK</span><span id="hud-stock">0 / ${STOCK_CAPACITY}</span><span class="rf-stock-full" id="hud-stock-full" hidden>STOCK FULL</span>
           </span>
@@ -263,6 +266,8 @@ export class HUD {
     const state = this.store.getState();
     const shardsEl = this.container.querySelector('#hud-shards');
     if (shardsEl) shardsEl.textContent = compactNumber(state.currencies.shards);
+    const coresEl = this.container.querySelector('#hud-cores');
+    if (coresEl) coresEl.textContent = compactNumber(state.currencies.cores);
     const stockUsed = getStockUsage(state.buffers);
     const stockFull = isStockFull(state.buffers, STOCK_CAPACITY);
     const stockEl = this.container.querySelector('#hud-stock');

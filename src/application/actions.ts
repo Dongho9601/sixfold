@@ -24,6 +24,7 @@ import {
   normalizeEngineProduction,
   validateTetrominoPlacement,
 } from '../core/index.ts';
+import { advanceDirectiveProgress } from './directives.ts';
 import { GameState } from './state.ts';
 
 export function getActiveBlocksList(state: GameState): Block[] {
@@ -403,6 +404,7 @@ export function bindPattern(state: GameState): { success: boolean; engine?: Engi
   state.fieldAnalysis = null;
   state.fieldCandidateBlockIds = [];
   state.recentFieldBlockId = null;
+  advanceDirectiveProgress(state);
   return { success: true, engine };
 }
 
@@ -455,6 +457,7 @@ export function submitEngine(state: GameState, engineId: string): { success: boo
   state.learnedActions.submit = true;
   if (state.selectedEngineId === frozenEngineId) state.selectedEngineId = null;
   refreshFieldPattern(state);
+  advanceDirectiveProgress(state);
   return { success: true, shards };
 }
 
@@ -469,6 +472,7 @@ export function upgradeShapeGrade(state: GameState, shape: ShapeType): { success
     if (block.state === 'Loose' && block.shape === shape) block.grade = grade;
   }
   state.learnedActions.upgrade = true;
+  advanceDirectiveProgress(state);
   return { success: true, grade, cost };
 }
 
@@ -588,6 +592,13 @@ export function advanceProductionTime(
   }
 
   state.buffers = buffers;
+  if (outputs.length > 0) {
+    const directiveResult = advanceDirectiveProgress(state, { productionOutputs: outputs });
+    if (directiveResult.changed) {
+      changed = true;
+      requiresPersistence = true;
+    }
+  }
   return {
     generatedShapes: outputs.map(output => output.shape),
     outputs,

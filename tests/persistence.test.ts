@@ -18,7 +18,7 @@ describe('Local persistence', () => {
     mockStorage();
     const store = new AppStore();
     const state = store.getState();
-    state.currencies = { shards: 18 };
+    state.currencies = { shards: 18, cores: 0 };
     state.shapeGrades.T = 3;
     state.buffers.Z = 9;
     state.blocks = Object.fromEntries([0, 1, 2, 3].map((x, index) => [`b${index}`, {
@@ -31,7 +31,7 @@ describe('Local persistence', () => {
     expect(saveGameState(state)).toBe(true);
 
     const reloaded = loadGameState()!;
-    expect(reloaded.currencies).toEqual({ shards: 18 });
+    expect(reloaded.currencies).toEqual({ shards: 18, cores: 0 });
     expect(reloaded.version).toBe(SAVE_VERSION);
     expect(reloaded.shapeGrades.T).toBe(3);
     expect(reloaded.buffers.Z).toBe(9);
@@ -91,7 +91,7 @@ describe('Local persistence', () => {
 
     const migrated = new AppStore(loadGameState()!).getState();
     expect(migrated.version).toBe(SAVE_VERSION);
-    expect(migrated.currencies).toEqual({ shards: 12 });
+    expect(migrated.currencies).toEqual({ shards: 12, cores: 0 });
     expect(migrated.shapeGrades.J).toBe(4);
     expect(migrated.buffers.Z).toBe(7);
     expect(migrated.engines['engine-heart']).toMatchObject({

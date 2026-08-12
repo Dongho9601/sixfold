@@ -5,4 +5,5 @@
 
 export * from './state.ts';
 export * from './actions.ts';
+export * from './directives.ts';
 export * from './store.ts';

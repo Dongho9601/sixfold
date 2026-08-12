@@ -11,6 +11,7 @@ import {
   ShapeType,
 } from '../core/index.ts';
 import { createInitialState, GameState, normalizeGameState } from './state.ts';
+import { getDirectivePresentation } from './directives.ts';
 import {
   advanceProductionTime,
   bindPattern,
@@ -88,6 +89,10 @@ export class AppStore {
   }
 
   getState(): GameState { return this.state; }
+
+  getDirectivePresentation() {
+    return getDirectivePresentation(this.state);
+  }
 
   getPatternActionPreview(blockIds?: readonly string[]) {
     return getPatternActionPreview(this.state, blockIds);
