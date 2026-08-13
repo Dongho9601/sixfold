@@ -283,7 +283,9 @@ function frontierMarkup(preview: ReturnType<AppStore['getFrontierSealPreview']>)
   const geometryStatus = preview.geometry.valid
     ? 'VALID FOUR-I 2×8 SEAL'
     : escapeHtml(preview.geometry.reason || 'SELECT FOUR LOOSE I BLOCKS');
-  const targetButtons = preview.targetOptions.length > 0
+  const targetButtons = !preview.validGeometry
+    ? '<div class="rf-frontier-status">BUILD A VALID FOUR-I SEAL TO REVEAL CONTACTABLE TARGETS</div>'
+    : preview.targetOptions.length > 0
     ? preview.targetOptions.map(chunkId => {
       const selected = chunkId === preview.targetChunkId;
       const valid = selected && preview.target.valid;
@@ -292,7 +294,7 @@ function frontierMarkup(preview: ReturnType<AppStore['getFrontierSealPreview']>)
         <span>CHUNK ${escapeHtml(chunkId)}</span><small>${contactLabel}</small>
       </button>`;
     }).join('')
-    : '<div class="rf-frontier-status">NO ADJACENT LOCKED CHUNK</div>';
+    : '<div class="rf-frontier-status">NO ADJACENT LOCKED CHUNK CONTACTS THIS SEAL</div>';
   const targetStatus = preview.targetChunkId && !preview.target.valid
     ? `<div class="rf-frontier-status">${escapeHtml(preview.target.reason || 'TARGET DOES NOT CONTACT THIS SEAL')}</div>`
     : '';
@@ -303,7 +305,7 @@ function frontierMarkup(preview: ReturnType<AppStore['getFrontierSealPreview']>)
       <span class="${preview.hasCore ? 'ready' : 'missing'}">CORE ${preview.hasCore ? '1 / 1' : '0 / 1'}</span>
       <span class="${preview.hasShards ? 'ready' : 'missing'}">SHARDS ${preview.hasShards ? '12 / 12' : 'NEED 12'}</span>
     </div>
-    <div class="rf-frontier-status">SELECT THE LOCKED CHUNK TO OPEN</div>
+    <div class="rf-frontier-status">${preview.validGeometry ? 'SELECT A CONTACTABLE LOCKED CHUNK TO OPEN' : 'BUILD A VALID SEAL TO CHECK FRONTIER CONTACT'}</div>
     <div class="rf-frontier-targets">${targetButtons}</div>
     ${targetStatus}
     <div class="rf-actions"><button class="rf-action rf-bind" data-action="activate-frontier" ${preview.canActivate ? '' : 'disabled'}>ACTIVATE FRONTIER SEAL</button></div>

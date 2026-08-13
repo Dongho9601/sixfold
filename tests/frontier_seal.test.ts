@@ -3,7 +3,9 @@ import { AppStore } from '../src/application/store.ts';
 import {
   activateFrontierSeal,
   advanceDirectiveProgress,
+  bindPattern,
   getFrontierSealPreview,
+  getPatternActionPreview,
   getDirectivePresentation,
 } from '../src/application/index.ts';
 import { createInitialState, normalizeGameState, SAVE_VERSION } from '../src/application/state.ts';
@@ -41,7 +43,7 @@ function frontierBlocks(
   });
 }
 
-function sealState(targetChunkId = '6,-2') {
+function sealState(targetChunkId: string | null = '6,-2') {
   const state = createInitialState();
   state.currencies = { cores: 1, shards: 12 };
   state.directive = {
@@ -126,6 +128,38 @@ describe('Pass 3E Frontier Seal geometry and transaction', () => {
     expect(validateFrontierSeal(blocks, opening, '6,-2').target.contactCount).toBe(4);
   });
 
+  it('keeps the exact four-I seal available as Compression while Frontier preview recognizes it', () => {
+    const state = sealState('6,-2');
+    state.isHeartEngineBound = true;
+    const blockIds = Object.keys(state.blocks);
+    const bindPreview = getPatternActionPreview(state, blockIds);
+    const frontierPreview = getFrontierSealPreview(state, blockIds, '6,-2');
+
+    expect(bindPreview.analysis).toMatchObject({ patternId: 'compression_press', isValid: true });
+    expect(bindPreview.canBind).toBe(true);
+    expect(frontierPreview.geometry.valid).toBe(true);
+    expect(frontierPreview.target).toMatchObject({ valid: true, contactCount: 4 });
+
+    const bindResult = bindPattern(state);
+    expect(bindResult).toMatchObject({ success: true, engine: { sourcePatternId: 'compression_press' } });
+  });
+
+  it('only offers contactable targets and rejects impossible direct selection', () => {
+    const state = sealState(null);
+    const store = new AppStore(state);
+    const preview = store.getFrontierSealPreview();
+
+    expect(preview.targetOptions).toContain('6,-2');
+    expect(preview.targetOptions).not.toContain('-6,-2');
+
+    const before = state.selectedFrontierChunkId;
+    expect(store.selectFrontierTarget('-6,-2').success).toBe(false);
+    expect(state.selectedFrontierChunkId).toBe(before);
+
+    expect(store.selectFrontierTarget('6,-2')).toEqual({ success: true, targetChunkId: '6,-2' });
+    expect(state.selectedFrontierChunkId).toBe('6,-2');
+  });
+
   it('previews requirements and leaves every field on failed activation unchanged', () => {
     const missingCore = sealState();
     missingCore.currencies.cores = 0;
@@ -150,6 +184,7 @@ describe('Pass 3E Frontier Seal geometry and transaction', () => {
     const state = sealState();
     const store = new AppStore(state);
     const beforeChunks = [...state.unlockedChunks];
+    expect(store.selectFrontierTarget('6,-2').success).toBe(true);
     const result = store.activateFrontierSeal();
 
     expect(result).toMatchObject({ success: true, targetChunkId: '6,-2', blockIds: ['seal-0', 'seal-1', 'seal-2', 'seal-3'] });

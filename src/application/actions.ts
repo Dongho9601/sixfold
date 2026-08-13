@@ -27,6 +27,7 @@ import {
   isStockFull,
   normalizeEngineProduction,
   validateTetrominoPlacement,
+  validateFrontierTarget,
   validateFrontierSeal,
 } from '../core/index.ts';
 import { advanceDirectiveProgress } from './directives.ts';
@@ -396,12 +397,15 @@ export function getFrontierSealPreview(
 ): FrontierSealPreview {
   const blocks = frontierCandidateBlocks(state, blockIds);
   const geometry = analyzeFrontierSeal(blocks);
-  const selectedTarget = targetChunkId === undefined
-    ? state.selectedFrontierChunkId
-    : targetChunkId;
-  const target = validateFrontierSeal(blocks, getStateUnlockedChunks(state), selectedTarget).target;
+  const unlockedChunks = getStateUnlockedChunks(state);
+  const selectedTarget = targetChunkId === undefined ? state.selectedFrontierChunkId : targetChunkId;
+  const target = validateFrontierSeal(blocks, unlockedChunks, selectedTarget).target;
   const fieldLegal = blocks.length > 0 && isPatternFieldLegal(state, blocks);
   const validGeometry = geometry.valid && fieldLegal;
+  const adjacentTargets = getAdjacentLockedChunkIds(unlockedChunks);
+  const targetOptions = validGeometry
+    ? adjacentTargets.filter(chunkId => validateFrontierTarget(geometry.cells, unlockedChunks, chunkId).valid)
+    : adjacentTargets;
   const hasCore = state.currencies.cores >= 1;
   const hasShards = state.currencies.shards >= 12;
   const canActivate = validGeometry && target.valid && hasCore && hasShards;
@@ -419,7 +423,7 @@ export function getFrontierSealPreview(
     geometry,
     target,
     targetChunkId: selectedTarget,
-    targetOptions: getAdjacentLockedChunkIds(getStateUnlockedChunks(state)),
+    targetOptions,
     validGeometry,
     hasCore,
     hasShards,
@@ -438,6 +442,10 @@ export function selectFrontierTarget(
   }
   if (!getAdjacentLockedChunkIds(getStateUnlockedChunks(state)).includes(targetChunkId)) {
     return { success: false, error: 'Target must be a locked chunk sharing a full side with the Field.' };
+  }
+  const preview = getFrontierSealPreview(state, undefined, targetChunkId);
+  if (preview.validGeometry && !preview.target.valid) {
+    return { success: false, error: preview.target.reason || 'Target does not contact the current Frontier Seal.' };
   }
   state.selectedFrontierChunkId = targetChunkId;
   state.selectedEngineId = null;
