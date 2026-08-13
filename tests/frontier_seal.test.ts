@@ -144,6 +144,20 @@ describe('Pass 3E Frontier Seal geometry and transaction', () => {
     expect(bindResult).toMatchObject({ success: true, engine: { sourcePatternId: 'compression_press' } });
   });
 
+  it('does not expose or select a target before a valid Frontier Seal exists', () => {
+    const state = createInitialState();
+    state.directive.currentId = 'frontier_seal';
+    const store = new AppStore(state);
+    const before = structuredClone(state);
+    const preview = store.getFrontierSealPreview();
+
+    expect(preview.validGeometry).toBe(false);
+    expect(preview.targetOptions).toEqual([]);
+    expect(store.getFrontierTargetOptions()).toEqual([]);
+    expect(store.selectFrontierTarget('6,-2').success).toBe(false);
+    expect(state).toEqual(before);
+  });
+
   it('only offers contactable targets and rejects impossible direct selection', () => {
     const state = sealState(null);
     const store = new AppStore(state);
@@ -176,6 +190,7 @@ describe('Pass 3E Frontier Seal geometry and transaction', () => {
 
     const wrongTarget = sealState('-6,-2');
     const beforeTarget = structuredClone(wrongTarget);
+    expect(getFrontierSealPreview(wrongTarget).canActivate).toBe(false);
     expect(activateFrontierSeal(wrongTarget).success).toBe(false);
     expect(wrongTarget).toEqual(beforeTarget);
   });
@@ -184,6 +199,8 @@ describe('Pass 3E Frontier Seal geometry and transaction', () => {
     const state = sealState();
     const store = new AppStore(state);
     const beforeChunks = [...state.unlockedChunks];
+    const beforeBuffers = structuredClone(state.buffers);
+    const beforeGrades = structuredClone(state.shapeGrades);
     expect(store.selectFrontierTarget('6,-2').success).toBe(true);
     const result = store.activateFrontierSeal();
 
@@ -192,7 +209,11 @@ describe('Pass 3E Frontier Seal geometry and transaction', () => {
     expect(Object.keys(state.blocks)).toHaveLength(0);
     expect(state.unlockedChunks).toEqual([...beforeChunks, '6,-2']);
     expect(state.unlockedChunks).toHaveLength(beforeChunks.length + 1);
+    expect(state.buffers).toEqual(beforeBuffers);
+    expect(state.shapeGrades).toEqual(beforeGrades);
     expect(state.engines).toEqual({});
+    expect(state.selectedBlockIds).toEqual([]);
+    expect(state.selectedFrontierChunkId).toBeNull();
     expect(state.directive.currentId).toBe('build_expanded_twin_stars');
     expect(state.directive.completedIds).toContain('frontier_seal');
     expect(state.directive.frontierTargetChunkId).toBe('6,-2');

@@ -78,6 +78,7 @@ export class InspectorPanel {
         .rf-frontier-target:hover { border-color:#8bbbc2; }.rf-frontier-target.selected { border-color:#e3b53c; color:#f1cc66; }
         .rf-frontier-target.valid { border-color:#9aac83; }.rf-frontier-target.invalid { border-color:#7f1a0f; }
         .rf-frontier-target small { color:#8e8981; }.rf-frontier-target.valid small { color:#9aac83; }
+        .rf-frontier-activate { background:#9aac83; }
         .rf-grade-row { display:grid; grid-template-columns:22px 1fr auto; align-items:center; gap:8px; min-height:32px; }
         .rf-grade-shape { font-weight:900; color:#d6d1c8; }.rf-grade-label{font-size:11px;color:#9a958d}
         .rf-upgrade { min-width:78px; height:27px; border:1px solid #53666d; color:#8bbbc2; background:transparent;
@@ -162,7 +163,7 @@ export class InspectorPanel {
 
     const inspection = this.store.getEngineInspection();
     if (directive.currentId === 'frontier_seal') {
-      contextual.innerHTML = frontierMarkup(frontier);
+      contextual.innerHTML = frontierMarkup(frontier, preview);
     } else if (inspection) {
       const powerLabel = inspection.powered
         ? inspection.productionPausedByStock
@@ -279,7 +280,10 @@ function recipeCard(recipe: RecipeDefinition, active: boolean): string {
     ${icon}<div><div class="rf-recipe-name">${escapeHtml(recipe.name.toUpperCase())}</div>${tag}<div class="rf-recipe-rule">${recipe.description}</div><div class="rf-recipe-outcome">${outcome}</div></div></article>`;
 }
 
-function frontierMarkup(preview: ReturnType<AppStore['getFrontierSealPreview']>): string {
+function frontierMarkup(
+  preview: ReturnType<AppStore['getFrontierSealPreview']>,
+  bindPreview: ReturnType<AppStore['getPatternActionPreview']>,
+): string {
   const geometryStatus = preview.geometry.valid
     ? 'VALID FOUR-I 2×8 SEAL'
     : escapeHtml(preview.geometry.reason || 'SELECT FOUR LOOSE I BLOCKS');
@@ -298,6 +302,10 @@ function frontierMarkup(preview: ReturnType<AppStore['getFrontierSealPreview']>)
   const targetStatus = preview.targetChunkId && !preview.target.valid
     ? `<div class="rf-frontier-status">${escapeHtml(preview.target.reason || 'TARGET DOES NOT CONTACT THIS SEAL')}</div>`
     : '';
+  const bindAction = bindPreview.canBind && bindPreview.analysis
+    ? `<div class="rf-frontier-status">${escapeHtml(bindPreview.analysis.patternName)} IS ALSO READY TO BIND</div>
+       <div class="rf-actions"><button class="rf-action rf-bind" data-action="bind">BIND → ENGINE</button></div>`
+    : '';
   return `<div class="rf-frontier-card">
     <div class="rf-section-title">FRONTIER SEAL</div>
     <div class="rf-frontier-status">${geometryStatus}</div>
@@ -308,7 +316,8 @@ function frontierMarkup(preview: ReturnType<AppStore['getFrontierSealPreview']>)
     <div class="rf-frontier-status">${preview.validGeometry ? 'SELECT A CONTACTABLE LOCKED CHUNK TO OPEN' : 'BUILD A VALID SEAL TO CHECK FRONTIER CONTACT'}</div>
     <div class="rf-frontier-targets">${targetButtons}</div>
     ${targetStatus}
-    <div class="rf-actions"><button class="rf-action rf-bind" data-action="activate-frontier" ${preview.canActivate ? '' : 'disabled'}>ACTIVATE FRONTIER SEAL</button></div>
+    ${bindAction}
+    <div class="rf-actions"><button class="rf-action rf-frontier-activate" data-action="activate-frontier" ${preview.canActivate ? '' : 'disabled'}>ACTIVATE FRONTIER SEAL</button></div>
   </div>`;
 }
 

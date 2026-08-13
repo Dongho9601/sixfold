@@ -405,7 +405,7 @@ export function getFrontierSealPreview(
   const adjacentTargets = getAdjacentLockedChunkIds(unlockedChunks);
   const targetOptions = validGeometry
     ? adjacentTargets.filter(chunkId => validateFrontierTarget(geometry.cells, unlockedChunks, chunkId).valid)
-    : adjacentTargets;
+    : [];
   const hasCore = state.currencies.cores >= 1;
   const hasShards = state.currencies.shards >= 12;
   const canActivate = validGeometry && target.valid && hasCore && hasShards;
@@ -444,7 +444,10 @@ export function selectFrontierTarget(
     return { success: false, error: 'Target must be a locked chunk sharing a full side with the Field.' };
   }
   const preview = getFrontierSealPreview(state, undefined, targetChunkId);
-  if (preview.validGeometry && !preview.target.valid) {
+  if (!preview.validGeometry) {
+    return { success: false, error: preview.error || 'Build a valid Frontier Seal before selecting a target.' };
+  }
+  if (!preview.target.valid) {
     return { success: false, error: preview.target.reason || 'Target does not contact the current Frontier Seal.' };
   }
   state.selectedFrontierChunkId = targetChunkId;
