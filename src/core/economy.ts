@@ -26,10 +26,10 @@ export function calculateEnginePower(boundValue: number, boundQuality: number): 
   return materialMultiplier * qualityMultiplier;
 }
 
-/** Submission reward: total bound Grades, scaled linearly by bound Quality. */
+/** Submission reward: the tuned half-scale Grade total, shaped by Quality. */
 export function calculateEngineSubmissionShards(blocks: readonly Block[], quality: number): number {
   const gradeTotal = blocks.reduce((sum, block) => sum + block.grade, 0);
-  return Math.max(1, Math.round(gradeTotal * (1 + quality)));
+  return Math.max(1, Math.round(gradeTotal * (0.5 + 0.5 * quality)));
 }
 
 /** The cost shown beside Grade N is the exact cost to reach Grade N + 1. */

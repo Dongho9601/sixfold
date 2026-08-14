@@ -354,7 +354,7 @@ describe('fresh-game early loop integration', () => {
     const compressionSubmission = store.submitEngine(compressionEngineId);
     expect(compressionSubmission.success).toBe(true);
     expectDirective(store, 'upgrade_shape_grade_2', 'BUILD A POWERED ENGINE');
-    expect(store.getState().currencies.shards).toBeGreaterThanOrEqual(6);
+    expect(store.getState().currencies.shards).toBeGreaterThanOrEqual(3);
 
     expect(store.upgradeShape('I')).toMatchObject({ success: true, cost: 3, grade: 2 });
     expectDirective(store, 'rebuild_powered_engine', 'STABILIZE THE LINE');

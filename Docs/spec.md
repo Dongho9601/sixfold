@@ -175,10 +175,10 @@ Process simultaneous Engine outputs in stable Engine-ID order so capacity conten
 Ordinary Engine Submit remains atomic and exact:
 
 ~~~
-Shards = max(1, round(sum(bound constituent Grades) × (1 + boundQuality)))
+Shards = max(1, round(sum(bound constituent Grades) × (0.50 + 0.50 × boundQuality)))
 ~~~
 
-Submitting consumes the Engine and its Bound constituent Blocks, grants Shards once, and frees its cells. The Heart Engine is never submittable.
+The payout is half the former Grade total at the 0.50 Quality floor and reaches the full Grade total at perfect Quality: a minimum four-Grade-1 ordinary Engine pays 3–4 Shards across the valid Quality range. Larger Engines and higher Grades still pay more, but a disposable minimum Engine cannot fund the 12-Shard Frontier Seal by itself. Submitting consumes the Engine and its Bound constituent Blocks, grants Shards once, and frees its cells. The Heart Engine is never submittable.
 
 Keeping an Engine preserves its production only while it is Powered and consumes field space. A kept Engine can also be a bridge that powers other Engines. Submitting it grants repeatable Shards, frees space, and may break a Power route. Stock pressure means that additional Engines are not automatically better: an unpowered or strategically redundant Engine can be worth submitting, while a powered bridge can be worth keeping even when its immediate Shard payout is attractive.
 
@@ -227,7 +227,7 @@ All geometry, recipe validation, Power reachability, economy, production, RNG, a
 ## 10. Safety checks and invariants
 
 - **Guaranteed early route:** the 80-cell opening supports Heart (16 cells), direct Engine A (16), relay Engine B (16), and a spare ordinary Engine if needed (16), with the 16-cell Frontier Seal still fitting after B and the spare are Submitted. A verified legal arrangement uses four O Blocks for A at origins (-2,-2), (-2,0), (-2,2), and (-2,4), and four O Blocks for B at (0,5), (0,7), (2,5), and (2,7): A touches Heart along its west edge, B touches A at row 5 but is not adjacent to Heart, and the east Seal lane remains clear. The first Compression is Submitted before A is rebuilt, so its cells are available.
-- **Expansion reachability:** the first Core milestone is completable before expansion: A is directly Heart-powered, B is powered only through A, and the verified Seal lane stays in the original 8×8 core. After Stabilize, B and an optional spare ordinary Engine are normal Shard sources for the Seal; each minimum four-Block Grade-1 ordinary submission pays at least 6 Shards, so three such submissions total 18 gross, less the 3-Shard Grade 2 upgrade, leave at least 15 Shards for the 12-Shard Seal cost.
+- **Expansion reachability:** the first Core milestone is completable before expansion: A is directly Heart-powered, B is powered only through A, and the verified Seal lane stays in the original 8×8 core. After Stabilize, B, an optional spare ordinary Engine, and the non-I output encountered while waiting for the four-I Seal are normal Shard sources. A minimum four-Block Grade-1 ordinary submission pays 3–4 Shards across the valid Quality range, so the Frontier price is earned through several ordinary submissions rather than one disposable Engine; the first such payout still covers the 3-Shard Grade 2 tutorial cost.
 - **Stock deadlock:** the 12-Block Stock cap is enough to hold the four-I Seal material or the eight Blocks needed to rebuild A and B, while Blocks are placed/Bound as they arrive. Stock-full production pauses rather than accumulating, and ordinary Submit frees both cells and future Stock room.
 - **Spatial softlock:** the starting staging chunk removes exact-packing dependence; the authored Frontier Seal example provides a valid first route, and any later expansion must be side-adjacent to an already unlocked chunk.
 - **Impossible Seal placement:** the Seal footprint, its contact with the specifically selected target chunk, and its costs are checked at activation time; costs and Blocks are removed only after every check succeeds.

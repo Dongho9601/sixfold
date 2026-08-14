@@ -126,6 +126,17 @@ describe('Bind, Engine Submit, production power, and Grade transactions', () => 
     expect(calculateEngineSubmissionShards(grade1, 1)).toBeGreaterThan(calculateEngineSubmissionShards(grade1, 0.5));
   });
 
+  it('keeps a minimum perfect Compression payout below the Frontier price', () => {
+    const grade1 = Array.from({ length: 4 }, (_, index) => ({
+      id: `minimum-${index}`, shape: 'O' as const, state: 'Bound' as const, grade: 1,
+      position: { x: index * 2, y: 0 }, rotation: 0,
+    }));
+
+    expect(calculateEngineSubmissionShards(grade1, 1)).toBe(4);
+    expect(calculateEngineSubmissionShards(grade1, 0.5)).toBe(3);
+    expect(calculateEngineSubmissionShards(grade1, 1)).toBeLessThan(12);
+  });
+
   it('submits an ordinary Engine atomically exactly once and removes its cells', () => {
     const store = new AppStore();
     bindHeart(store);
