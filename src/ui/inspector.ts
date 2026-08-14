@@ -1,8 +1,9 @@
 import { getBlockOccupiedCells, getShapeGradeUpgradeCost, SHAPE_TYPES, ShapeType } from '../core/index.ts';
 import { STARTER_RECIPES, RecipeDefinition } from '../content/starter.ts';
 import { AppStore } from '../application/store.ts';
-import { DirectivePresentation, getHeartCradleProgress } from '../application/directives.ts';
+import { DIRECTIVE_IDS, DirectivePresentation, getHeartCradleProgress } from '../application/directives.ts';
 import { SHAPE_COLORS } from './renderer.ts';
+import { actionIconMarkup, shapeGlyphMarkup } from './glyphs.ts';
 
 export class InspectorPanel {
   private collapsed = false;
@@ -17,82 +18,14 @@ export class InspectorPanel {
 
   private initDOM(): void {
     this.container.innerHTML = `
-      <style>
-        .rf-sidebar {
-          position: absolute; top: 14px; right: 14px; bottom: 92px; width: 260px;
-          box-sizing: border-box; padding: 14px; overflow: auto; color: #b7b4ae;
-          background: rgba(10,10,10,.9); border-left: 1px solid rgba(94,90,84,.56);
-          font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
-          pointer-events: auto; user-select: none; transition: transform 160ms ease;
-        }
-        .rf-sidebar.collapsed { transform: translateX(236px); overflow: hidden; }
-        .rf-side-toggle { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px;
-          border: 1px solid #4b4742; color: #b7b4ae; background: #121216; cursor: pointer; }
-        .rf-side-title { margin: 0 36px 12px 0; color: #d6d1c8; font-size: 13px; letter-spacing: .13em; }
-        .rf-directive-label { margin-bottom: 5px; color: #8e8981; font-size: 10px; font-weight: 900; letter-spacing: .16em; }
-        .rf-goal-name { margin: 0 0 9px; color: #e4e0da; font-size: 17px; font-weight: 850; }
-        .rf-directive-detail { margin: -2px 0 11px; color: #d9b3df; font-size: 11px; line-height: 1.45; }
-        .rf-next-block { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(94,90,84,.38); }
-        .rf-next-name { color: #e3b53c; font-size: 13px; font-weight: 850; letter-spacing: .05em; }
-        .rf-next-detail { margin-top: 4px; color: #8e8981; font-size: 11px; line-height: 1.45; }
-        .rf-seal-row { display:flex; align-items:center; gap:12px; margin: 8px 0 12px; }
-        .rf-seal-grid { display:grid; grid-template-columns:repeat(4,10px); gap:2px; padding:5px; border:1px solid #80672d; }
-        .rf-seal-grid i { width:10px; height:10px; background:#302a22; }
-        .rf-seal-grid i.filled { background:#e3b53c; }
-        .rf-goal-progress { color:#e3b53c; font-size:17px; font-weight:800; }
-        .rf-teach { padding:9px 10px; margin: 9px 0 14px; border-left:2px solid #594563;
-          background:rgba(89,69,99,.14); color:#d9b3df; font-size:12px; line-height:1.55; }
-        .rf-transform { display:flex; align-items:center; gap:9px; margin-top:6px; color:#d9b3df; }
-        .rf-loose-glyph { display:grid; grid-template-columns:repeat(2,7px); gap:2px; transform:rotate(45deg); }
-        .rf-loose-glyph i { width:7px; height:7px; background:#8bbbc2; }
-        .rf-engine-glyph { width:17px; height:17px; box-sizing:border-box; border:2px solid #b78dbc; transform:rotate(45deg); }
-        .rf-section { margin-top:16px; padding-top:12px; border-top:1px solid rgba(94,90,84,.38); }
-        .rf-section-title { margin:0 0 9px; color:#8e8981; font-size:11px; letter-spacing:.14em; }
-        .rf-recipe { display:grid; grid-template-columns:36px 1fr; gap:9px; padding:9px 0; border-bottom:1px solid rgba(94,90,84,.24); }
-        .rf-recipe.active { color:#eef0df; background:rgba(80,96,71,.12); }
-        .rf-recipe-thumb { width:36px; height:36px; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.35); border:1px solid rgba(94,90,84,.32); border-radius:3px; padding:2px; box-sizing:border-box; }
-        .rf-recipe-thumb.exact { border-color:rgba(227,181,60,.4); }
-        .rf-recipe-tag { display:inline-block; font-size:9px; font-weight:900; letter-spacing:.08em; color:#8bbbc2; background:rgba(139,187,194,.14); padding:1px 4px; border-radius:2px; margin-top:2px; margin-bottom:2px; text-transform:uppercase; }
-        .rf-recipe-name { color:#d6d1c8; font-size:12px; font-weight:850; letter-spacing:.04em; }
-        .rf-recipe-rule,.rf-recipe-outcome { margin-top:3px; font-size:11px; color:#8e8981; line-height:1.4; }
-        .rf-recipe-outcome { color:#9aac83; }
-        .rf-actions { display:flex; gap:7px; margin-top:10px; }
-        .rf-action { flex:1; min-height:38px; border:0; font:inherit; font-size:11px; font-weight:900;
-          letter-spacing:.07em; cursor:pointer; background:#e3b53c; color:#0a0a0a; }
-        .rf-action:hover:not(:disabled){filter:brightness(1.15)} .rf-action:disabled{opacity:.35;cursor:not-allowed}
-        .rf-submit{background:#b78dbc}.rf-bind{background:#e3b53c}
-        .rf-engine-card { padding:10px; border:1px solid #594563; background:rgba(89,69,99,.12); }
-        .rf-engine-name { color:#d9b3df; font-size:13px; font-weight:850; }
-        .rf-engine-meta { margin-top:4px; color:#8d7e91; font-size:11px; }
-        .rf-engine-power { margin-top:8px; font-size:11px; font-weight:900; letter-spacing:.08em; }
-        .rf-engine-power.powered { color:#b78dbc; }
-        .rf-engine-power.unpowered { color:#d56e5f; }
-        .rf-engine-stock { margin-top:7px; color:#c99a52; font-size:11px; font-weight:900; letter-spacing:.07em; }
-        .rf-frontier-card { padding:10px; border:1px solid #80672d; background:rgba(227,181,60,.07); }
-        .rf-frontier-status { color:#d9b3df; font-size:11px; line-height:1.45; }
-        .rf-frontier-cost { display:flex; gap:10px; margin:8px 0; color:#b7b4ae; font-size:11px; font-weight:800; }
-        .rf-frontier-cost .ready { color:#9aac83; }.rf-frontier-cost .missing { color:#d56e5f; }
-        .rf-frontier-targets { display:grid; gap:5px; margin-top:8px; }
-        .rf-frontier-target { display:flex; justify-content:space-between; gap:6px; width:100%; padding:7px 8px;
-          border:1px solid #3b3540; color:#b7b4ae; background:rgba(30,27,34,.72); font:inherit; font-size:10px; text-align:left; cursor:pointer; }
-        .rf-frontier-target:hover { border-color:#8bbbc2; }.rf-frontier-target.selected { border-color:#e3b53c; color:#f1cc66; }
-        .rf-frontier-target.valid { border-color:#9aac83; }.rf-frontier-target.invalid { border-color:#7f1a0f; }
-        .rf-frontier-target small { color:#8e8981; }.rf-frontier-target.valid small { color:#9aac83; }
-        .rf-frontier-activate { background:#9aac83; }
-        .rf-grade-row { display:grid; grid-template-columns:22px 1fr auto; align-items:center; gap:8px; min-height:32px; }
-        .rf-grade-shape { font-weight:900; color:#d6d1c8; }.rf-grade-label{font-size:11px;color:#9a958d}
-        .rf-upgrade { min-width:78px; height:27px; border:1px solid #53666d; color:#8bbbc2; background:transparent;
-          font:inherit; font-size:10px; cursor:pointer; }.rf-upgrade:disabled{opacity:.3;cursor:not-allowed}
-        @media(max-width:760px){
-          .rf-sidebar{top:8px;right:8px;bottom:70px;width:min(280px,calc(100vw - 16px));}
-          .rf-sidebar.collapsed{transform:translateX(calc(100% - 34px));}
-        }
-      </style>
-      <aside class="rf-sidebar" id="rf-sidebar" aria-label="NOW and NEXT Directives">
-        <button class="rf-side-toggle" id="rf-side-toggle" type="button" aria-label="Collapse goals">›</button>
-        <h2 class="rf-side-title">DIRECTIVE</h2>
+      <aside class="rf-sidebar" id="rf-sidebar" aria-label="Rune Foundry panel">
+        <button class="rf-side-toggle" id="rf-side-toggle" type="button" aria-label="Collapse Foundry panel">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg>
+        </button>
+        <p class="rf-side-kicker">BLACK IRON WORKS</p>
+        <h2 class="rf-side-title">Foundry Ledger</h2>
         <div id="rf-goal"></div>
-        <div id="rf-contextual"></div>
+        <div class="rf-contextual" id="rf-contextual"></div>
         <section class="rf-section" id="rf-recipes"></section>
         <section class="rf-section" id="rf-grades"></section>
       </aside>
@@ -111,16 +44,27 @@ export class InspectorPanel {
     const action = target.dataset.action;
     if (action === 'bind') {
       const result = this.store.bindEngine();
-      if (result.success && result.engine) this.feedback(`ENGINE → ${result.engine.nextShape}`);
+      if (result.success && result.engine) this.feedback(`ENGINE BOUND · NEXT ${result.engine.nextShape}`);
       else this.feedback('BIND FAILED', true);
     } else if (action === 'submit') {
       const result = this.store.submitEngine();
-      if (result.success) this.feedback(`SUBMIT → +${result.shards} SHARDS`);
+      if (result.success) this.feedback(`ENGINE SUBMITTED · +${result.shards} SHARDS`);
       else this.feedback(result.error || 'SUBMIT FAILED', true);
+    } else if (action === 'return-selected') {
+      const selectedIds = [...this.store.getState().selectedBlockIds];
+      let returned = 0;
+      let firstError = '';
+      for (const blockId of selectedIds) {
+        const result = this.store.returnBlock(blockId);
+        if (result.success) returned += 1;
+        else if (!firstError) firstError = result.error || 'RETURN FAILED';
+      }
+      if (returned > 0) this.feedback(`${returned} RUNE${returned === 1 ? '' : 'S'} RETURNED`);
+      else this.feedback(firstError || 'NOTHING TO RETURN', true);
     } else if (action === 'upgrade') {
       const shape = target.dataset.shape as ShapeType;
       const result = this.store.upgradeShape(shape);
-      if (result.success) this.feedback(`${shape} GRADE ${result.grade}`);
+      if (result.success) this.feedback(`${shape} RUNE · GRADE ${result.grade}`);
       else this.feedback(result.error || 'UPGRADE FAILED', true);
     } else if (action === 'select-frontier') {
       const targetChunkId = target.dataset.chunk || null;
@@ -143,81 +87,117 @@ export class InspectorPanel {
     const grades = this.container.querySelector('#rf-grades');
     if (!sidebar || !toggle || !goal || !contextual || !recipes || !grades) return;
     sidebar.classList.toggle('collapsed', this.collapsed);
-    toggle.textContent = this.collapsed ? '‹' : '›';
-    toggle.setAttribute('aria-label', this.collapsed ? 'Open goals' : 'Collapse goals');
+    toggle.setAttribute('aria-label', this.collapsed ? 'Open Foundry panel' : 'Collapse Foundry panel');
+    toggle.setAttribute('aria-expanded', `${!this.collapsed}`);
 
     const preview = this.store.getPatternActionPreview();
     const directive = this.store.getDirectivePresentation();
     const frontier = this.store.getFrontierSealPreview();
     const cradleProgress = getHeartCradleProgress(state);
+    const directiveProgress = state.directive.completedIds.length;
     if (directive.currentId === 'bind_heart_seal') {
       const missing = new Set(preview.analysis?.patternId === 'heart_seal'
         ? (preview.analysis.missingCells || []).map(cell => `${cell.x},${cell.y}`)
         : Array.from({ length: 16 }, (_, index) => `${index % 4},${Math.floor(index / 4)}`));
-      goal.innerHTML = directiveMarkup(directive, `
+      goal.innerHTML = directiveMarkup(directive, directiveProgress, `
         <div class="rf-seal-row"><span class="rf-seal-grid">${Array.from({ length: 16 }, (_, index) => `<i class="${missing.has(`${index % 4},${Math.floor(index / 4)}`) ? '' : 'filled'}"></i>`).join('')}</span>
         <span class="rf-goal-progress">${cradleProgress.filled} / ${cradleProgress.total}</span></div>`);
     } else {
-      goal.innerHTML = directiveMarkup(directive);
+      goal.innerHTML = directiveMarkup(directive, directiveProgress);
     }
 
     const inspection = this.store.getEngineInspection();
+    const selectedBlocks = state.selectedBlockIds.map(id => state.blocks[id]).filter(block => Boolean(block));
     if (directive.currentId === 'frontier_seal') {
       contextual.innerHTML = frontierMarkup(frontier, preview);
     } else if (inspection) {
       const powerLabel = inspection.powered
         ? inspection.productionPausedByStock
-          ? 'POWERED · STOCK FULL · PRODUCTION PAUSED'
-          : inspection.foundational ? 'POWERED · HEART ROOT' : 'POWERED · CLOCK RUNNING'
-        : 'UNPOWERED · POWER PAUSED';
-      contextual.innerHTML = `<div class="rf-engine-card">
-        <div class="rf-section-title">ENGINE</div>
-        <div class="rf-engine-name">${inspection.foundational ? '♥ ' : '◇ '}${escapeHtml(inspection.name)}</div>
-        <div class="rf-engine-power ${inspection.powered ? 'powered' : 'unpowered'}">${powerLabel}</div>
-        <div class="rf-engine-meta">NEXT ${inspection.nextShape} · ${inspection.blocksPerMinute.toFixed(1)}/MIN · PROGRESS ${Math.round(inspection.progress * 100)}% · Q ${Math.round(inspection.quality * 100)}%</div>
-        <div class="rf-engine-stock">STOCK ${inspection.stockUsed} / ${inspection.stockCapacity}</div>
-        ${inspection.productionPausedByStock ? '<div class="rf-teach">STOCK FULL<br>PROGRESS PRESERVED</div>' : inspection.powered ? '' : '<div class="rf-teach">POWER PAUSED<br>PROGRESS PRESERVED · RECONNECT TO RESUME</div>'}
+          ? 'POWERED · STOCK FULL'
+          : inspection.foundational ? 'POWERED · HEART ROOT' : 'POWERED · PRODUCING'
+        : 'UNPOWERED · PRODUCTION PAUSED';
+      contextual.innerHTML = `<div class="rf-engine-chamber">
+        <div class="rf-section-title">BOUND ENGINE</div>
+        <div class="rf-engine-head">
+          <span class="rf-engine-seal" aria-hidden="true"><i></i></span>
+          <div><div class="rf-engine-name">${escapeHtml(inspection.name)}</div><div class="rf-engine-power ${inspection.powered ? 'powered' : 'unpowered'}">${powerLabel}</div></div>
+        </div>
+        <div class="rf-progress-row"><span class="rf-progress-track"><i style="--rf-progress:${Math.round(inspection.progress * 100)}%"></i></span><span class="rf-progress-value">${Math.round(inspection.progress * 100)}%</span></div>
+        <div class="rf-engine-stats">
+          <span class="rf-stat"><b>${inspection.nextShape}</b><span>NEXT RUNE</span></span>
+          <span class="rf-stat"><b>${inspection.blocksPerMinute.toFixed(1)}</b><span>PER MIN</span></span>
+          <span class="rf-stat"><b>${Math.round(inspection.quality * 100)}%</b><span>QUALITY</span></span>
+        </div>
+        <div class="rf-engine-meta">Stock ${inspection.stockUsed} / ${inspection.stockCapacity}</div>
+        ${inspection.productionPausedByStock
+          ? '<div class="rf-note warning">Stock is full. Progress is preserved until a Rune leaves stock.</div>'
+          : inspection.powered ? '' : '<div class="rf-note warning">Reconnect this Engine to the Heart to resume preserved progress.</div>'}
         ${inspection.submittable
-          ? `<div class="rf-teach">${state.learnedActions.submit ? 'PRODUCTION ENDS' : 'SUBMIT ENGINE → SHARDS<br>SHARDS → GRADE ↑'}</div>
-             <div class="rf-actions"><button class="rf-action rf-submit" data-action="submit">SUBMIT ENGINE<br>+${inspection.shards} SHARDS</button></div>`
-          : '<div class="rf-teach">FOUNDATIONAL · CANNOT SUBMIT</div>'}
+          ? `<div class="rf-note">Submitting ends production and reclaims its material value.</div>
+             <div class="rf-actions"><button class="rf-action rf-action-danger" data-action="submit">${actionIconMarkup('submit')}SUBMIT · +${inspection.shards} SHARDS</button></div>`
+          : '<div class="rf-note">Foundational Heart Engine · cannot be submitted.</div>'}
+      </div>`;
+    } else if (selectedBlocks.length > 0) {
+      const first = selectedBlocks[0];
+      const sameShape = selectedBlocks.every(block => block.shape === first.shape);
+      const grades = [...new Set(selectedBlocks.map(block => block.grade))].sort((left, right) => left - right);
+      const identity = selectedBlocks.length === 1 ? `${first.shape} Rune` : `${selectedBlocks.length} Rune Assembly`;
+      const gradeLabel = grades.length === 1 ? `Grade ${grades[0]}` : `Grades ${grades.join(' / ')}`;
+      const analysisLabel = preview.analysis && preview.analysis.patternId !== 'none'
+        ? preview.analysis.isValid ? `${preview.analysis.patternName} is ready.` : preview.analysis.nearMatchReason
+        : selectedBlocks.length === 1 ? 'Add Runes to form a Foundry pattern.' : 'No complete recipe detected.';
+      contextual.innerHTML = `<div class="rf-selection-chamber">
+        <div class="rf-section-title">${selectedBlocks.length === 1 ? 'SELECTED RUNE' : 'SELECTED ASSEMBLY'}</div>
+        <div class="rf-selection-hero">
+          <div class="rf-rune-portrait">${shapeGlyphMarkup(first.shape)}</div>
+          <div><div class="rf-selection-name">${identity}</div><div class="rf-selection-level">${gradeLabel}${sameShape && selectedBlocks.length > 1 ? ` · ${first.shape} FAMILY` : ''}</div></div>
+        </div>
+        <div class="rf-selection-status">${escapeHtml(analysisLabel || 'Pattern incomplete.')}</div>
+        <div class="rf-actions">
+          ${preview.analysis?.isValid && preview.canBind ? `<button class="rf-action" data-action="bind">${actionIconMarkup('bind')}BIND ENGINE</button>` : ''}
+          <button class="rf-action rf-action-secondary" data-action="return-selected">${actionIconMarkup('return')}RETURN${selectedBlocks.length > 1 ? ` ${selectedBlocks.length}` : ''}</button>
+        </div>
       </div>`;
     } else if (preview.analysis?.isValid && preview.canBind) {
-      contextual.innerHTML = `
-        <div class="rf-teach">${state.learnedActions.bind ? escapeHtml(preview.analysis.patternName) : `BIND → ENGINE${transformDiagram()}`}</div>
-        <div class="rf-actions">
-          <button class="rf-action rf-bind" data-action="bind">BIND → ENGINE</button>
-        </div>`;
+      contextual.innerHTML = `<div class="rf-selection-chamber">
+        <div class="rf-section-title">PATTERN READY</div>
+        <div class="rf-selection-name">${escapeHtml(preview.analysis.patternName)}</div>
+        <div class="rf-selection-status">${state.learnedActions.bind ? 'The pattern can be crystallized into a production Engine.' : `Bind the loose pattern into an Engine.${transformDiagram()}`}</div>
+        <div class="rf-actions"><button class="rf-action" data-action="bind">${actionIconMarkup('bind')}BIND ENGINE</button></div>
+      </div>`;
     } else if (state.currencies.shards > 0 && !state.learnedActions.upgrade) {
-      contextual.innerHTML = '<div class="rf-teach">SHARDS → GRADE ↑<br>STRONGER BLOCKS</div>';
+      contextual.innerHTML = '<div class="rf-empty-selection">Shards temper Rune Grades. Choose an upgrade in the workshop below.</div>';
     } else {
-      contextual.innerHTML = '';
+      contextual.innerHTML = '<div class="rf-empty-selection">Select a loose Rune or a Bound Engine to inspect it. Shift-select or drag to assemble a pattern.</div>';
     }
 
     recipes.innerHTML = state.isHeartEngineBound ? `
-      <h3 class="rf-section-title">RECIPES</h3>
-      ${recipeCard(STARTER_RECIPES['compression_press'], preview.analysis?.patternId === 'compression_press')}
-      ${recipeCard(STARTER_RECIPES['twin_stars'], preview.analysis?.patternId === 'twin_stars')}
-      ${recipeCard(STARTER_RECIPES['frontier_seal'], directive.currentId === 'frontier_seal' || frontier.geometry.valid)}
+      <h3 class="rf-section-title">FOUNDRY RECIPES</h3>
+      ${recipeRow(STARTER_RECIPES['compression_press'], preview.analysis?.patternId === 'compression_press')}
+      ${recipeRow(STARTER_RECIPES['twin_stars'], preview.analysis?.patternId === 'twin_stars')}
+      ${recipeRow(STARTER_RECIPES['frontier_seal'], directive.currentId === 'frontier_seal' || frontier.geometry.valid)}
     ` : `
       <h3 class="rf-section-title">OPENING RECIPE</h3>
-      ${recipeCard(STARTER_RECIPES['heart_seal'], preview.analysis?.patternId === 'heart_seal')}
+      ${recipeRow(STARTER_RECIPES['heart_seal'], preview.analysis?.patternId === 'heart_seal')}
     `;
 
-    grades.innerHTML = `<h3 class="rf-section-title">SHARDS → GRADE ↑</h3>${SHAPE_TYPES.map(shape => {
+    grades.innerHTML = `<h3 class="rf-section-title">RUNE GRADES</h3>${SHAPE_TYPES.map(shape => {
       const grade = state.shapeGrades[shape];
       const cost = getShapeGradeUpgradeCost(grade);
       return `<div class="rf-grade-row"><span class="rf-grade-shape">${shape}</span><span class="rf-grade-label">Grade ${grade}</span>
-        <button class="rf-upgrade" data-action="upgrade" data-shape="${shape}" ${state.currencies.shards < cost ? 'disabled' : ''} aria-label="Upgrade ${shape} to Grade ${grade + 1} for ${cost} Shards">↑ ${cost} ◆</button></div>`;
+        <button class="rf-upgrade" data-action="upgrade" data-shape="${shape}" ${state.currencies.shards < cost ? 'disabled' : ''} aria-label="Upgrade ${shape} Rune to Grade ${grade + 1} for ${cost} Shards">TEMPER · ${cost}</button></div>`;
     }).join('')}`;
   }
 }
 
-function directiveMarkup(directive: DirectivePresentation, context: string = ''): string {
-  return `<div class="rf-directive-label">NOW</div>
+function directiveMarkup(directive: DirectivePresentation, completedCount: number, context: string = ''): string {
+  const currentIndex = Math.min(DIRECTIVE_IDS.length - 1, completedCount);
+  const track = DIRECTIVE_IDS.map((_, index) => `<i class="${index < completedCount ? 'done' : index === currentIndex ? 'current' : ''}"></i>`).join('');
+  return `<div class="rf-directive-label">CURRENT DIRECTIVE</div>
     <div class="rf-goal-name">${escapeHtml(directive.now)}</div>
     <div class="rf-directive-detail">${escapeHtml(directive.nowDetail)}</div>
     ${context}
+    <div class="rf-objective-track" aria-label="${completedCount} of ${DIRECTIVE_IDS.length} directives completed">${track}</div>
     <div class="rf-next-block">
       <div class="rf-directive-label">NEXT</div>
       <div class="rf-next-name">${escapeHtml(directive.next)}</div>
@@ -227,97 +207,68 @@ function directiveMarkup(directive: DirectivePresentation, context: string = '')
 
 function renderRecipePreview(recipe: RecipeDefinition): string {
   if (!recipe.previewBlocks || recipe.previewBlocks.length === 0) {
-    return `<div class="rf-recipe-thumb exact" aria-hidden="true">
-      <div class="rf-preview-grid" style="display:grid; grid-template-columns:repeat(4, 5px); grid-template-rows:repeat(4, 5px); gap:1px;">
-        ${Array.from({ length: 16 }, () => `<i style="background:#e3b53c; border:1px solid #f1cc66; box-sizing:border-box;"></i>`).join('')}
-      </div>
-    </div>`;
+    return `<div class="rf-recipe-thumb" aria-hidden="true"><div class="rf-preview-grid" style="--rf-grid-cols:4;--rf-grid-rows:4;--rf-cell-size:5px">
+      ${Array.from({ length: 16 }, (_, index) => `<i style="--rf-col:${index % 4 + 1};--rf-row:${Math.floor(index / 4) + 1};--rf-cell-fill:#80672d;--rf-cell-stroke:#d4b66d"></i>`).join('')}
+    </div></div>`;
   }
 
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
   let maxY = -Infinity;
-
   const rawCells: Array<{ x: number; y: number; shape: ShapeType }> = [];
   for (const block of recipe.previewBlocks) {
-    const occupied = getBlockOccupiedCells(block.shape, block.position, block.rotation);
-    for (const pos of occupied) {
+    for (const pos of getBlockOccupiedCells(block.shape, block.position, block.rotation)) {
       rawCells.push({ x: pos.x, y: pos.y, shape: block.shape });
-      if (pos.x < minX) minX = pos.x;
-      if (pos.x > maxX) maxX = pos.x;
-      if (pos.y < minY) minY = pos.y;
-      if (pos.y > maxY) maxY = pos.y;
+      minX = Math.min(minX, pos.x); maxX = Math.max(maxX, pos.x);
+      minY = Math.min(minY, pos.y); maxY = Math.max(maxY, pos.y);
     }
   }
 
   const width = maxX - minX + 1;
   const height = maxY - minY + 1;
-  const maxDim = Math.max(width, height);
-  const cellSize = Math.max(2, Math.floor(28 / maxDim));
-
-  const cellsHtml = rawCells.map(c => {
-    const nx = c.x - minX;
-    const ny = c.y - minY;
-    const colors = SHAPE_COLORS[c.shape];
-    return `<i style="grid-column:${nx + 1}; grid-row:${ny + 1}; background:${colors.fill}; border:1px solid ${colors.stroke}; box-sizing:border-box;"></i>`;
+  const cellSize = Math.max(2, Math.floor(28 / Math.max(width, height)));
+  const cellsHtml = rawCells.map(cell => {
+    const colors = SHAPE_COLORS[cell.shape];
+    return `<i style="--rf-col:${cell.x - minX + 1};--rf-row:${cell.y - minY + 1};--rf-cell-fill:${colors.fill};--rf-cell-stroke:${colors.stroke}"></i>`;
   }).join('');
-
-  return `<div class="rf-recipe-thumb" aria-hidden="true">
-    <div class="rf-preview-grid" style="display:grid; grid-template-columns:repeat(${width}, ${cellSize}px); grid-template-rows:repeat(${height}, ${cellSize}px); gap:1px;">
-      ${cellsHtml}
-    </div>
-  </div>`;
+  return `<div class="rf-recipe-thumb" aria-hidden="true"><div class="rf-preview-grid" style="--rf-grid-cols:${width};--rf-grid-rows:${height};--rf-cell-size:${cellSize}px">${cellsHtml}</div></div>`;
 }
 
-function recipeCard(recipe: RecipeDefinition, active: boolean): string {
-  const icon = renderRecipePreview(recipe);
-  const tag = recipe.previewKind === 'example' ? '<div class="rf-recipe-tag">EXAMPLE</div>' : '';
-  const isOrdinary = recipe.type === 'Bind';
+function recipeRow(recipe: RecipeDefinition, active: boolean): string {
+  const tag = recipe.previewKind === 'example' ? '<div class="rf-recipe-tag">EXAMPLE FORM</div>' : '';
   const cleanRuleText = recipe.description.replace(/<br\s*\/?>/gi, ', ');
-  const outcome = isOrdinary ? 'BIND → ENGINE' : recipe.type === 'Frontier' ? 'UNLOCK ONE 4×4 CHUNK' : 'EXACT 4×4 CRADLE';
-  return `<article class="rf-recipe ${active ? 'active' : ''}" tabindex="0" aria-label="${recipe.name}, ${recipe.previewKind === 'example' ? 'EXAMPLE, ' : ''}${cleanRuleText}, ${outcome}">
-    ${icon}<div><div class="rf-recipe-name">${escapeHtml(recipe.name.toUpperCase())}</div>${tag}<div class="rf-recipe-rule">${recipe.description}</div><div class="rf-recipe-outcome">${outcome}</div></div></article>`;
+  const outcome = recipe.type === 'Bind' ? 'BIND → ENGINE' : recipe.type === 'Frontier' ? 'UNLOCK ONE 4×4 CHUNK' : 'EXACT 4×4 CRADLE';
+  return `<article class="rf-recipe ${active ? 'active' : ''}" tabindex="0" aria-label="${recipe.name}, ${cleanRuleText}, ${outcome}">
+    ${renderRecipePreview(recipe)}<div><div class="rf-recipe-name">${escapeHtml(recipe.name.toUpperCase())}</div>${tag}<div class="rf-recipe-rule">${recipe.description}</div><div class="rf-recipe-outcome">${outcome}</div></div></article>`;
 }
 
 function frontierMarkup(
   preview: ReturnType<AppStore['getFrontierSealPreview']>,
   bindPreview: ReturnType<AppStore['getPatternActionPreview']>,
 ): string {
-  const geometryStatus = preview.geometry.valid
-    ? 'VALID FOUR-I 2×8 SEAL'
-    : escapeHtml(preview.geometry.reason || 'SELECT FOUR LOOSE I BLOCKS');
+  const geometryStatus = preview.geometry.valid ? 'VALID FOUR-I 2×8 SEAL' : escapeHtml(preview.geometry.reason || 'SELECT FOUR LOOSE I RUNES');
   const targetButtons = !preview.validGeometry
-    ? '<div class="rf-frontier-status">BUILD A VALID FOUR-I SEAL TO REVEAL CONTACTABLE TARGETS</div>'
+    ? '<div class="rf-frontier-status">Complete the Seal to reveal contactable frontier targets.</div>'
     : preview.targetOptions.length > 0
-    ? preview.targetOptions.map(chunkId => {
-      const selected = chunkId === preview.targetChunkId;
-      const valid = selected && preview.target.valid;
-      const contactLabel = selected ? `${preview.target.contactCount} / 4 CONTACTS` : 'SELECT TARGET';
-      return `<button class="rf-frontier-target ${selected ? 'selected ' : ''}${valid ? 'valid' : ''}" data-action="select-frontier" data-chunk="${escapeHtml(chunkId)}" type="button">
-        <span>CHUNK ${escapeHtml(chunkId)}</span><small>${contactLabel}</small>
-      </button>`;
-    }).join('')
-    : '<div class="rf-frontier-status">NO ADJACENT LOCKED CHUNK CONTACTS THIS SEAL</div>';
-  const targetStatus = preview.targetChunkId && !preview.target.valid
-    ? `<div class="rf-frontier-status">${escapeHtml(preview.target.reason || 'TARGET DOES NOT CONTACT THIS SEAL')}</div>`
-    : '';
+      ? preview.targetOptions.map(chunkId => {
+        const selected = chunkId === preview.targetChunkId;
+        const valid = selected && preview.target.valid;
+        const contactLabel = selected ? `${preview.target.contactCount} / 4 CONTACTS` : 'SELECT TARGET';
+        return `<button class="rf-frontier-target ${selected ? 'selected ' : ''}${valid ? 'valid' : ''}" data-action="select-frontier" data-chunk="${escapeHtml(chunkId)}" type="button"><span>CHUNK ${escapeHtml(chunkId)}</span><small>${contactLabel}</small></button>`;
+      }).join('')
+      : '<div class="rf-frontier-status">No adjacent locked chunk touches this Seal.</div>';
+  const targetStatus = preview.targetChunkId && !preview.target.valid ? `<div class="rf-frontier-status">${escapeHtml(preview.target.reason || 'Target does not contact this Seal.')}</div>` : '';
   const bindAction = bindPreview.canBind && bindPreview.analysis
-    ? `<div class="rf-frontier-status">${escapeHtml(bindPreview.analysis.patternName)} IS ALSO READY TO BIND</div>
-       <div class="rf-actions"><button class="rf-action rf-bind" data-action="bind">BIND → ENGINE</button></div>`
+    ? `<div class="rf-note">${escapeHtml(bindPreview.analysis.patternName)} is also ready to Bind.</div><div class="rf-actions"><button class="rf-action" data-action="bind">${actionIconMarkup('bind')}BIND ENGINE</button></div>`
     : '';
-  return `<div class="rf-frontier-card">
+  return `<div class="rf-frontier-chamber">
     <div class="rf-section-title">FRONTIER SEAL</div>
+    <div class="rf-selection-name">Open the black-iron frontier</div>
     <div class="rf-frontier-status">${geometryStatus}</div>
-    <div class="rf-frontier-cost">
-      <span class="${preview.hasCore ? 'ready' : 'missing'}">CORE ${preview.hasCore ? '1 / 1' : '0 / 1'}</span>
-      <span class="${preview.hasShards ? 'ready' : 'missing'}">SHARDS ${preview.hasShards ? '12 / 12' : 'NEED 12'}</span>
-    </div>
-    <div class="rf-frontier-status">${preview.validGeometry ? 'SELECT A CONTACTABLE LOCKED CHUNK TO OPEN' : 'BUILD A VALID SEAL TO CHECK FRONTIER CONTACT'}</div>
-    <div class="rf-frontier-targets">${targetButtons}</div>
-    ${targetStatus}
-    ${bindAction}
-    <div class="rf-actions"><button class="rf-action rf-frontier-activate" data-action="activate-frontier" ${preview.canActivate ? '' : 'disabled'}>ACTIVATE FRONTIER SEAL</button></div>
+    <div class="rf-frontier-cost"><span class="${preview.hasCore ? 'ready' : 'missing'}">CORE ${preview.hasCore ? '1 / 1' : '0 / 1'}</span><span class="${preview.hasShards ? 'ready' : 'missing'}">SHARDS ${preview.hasShards ? '12 / 12' : 'NEED 12'}</span></div>
+    <div class="rf-frontier-targets">${targetButtons}</div>${targetStatus}${bindAction}
+    <div class="rf-actions"><button class="rf-action" data-action="activate-frontier" ${preview.canActivate ? '' : 'disabled'}>${actionIconMarkup('bind')}ACTIVATE SEAL</button></div>
   </div>`;
 }
 

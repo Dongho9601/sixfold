@@ -3,15 +3,14 @@
 The `ui` directory manages presentation, camera navigation, user input, overlays, and accessibility controls.
 
 ## Responsibilities
-- **`renderer`**: Canvas 2D view layer rendering world cells, terrain, engines, loose blocks, blueprint ghosts, and selection highlights.
+- **`renderer`**: Canvas 2D view layer rendering the forge environment, world cells, Engines, loose Runes, blueprint ghosts, hover, and selection highlights.
 - **`camera`**: World-to-screen transformations, panning, zoom steps (Block, Pattern, Engine, Atlas view).
 - **`input`**: Pointer, touch, gesture, keyboard binding, and block placement controllers.
-- **`overlays`**: Live Cohesion/Separation quality meters, resonance traces, fracture indicators.
-- **`codex`**: Discovered Pattern library view, rumors, hints, and saved Stencil browser.
-- **`inspector`**: Compact current-goal, Recipe, contextual action, Engine inspection, and Shape Grade sidebar.
-- **`renderer`**: Exact Engine Submit silhouettes, Engine-local production state, snapping ghosts, and rectangle selection.
-- **`accessibility`**: High-contrast mode, reduced motion/flash settings, symbol-based shape indicators, keyboard focus navigation.
-- **`styles`**: CSS design tokens, typography, layout styles, and theme variables.
+- **`hud`**: Persistent resource/status rail and keyboard-accessible Rune stock tray.
+- **`inspector`**: Directive progress, selected Rune/assembly actions, Engine inspection, Recipes, and Rune Grades.
+- **`assets`**: One-time preload/cache for optional Canvas image assets with procedural fallbacks.
+- **`glyphs`**: Shared geometric Shape and action markup.
+- **`theme.css`**: CSS design tokens, responsive layout, typography, states, and reduced-motion handling.
 
 ## Strict Rules
 - **Dependency Rules**: May import `application` and `core` types where useful. Must NOT implement game rules.

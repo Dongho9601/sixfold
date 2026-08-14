@@ -24,6 +24,7 @@ import { GameState } from '../application/state.ts';
 import { VisualEvent, VisualBlockEvent } from '../application/store.ts';
 import { Camera } from './camera.ts';
 import { CRADLE_BOUNDS } from '../core/field.ts';
+import { UiAssets } from './assets.ts';
 
 export const SHAPE_COLORS: Record<ShapeType, { fill: string; stroke: string; glow: string }> = {
   I: { fill: '#3d5d67', stroke: '#8bbbc2', glow: '#9acbd1' },
@@ -79,7 +80,7 @@ export class FieldRenderer {
   private transientEvents: TransientBlockEvent[] = [];
   private enginePulseUntil = new Map<string, number>();
 
-  constructor(ctx: CanvasRenderingContext2D) {
+  constructor(ctx: CanvasRenderingContext2D, private assets: UiAssets = new UiAssets()) {
     this.ctx = ctx;
   }
 
@@ -145,14 +146,17 @@ export class FieldRenderer {
     placementPreview: PlacementPreviewState | null = null,
     holdPreview: HoldPreviewState | null = null,
     selectionPreview: SelectionPreviewState | null = null,
+    hoveredBlockId: string | null = null,
     now: number = performance.now(),
   ): void {
     const ctx = this.ctx;
     const currentCellSize = camera.cellSize * camera.zoom;
     this.transientEvents = this.transientEvents.filter(event => now - event.startedAt < event.duration);
+    ctx.imageSmoothingEnabled = false;
 
     ctx.fillStyle = INK;
     ctx.fillRect(0, 0, screenWidth, screenHeight);
+    this.drawEnvironment(screenWidth, screenHeight);
 
     this.drawGrid(camera, screenWidth, screenHeight, currentCellSize);
     this.drawLockedFrontier(state, camera, currentCellSize);
@@ -178,6 +182,7 @@ export class FieldRenderer {
           currentCellSize,
           now,
           poweredEngineIds.has(engine.id),
+          engine.constituentBlockIds.includes(hoveredBlockId || ''),
         );
       }
     }
@@ -191,6 +196,7 @@ export class FieldRenderer {
         block.rotation,
         camera,
         currentCellSize,
+        hoveredBlockId === block.id,
       );
     }
 
@@ -205,6 +211,31 @@ export class FieldRenderer {
     if (selectionPreview) this.drawSelectionRect(selectionPreview);
 
     this.drawTransientEvents(camera, currentCellSize, screenWidth, screenHeight, now);
+  }
+
+  private drawEnvironment(screenWidth: number, screenHeight: number): void {
+    const forge = this.assets.get('forge');
+    if (!forge) return;
+    const sourceRatio = forge.naturalWidth / forge.naturalHeight;
+    const screenRatio = screenWidth / screenHeight;
+    let sx = 0;
+    let sy = 0;
+    let sourceWidth = forge.naturalWidth;
+    let sourceHeight = forge.naturalHeight;
+    if (screenRatio > sourceRatio) {
+      sourceHeight = forge.naturalWidth / screenRatio;
+      sy = Math.max(0, (forge.naturalHeight - sourceHeight) * .43);
+    } else {
+      sourceWidth = forge.naturalHeight * screenRatio;
+      sx = (forge.naturalWidth - sourceWidth) / 2;
+    }
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.globalAlpha = .24;
+    ctx.drawImage(forge, sx, sy, sourceWidth, sourceHeight, 0, 0, screenWidth, screenHeight);
+    ctx.fillStyle = 'rgba(8, 8, 7, .72)';
+    ctx.fillRect(0, 0, screenWidth, screenHeight);
+    ctx.restore();
   }
 
   private drawGrid(camera: Camera, screenWidth: number, screenHeight: number, currentCellSize: number): void {
@@ -414,6 +445,7 @@ export class FieldRenderer {
     rotation: number,
     camera: Camera,
     currentCellSize: number,
+    hovered: boolean,
   ): void {
     const ctx = this.ctx;
     const colors = SHAPE_COLORS[shape];
@@ -440,15 +472,19 @@ export class FieldRenderer {
       ctx.lineTo(p.x + currentCellSize * 0.68, p.y + currentCellSize * 0.68);
       ctx.stroke();
       ctx.globalAlpha = 1;
+
+      const runeTile = currentCellSize >= 18 ? this.assets.get('runeTile') : null;
+      if (runeTile) {
+        ctx.save();
+        ctx.globalAlpha = .19;
+        ctx.drawImage(runeTile, p.x + padding, p.y + padding, size, size);
+        ctx.restore();
+      }
     }
 
-    if (selected) {
+    if (selected || hovered) {
       const bounds = this.getScreenBounds(cells, camera, currentCellSize);
-      ctx.strokeStyle = BONE;
-      ctx.globalAlpha = 0.95;
-      ctx.lineWidth = Math.max(2, 2 * camera.zoom);
-      ctx.strokeRect(bounds.x + 1, bounds.y + 1, bounds.width - 2, bounds.height - 2);
-      ctx.globalAlpha = 1;
+      this.drawBracketFrame(bounds, selected ? GOLD : BONE, selected ? .98 : .54, Math.max(7, 9 * camera.zoom));
     }
   }
 
@@ -460,6 +496,7 @@ export class FieldRenderer {
     currentCellSize: number,
     now: number,
     powered: boolean,
+    hovered: boolean,
   ): void {
     const ctx = this.ctx;
     const engineCells = engineBlocks.flatMap(block => getBlockOccupiedCells(block.shape, block.position!, block.rotation));
@@ -559,11 +596,11 @@ export class FieldRenderer {
         ctx.globalAlpha = 1;
       }
 
-      if (state.selectedEngineId === engine.id) {
+      if (state.selectedEngineId === engine.id || hovered) {
         ctx.save();
-        ctx.strokeStyle = '#d9b3df';
+        ctx.strokeStyle = state.selectedEngineId === engine.id ? GOLD : BONE;
         ctx.lineWidth = Math.max(1.5, 1.8 * camera.zoom);
-        ctx.globalAlpha = .92;
+        ctx.globalAlpha = state.selectedEngineId === engine.id ? .92 : .46;
         if (engine.submittable) ctx.setLineDash([4 * camera.zoom, 3 * camera.zoom]);
         for (const cell of engineCells) {
           const point = camera.gridToScreen(cell.x, cell.y);
@@ -866,6 +903,32 @@ export class FieldRenderer {
       ctx.fillRect(x + cell.x * cellSize, y + cell.y * cellSize, cellSize - 1, cellSize - 1);
     }
     ctx.globalAlpha = 1;
+  }
+
+  private drawBracketFrame(
+    bounds: { x: number; y: number; width: number; height: number },
+    color: string,
+    alpha: number,
+    length: number,
+  ): void {
+    const ctx = this.ctx;
+    const inset = 1.5;
+    const left = bounds.x + inset;
+    const top = bounds.y + inset;
+    const right = bounds.x + bounds.width - inset;
+    const bottom = bounds.y + bounds.height - inset;
+    const arm = Math.min(length, bounds.width * .24, bounds.height * .24);
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = alpha;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(left, top + arm); ctx.lineTo(left, top); ctx.lineTo(left + arm, top);
+    ctx.moveTo(right - arm, top); ctx.lineTo(right, top); ctx.lineTo(right, top + arm);
+    ctx.moveTo(right, bottom - arm); ctx.lineTo(right, bottom); ctx.lineTo(right - arm, bottom);
+    ctx.moveTo(left + arm, bottom); ctx.lineTo(left, bottom); ctx.lineTo(left, bottom - arm);
+    ctx.stroke();
+    ctx.restore();
   }
 
   private getScreenBounds(cells: Position[], camera: Camera, currentCellSize: number): { x: number; y: number; width: number; height: number } {

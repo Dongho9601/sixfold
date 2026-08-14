@@ -125,6 +125,7 @@ export class InputController {
   private lastGridPosition: Position | null = null;
   private spawnRotation = 0;
   private placementPreview: PlacementPreviewState | null = null;
+  private hoveredBlockId: string | null = null;
 
   private selectionPointerId: number | null = null;
   private selectionStart: PointerPosition | null = null;
@@ -184,6 +185,10 @@ export class InputController {
     return { start: { ...this.selectionStart }, end: { ...this.selectionCurrent } };
   }
 
+  getHoveredBlockId(): string | null {
+    return this.hoveredBlockId;
+  }
+
   private attachEventListeners(): void {
     this.canvas.addEventListener('wheel', this.onWheel, { passive: false });
     this.canvas.addEventListener('pointerdown', this.onPointerDown);
@@ -211,6 +216,7 @@ export class InputController {
     const gridPosition = this.camera.screenToGrid(canvasPoint.x, canvasPoint.y);
     this.lastGridPosition = gridPosition;
     const clickedBlock = this.findBlockAt(this.store.getState(), gridPosition);
+    this.hoveredBlockId = clickedBlock?.id || null;
     const activeShape = this.hud.getSelectedSpawnShape();
     if (activeShape) this.updatePlacementPreview(gridPosition);
     const intent = decidePointerIntent({
@@ -301,6 +307,10 @@ export class InputController {
     const canvasPoint = this.getCanvasPoint(event.clientX, event.clientY);
     const gridPosition = this.camera.screenToGrid(canvasPoint.x, canvasPoint.y);
     this.lastGridPosition = gridPosition;
+    this.hoveredBlockId = event.target === this.canvas && canvasPoint.x >= 0 && canvasPoint.y >= 0
+      && canvasPoint.x < this.canvas.clientWidth && canvasPoint.y < this.canvas.clientHeight
+      ? this.findBlockAt(this.store.getState(), gridPosition)?.id || null
+      : null;
     if (this.hud.getSelectedSpawnShape()) this.updatePlacementPreview(gridPosition);
   };
 
@@ -474,6 +484,7 @@ export class InputController {
     this.isPanning = false;
     this.panPointerId = null;
     this.pointers.clear();
+    this.hoveredBlockId = null;
   };
 
   private beginPan(event: PointerEvent): void {

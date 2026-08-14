@@ -9,6 +9,8 @@ import { FieldRenderer } from './renderer.ts';
 import { HUD } from './hud.ts';
 import { InspectorPanel } from './inspector.ts';
 import { InputController } from './input.ts';
+import { UiAssets } from './assets.ts';
+import './theme.css';
 
 export * from './camera.ts';
 export * from './renderer.ts';
@@ -25,22 +27,17 @@ export class UIController {
   private hud: HUD;
   private inspector: InspectorPanel;
   private input: InputController;
+  private assets: UiAssets;
   private logicalWidth = 0;
   private logicalHeight = 0;
 
   constructor(rootContainer: HTMLElement, store: AppStore) {
     this.store = store;
 
-    rootContainer.style.position = 'relative';
-    rootContainer.style.width = '100vw';
-    rootContainer.style.height = '100vh';
-    rootContainer.style.overflow = 'hidden';
-    rootContainer.style.backgroundColor = '#0b0d12';
+    rootContainer.classList.add('rf-app');
 
     this.canvas = document.createElement('canvas');
-    this.canvas.style.display = 'block';
-    this.canvas.style.width = '100%';
-    this.canvas.style.height = '100%';
+    this.canvas.className = 'rf-canvas';
     rootContainer.appendChild(this.canvas);
 
     this.ctx = this.canvas.getContext('2d')!;
@@ -55,7 +52,8 @@ export class UIController {
     window.addEventListener('resize', () => this.resizeCanvas());
 
     this.camera = new Camera(this.logicalWidth, this.logicalHeight);
-    this.renderer = new FieldRenderer(this.ctx);
+    this.assets = new UiAssets();
+    this.renderer = new FieldRenderer(this.ctx, this.assets);
     this.hud = new HUD(hudContainer, this.store);
     this.inspector = new InspectorPanel(inspectorContainer, this.store, (message, isError = false) => {
       this.hud.showFeedback(message, isError);
@@ -94,6 +92,7 @@ export class UIController {
       const placementPreview = this.input.getPlacementPreview();
       const holdPreview = this.input.getHoldPreview();
       const selectionPreview = this.input.getSelectionPreview();
+      const hoveredBlockId = this.input.getHoveredBlockId();
       this.canvas.style.cursor = placementPreview ? 'crosshair' : 'default';
       this.renderer.render(
         state,
@@ -103,6 +102,7 @@ export class UIController {
         placementPreview,
         holdPreview,
         selectionPreview,
+        hoveredBlockId,
         performance.now(),
       );
       requestAnimationFrame(loop);

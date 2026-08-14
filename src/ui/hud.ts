@@ -1,23 +1,17 @@
-/**
- * Minimal persistent HUD for Rune Foundry.
- * Resources and Shape buffers stay visible; engine and Pattern detail live on the Field.
- */
+/** Persistent Foundry status rail and Rune stock tray. */
 
-import { getBlockOccupiedCells, getStockUsage, isStockFull, SHAPE_TYPES, ShapeType, STOCK_CAPACITY } from '../core/index.ts';
+import { getStockUsage, isStockFull, SHAPE_TYPES, ShapeType, STOCK_CAPACITY } from '../core/index.ts';
 import { AppStore } from '../application/store.ts';
+import { shapeGlyphMarkup } from './glyphs.ts';
 
 const AVAILABLE_SHAPES: readonly ShapeType[] = SHAPE_TYPES;
 const SHAPE_HOTKEYS: Record<ShapeType, string> = { I: '1', O: '2', T: '3', L: '4', J: '5', S: '6', Z: '7' };
 
 export class HUD {
-  private container: HTMLElement;
-  private store: AppStore;
   private selectedSpawnShape: ShapeType | null = 'I';
   private statusTimeoutId: number | null = null;
 
-  constructor(container: HTMLElement, store: AppStore) {
-    this.container = container;
-    this.store = store;
+  constructor(private container: HTMLElement, private store: AppStore) {
     this.initDOM();
   }
 
@@ -36,7 +30,7 @@ export class HUD {
 
     if (this.statusTimeoutId !== null) window.clearTimeout(this.statusTimeoutId);
     banner.textContent = message;
-    banner.style.color = isError ? '#d56e5f' : '#b7b4ae';
+    banner.classList.toggle('error', isError);
     banner.style.opacity = message ? '1' : '0';
     this.statusTimeoutId = window.setTimeout(() => {
       banner.style.opacity = '0';
@@ -46,198 +40,52 @@ export class HUD {
 
   private initDOM(): void {
     this.container.innerHTML = `
-      <style>
-        .rf-hud {
-          position: absolute;
-          inset: 0;
-          pointer-events: none;
-          color: #b7b4ae;
-          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-          user-select: none;
-        }
-
-        .rf-resource-strip {
-          position: absolute;
-          top: 14px;
-          left: 16px;
-          display: flex;
-          align-items: center;
-          gap: 20px;
-          min-height: 40px;
-          padding: 5px 12px;
-          background: rgba(10, 10, 10, 0.78);
-          border-bottom: 1px solid rgba(94, 90, 84, 0.58);
-          pointer-events: auto;
-        }
-
-        .rf-resource {
-          display: inline-flex;
-          align-items: center;
-          gap: 8px;
-          color: #b7b4ae;
-          font-size: 18px;
-          font-weight: 700;
-          line-height: 20px;
-        }
-
-        .rf-core-resource { color: #d9b3df; }
-
-        .rf-stock-resource { gap: 7px; }
-        .rf-stock-resource.full { color: #d56e5f; }
-        .rf-stock-label { color: #8e8981; font-size: 11px; letter-spacing: .08em; }
-        .rf-stock-full { font-size: 11px; font-weight: 900; letter-spacing: .06em; }
-
-        .rf-resource-icon {
-          width: 24px;
-          height: 24px;
-          object-fit: contain;
-          image-rendering: pixelated;
-        }
-
-        .rf-reset {
-          width: 30px;
-          height: 30px;
-          margin-left: 2px;
-          padding: 0;
-          color: #5e5a54;
-          background: transparent;
-          border: 0;
-          font: inherit;
-          font-size: 20px;
-          cursor: pointer;
-        }
-
-        .rf-reset:hover { color: #b7b4ae; }
-
-        .rf-palette {
-          position: absolute;
-          left: 50%;
-          bottom: 18px;
-          display: flex;
-          align-items: end;
-          gap: 7px;
-          transform: translateX(-50%);
-          padding: 7px 9px;
-          background: rgba(10, 10, 10, 0.8);
-          border-top: 1px solid rgba(94, 90, 84, 0.58);
-          pointer-events: auto;
-        }
-
-        .rf-shape-btn {
-          position: relative;
-          display: grid;
-          place-items: center;
-          width: 62px;
-          height: 60px;
-          padding: 4px 4px 9px;
-          color: #b7b4ae;
-          background: transparent;
-          border: 1px solid transparent;
-          cursor: pointer;
-        }
-
-        .rf-shape-btn:hover:not(:disabled) { border-color: #5e5a54; }
-        .rf-shape-btn.active { border-color: #e3b53c; background: rgba(89, 69, 99, 0.3); }
-        .rf-shape-btn:disabled { opacity: 0.28; cursor: not-allowed; }
-
-        .rf-hotkey {
-          position: absolute;
-          right: 3px;
-          bottom: 1px;
-          color: #5e5a54;
-          font-size: 11px;
-          line-height: 12px;
-        }
-
-        .rf-shape-count {
-          position: absolute;
-          left: 4px;
-          bottom: 1px;
-          color: #b7b4ae;
-          font-size: 13px;
-          line-height: 14px;
-        }
-
-        .rf-shape-glyph {
-          display: grid;
-          grid-template-columns: repeat(4, 8px);
-          grid-template-rows: repeat(4, 8px);
-          gap: 1px;
-          width: 35px;
-          height: 35px;
-          color: #e3b53c;
-        }
-
-        .rf-shape-glyph i {
-          display: block;
-          width: 8px;
-          height: 8px;
-          background: currentColor;
-        }
-
-        .rf-shape-btn[data-shape="I"] .rf-shape-glyph { color: #8bbbc2; }
-        .rf-shape-btn[data-shape="O"] .rf-shape-glyph { color: #e3b53c; }
-        .rf-shape-btn[data-shape="T"] .rf-shape-glyph { color: #b78dbc; }
-        .rf-shape-btn[data-shape="L"] .rf-shape-glyph { color: #dc8151; }
-        .rf-shape-btn[data-shape="J"] .rf-shape-glyph { color: #91a7cb; }
-        .rf-shape-btn[data-shape="S"] .rf-shape-glyph { color: #8fac72; }
-        .rf-shape-btn[data-shape="Z"] .rf-shape-glyph { color: #d56e5f; }
-
-        .rf-feedback {
-          position: absolute;
-          top: 66px;
-          left: 50%;
-          min-width: 18px;
-          padding: 3px 7px;
-          color: #b7b4ae;
-          background: rgba(10, 10, 10, 0.84);
-          border-bottom: 1px solid rgba(94, 90, 84, 0.5);
-          text-align: center;
-          font-size: 14px;
-          font-weight: 700;
-          opacity: 0;
-          transform: translateX(-50%);
-          transition: opacity 120ms ease;
-          pointer-events: none;
-        }
-
-        @media (max-width: 760px) {
-          .rf-resource-strip { top: 8px; left: 8px; gap: 9px; }
-          .rf-palette { bottom: 8px; gap: 2px; padding: 4px; }
-          .rf-shape-btn { width: 40px; height: 52px; }
-        }
-      </style>
-
       <div class="rf-hud">
-        <div class="rf-resource-strip" aria-label="Resources">
-          <span class="rf-resource" title="Shards"><img class="rf-resource-icon" src="/assets/hlbm/icon_gem.png" alt="" /><span id="hud-shards">0</span></span>
-          <span class="rf-resource rf-core-resource" title="Core"><img class="rf-resource-icon" src="/assets/hlbm/icon_seal.png" alt="" /><span id="hud-cores">0</span></span>
-          <span class="rf-resource rf-stock-resource" id="hud-stock-resource" title="Buffered Block Stock">
-            <span class="rf-stock-label">STOCK</span><span id="hud-stock">0 / ${STOCK_CAPACITY}</span><span class="rf-stock-full" id="hud-stock-full" hidden>STOCK FULL</span>
-          </span>
-          <button class="rf-reset" id="btn-reset" type="button" title="Reset" aria-label="Reset">↺</button>
-        </div>
+        <header class="rf-status-rail" aria-label="Foundry status">
+          <div class="rf-brand"><span class="rf-brand-mark" aria-hidden="true"></span><span class="rf-brand-name">RUNE FOUNDRY</span></div>
+          <span class="rf-run-state" title="Simulation is running"><i aria-hidden="true"></i>FOUNDRY ACTIVE</span>
+          <div class="rf-resources" aria-label="Resources">
+            <span class="rf-resource" title="Shards">
+              <img class="rf-resource-icon" src="/assets/hlbm/icon_gem.png" alt="" />
+              <span class="rf-resource-copy"><span class="rf-resource-label">Shards</span><span class="rf-resource-value" id="hud-shards">0</span></span>
+            </span>
+            <span class="rf-resource" title="Cores">
+              <img class="rf-resource-icon" src="/assets/hlbm/icon_seal.png" alt="" />
+              <span class="rf-resource-copy"><span class="rf-resource-label">Cores</span><span class="rf-resource-value" id="hud-cores">0</span></span>
+            </span>
+            <span class="rf-resource rf-stock-resource" id="hud-stock-resource" title="Buffered Rune stock">
+              <span class="rf-resource-copy"><span class="rf-resource-label">Rune stock</span><span class="rf-resource-value" id="hud-stock">0 / ${STOCK_CAPACITY}</span></span>
+              <span class="rf-stock-meter" aria-hidden="true"><i id="hud-stock-meter"></i></span>
+              <span class="rf-stock-full" id="hud-stock-full" hidden>FULL</span>
+            </span>
+          </div>
+          <button class="rf-reset" id="btn-reset" type="button" title="Reset" aria-label="Reset Rune Foundry">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8V3m0 5h5M5.6 7.2A8 8 0 1 1 4 14"/></svg>
+          </button>
+        </header>
 
         <div class="rf-feedback" id="hud-feedback" aria-live="polite"></div>
 
-        <div class="rf-palette" id="hud-palette" aria-label="Loose Block palette">
-          ${AVAILABLE_SHAPES.map(shape => `
-            <button class="rf-shape-btn" id="btn-shape-${shape}" data-shape="${shape}" type="button" aria-label="${shape} Block">
-              ${shapeGlyphMarkup(shape)}
-              <span class="rf-shape-count" id="count-shape-${shape}">0</span>
-              <span class="rf-hotkey">${SHAPE_HOTKEYS[shape]}</span>
-            </button>
-          `).join('')}
+        <div class="rf-palette-shell">
+          <div class="rf-palette-head"><span class="rf-palette-title">RUNE STOCK</span><span class="rf-palette-help">1–7 SELECT · R ROTATE</span></div>
+          <div class="rf-palette" id="hud-palette" aria-label="Loose Rune palette">
+            ${AVAILABLE_SHAPES.map(shape => `
+              <button class="rf-shape-btn" id="btn-shape-${shape}" data-shape="${shape}" type="button" aria-label="${shape} Rune">
+                ${shapeGlyphMarkup(shape)}
+                <span class="rf-shape-count" id="count-shape-${shape}">0</span>
+                <span class="rf-hotkey">${SHAPE_HOTKEYS[shape]}</span>
+              </button>
+            `).join('')}
+          </div>
         </div>
       </div>
     `;
 
     for (const shape of AVAILABLE_SHAPES) {
-      const button = this.container.querySelector(`#btn-shape-${shape}`);
-      button?.addEventListener('click', () => {
+      this.container.querySelector(`#btn-shape-${shape}`)?.addEventListener('click', () => {
         const state = this.store.getState();
         if ((state.buffers[shape] || 0) <= 0) {
-          this.showFeedback('0', true);
+          this.showFeedback('NO RUNES IN STOCK', true);
           return;
         }
 
@@ -257,7 +105,7 @@ export class HUD {
         this.store.resetGame();
         this.selectedSpawnShape = 'I';
         this.update();
-        this.showFeedback('↺');
+        this.showFeedback('FOUNDRY RESET');
       }
     });
   }
@@ -268,12 +116,15 @@ export class HUD {
     if (shardsEl) shardsEl.textContent = compactNumber(state.currencies.shards);
     const coresEl = this.container.querySelector('#hud-cores');
     if (coresEl) coresEl.textContent = compactNumber(state.currencies.cores);
+
     const stockUsed = getStockUsage(state.buffers);
     const stockFull = isStockFull(state.buffers, STOCK_CAPACITY);
     const stockEl = this.container.querySelector('#hud-stock');
     const stockResourceEl = this.container.querySelector('#hud-stock-resource');
     const stockFullEl = this.container.querySelector('#hud-stock-full') as HTMLElement | null;
+    const stockMeterEl = this.container.querySelector('#hud-stock-meter') as HTMLElement | null;
     if (stockEl) stockEl.textContent = `${stockUsed} / ${STOCK_CAPACITY}`;
+    stockMeterEl?.style.setProperty('--rf-stock-fill', `${Math.min(100, stockUsed / STOCK_CAPACITY * 100)}%`);
     stockResourceEl?.classList.toggle('full', stockFull);
     if (stockFullEl) {
       stockFullEl.hidden = !stockFull;
@@ -287,18 +138,14 @@ export class HUD {
       if (!button || !countEl) continue;
       countEl.textContent = compactNumber(count);
       button.disabled = count <= 0;
-      button.setAttribute('aria-label', `${shape} Block, ${count} available, hotkey ${SHAPE_HOTKEYS[shape]}`);
+      button.setAttribute('aria-label', `${shape} Rune, ${count} available, hotkey ${SHAPE_HOTKEYS[shape]}`);
       if (count <= 0 && this.selectedSpawnShape === shape) this.selectedSpawnShape = null;
       button.classList.toggle('active', this.selectedSpawnShape === shape);
+      button.setAttribute('aria-pressed', `${this.selectedSpawnShape === shape}`);
     }
   }
 }
 
 function compactNumber(value: number): string {
   return value >= 1000 ? `${(value / 1000).toFixed(1)}k` : `${value}`;
-}
-
-function shapeGlyphMarkup(shape: ShapeType): string {
-  const cells = getBlockOccupiedCells(shape, { x: 0, y: 0 }, 0);
-  return `<span class="rf-shape-glyph" aria-hidden="true">${cells.map(cell => `<i style="grid-column:${cell.x + 1};grid-row:${cell.y + 1}"></i>`).join('')}</span>`;
 }
