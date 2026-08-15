@@ -9,7 +9,7 @@ import { GameState } from '../application/state.ts';
 import { AppStore } from '../application/store.ts';
 import { Camera } from './camera.ts';
 import { HoldPreviewState, PlacementPreviewState, SelectionPreviewState } from './renderer.ts';
-import { HUD } from './hud.ts';
+import { formatBatchReturnFeedback, HUD } from './hud.ts';
 
 export const LONG_PRESS_RETURN_MS = 450;
 
@@ -452,8 +452,10 @@ export class InputController {
         if (result.success) returnedCount += 1;
         else if (!firstFailure) firstFailure = result;
       }
-      if (firstFailure) showReturnFeedback(this.hud, firstFailure);
-      else if (returnedCount > 0) this.hud.showFeedback('↩');
+      if (ids.length > 0) {
+        const result = formatBatchReturnFeedback(returnedCount, ids.length, firstFailure?.error);
+        this.hud.showFeedback(result.message, result.isError);
+      }
       event.preventDefault();
       return;
     }

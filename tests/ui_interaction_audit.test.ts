@@ -20,6 +20,7 @@ import {
   shapeForHotkey,
   shouldCompleteLongPress,
 } from '../src/ui/input.ts';
+import { formatBatchReturnFeedback } from '../src/ui/hud.ts';
 
 function engine(id: string = 'engine-test'): EngineState {
   return {
@@ -166,6 +167,17 @@ describe('Core Loop UX interaction contracts', () => {
     expect(state.blocks.existing).toBeUndefined();
     expect(state.buffers.O).toBe(1);
     expect(Object.keys(state.blocks)).toHaveLength(0);
+  });
+
+  it('reports a partially completed batch Return when Stock fills', () => {
+    expect(formatBatchReturnFeedback(2, 3, 'STOCK FULL — RETURN FAILED.')).toEqual({
+      message: '2 OF 3 RUNES RETURNED · STOCK FULL',
+      isError: true,
+    });
+    expect(formatBatchReturnFeedback(3, 3)).toEqual({
+      message: '3 RUNES RETURNED',
+      isError: false,
+    });
   });
 
   it('does not notify subscribers on unproductive clock frames', () => {

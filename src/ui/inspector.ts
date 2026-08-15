@@ -4,6 +4,7 @@ import { AppStore } from '../application/store.ts';
 import { DIRECTIVE_IDS, DirectivePresentation, getHeartCradleProgress } from '../application/directives.ts';
 import { SHAPE_COLORS } from './renderer.ts';
 import { actionIconMarkup, shapeGlyphMarkup } from './glyphs.ts';
+import { formatBatchReturnFeedback } from './hud.ts';
 
 export class InspectorPanel {
   private collapsed = false;
@@ -59,8 +60,8 @@ export class InspectorPanel {
         if (result.success) returned += 1;
         else if (!firstError) firstError = result.error || 'RETURN FAILED';
       }
-      if (returned > 0) this.feedback(`${returned} RUNE${returned === 1 ? '' : 'S'} RETURNED`);
-      else this.feedback(firstError || 'NOTHING TO RETURN', true);
+      const result = formatBatchReturnFeedback(returned, selectedIds.length, firstError);
+      this.feedback(result.message, result.isError);
     } else if (action === 'upgrade') {
       const shape = target.dataset.shape as ShapeType;
       const result = this.store.upgradeShape(shape);

@@ -7,6 +7,22 @@ import { shapeGlyphMarkup } from './glyphs.ts';
 const AVAILABLE_SHAPES: readonly ShapeType[] = SHAPE_TYPES;
 const SHAPE_HOTKEYS: Record<ShapeType, string> = { I: '1', O: '2', T: '3', L: '4', J: '5', S: '6', Z: '7' };
 
+export function formatBatchReturnFeedback(
+  returned: number,
+  requested: number,
+  firstError: string = '',
+): { message: string; isError: boolean } {
+  if (returned === requested && returned > 0) {
+    return { message: `${returned} RUNE${returned === 1 ? '' : 'S'} RETURNED`, isError: false };
+  }
+
+  const reason = firstError.startsWith('STOCK FULL') ? 'STOCK FULL' : firstError || 'RETURN INCOMPLETE';
+  if (returned > 0) {
+    return { message: `${returned} OF ${requested} RUNES RETURNED · ${reason}`, isError: true };
+  }
+  return { message: firstError || 'NOTHING TO RETURN', isError: true };
+}
+
 export class HUD {
   private selectedSpawnShape: ShapeType | null = 'I';
   private statusTimeoutId: number | null = null;

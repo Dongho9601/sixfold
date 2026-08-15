@@ -233,6 +233,7 @@ export class FieldRenderer {
     ctx.save();
     ctx.globalAlpha = .24;
     ctx.drawImage(forge, sx, sy, sourceWidth, sourceHeight, 0, 0, screenWidth, screenHeight);
+    ctx.globalAlpha = 1;
     ctx.fillStyle = 'rgba(8, 8, 7, .72)';
     ctx.fillRect(0, 0, screenWidth, screenHeight);
     ctx.restore();
