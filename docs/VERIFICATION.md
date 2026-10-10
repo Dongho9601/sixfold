@@ -1,5 +1,55 @@
 # Verification report
 
+## Personal-best bet limit removed — October 9, 2026
+
+Removed the 10% rule from server validation, the amount controls, roll eligibility, Settings, and the first-game guide. The Roll limit label and its hint are gone. Wagers may again use the full available bankroll; the 1 G minimum and existing overspending check remain. The leaderboard, cards, colors, number alignment, and win effects retain their latest design.
+
+Verified: all 34 original tests, the production build, and `git diff --check` passed. In the isolated browser fixture, ↑ raised the amount from 10 to 15 G; a 50 G wager from a 100 G bankroll settled at 1,250 G; a full 1,250 G draft was accepted; adding another 1 G was rejected. No limit text or maximum-value attribute remained. The 320px layout had two accounting values and no horizontal overflow, and no page errors were reported. The previous section and its screenshots record the now-removed limit.
+
+## Leaderboard tower, win celebration, and 10% roll limit — October 9, 2026
+
+Bankroll and Personal Best now occupy separate cards. Red and Black use red and charcoal fills. Every number is centered from its visible SVG glyph bounds, including Georgia's descending 4. A persistent leaderboard tower sits on the right above 1100px; smaller layouts open the same content in a right-side drawer. Stacked ranks highlight the player and show the Gold needed to pass the next competitor. Rank improvements animate upward.
+
+Net-positive wins now show a large gain banner, 40 shower particles (64 for Jackpot), larger bursts and coin flights, plus a layered fanfare, impact sound, and metallic coin notes. Sound defaults to on after interaction while honoring a saved mute preference. Mute stops scheduled notes. Reduced motion skips the moving celebration. Return and net amounts remain separate, and break-even/net-loss payouts do not receive a victory banner.
+
+All wagers in a roll share a cap of **floor(saved Personal Best / 10)**, still bounded by available Gold. The UI shows the limit and rejects additions over it; arrow adjustments stop at it. The server independently enforces the same rule before drawing or writing a receipt. The settled record before the roll determines the cap, so a new best increases the next roll's limit. Existing action receipts remain retry-safe.
+
+Verified in this pass:
+
+- `npm test`: 37 passing tests. New checks cover the exact limit, combined targets, whole-Gold rounding, historical best after losses, available-bankroll limits, 81-digit precision, no sampling on rejection, transaction/receipt integrity, and rejection through HTTP. Existing payout scenarios use an explicit historical best that makes their stakes legal.
+- TypeScript and the production build passed. `git diff --check` passed.
+- Headless Chrome checked at 1600×1000, 1280×900, 1101×900, 1024×900, 768×900, 390×900, and 320×900. No horizontal overflow was observed. Desktop, mobile, the right-side drawer, and the celebration were visually reviewed.
+- Measured visible glyph centers were within 0.51px of their cell centers for all six numbers. Probability visibility remains hidden by default.
+- A 100 G record rejected an 11 G single bet and a 6 G + 5 G split. A 6 G + 4 G split was accepted. A deterministic 10 G Jackpot settled at 330 G and raised the displayed limit from 10 G to 33 G; the new 33 G stake was accepted.
+- In the synthetic tower fixture, the Jackpot moved the player from rank 6 to rank 3. The right rail stayed visible on wide layouts, the mobile drawer opened against the right edge, and only one leaderboard content tree existed through viewport changes.
+- The Jackpot displayed its large banner and at least 40 simultaneous shower particles. Audio instrumentation observed the actual oscillator/buffer source starts for the fanfare. Muting prevented new sound sources, persisted on reload, and reduced motion produced no active movement or banner. Effects cleaned up after settlement. No page errors occurred during the main checks.
+- A separately mocked 81-digit browser state verified exact keyboard clamping at the cap, exact wager placement, and no overflow at 320px. Server precision and settlement were checked independently in the automated tests.
+
+Previews: [Desktop tower](screenshots/tower-desktop.png) · [Mobile game](screenshots/tower-mobile.png) · [Win celebration](screenshots/tower-win.png) · [Mobile leaderboard](screenshots/tower-mobile-leaderboard.png).
+
+The tower previews use synthetic opponents in an isolated in-memory fixture: `SCENARIO=tower npm run preview:fixture`. No normal game data was changed. Physical phones, Safari, Firefox, screen-reader speech, and subjective loudspeaker sound quality were not tested. Earlier entries describe previous rules and designs.
+
+## Hidden odds, scattered chips, and first-game guidance — October 9, 2026
+
+The board now centers number and group labels and separates the color bets with 14px of felt on desktop and 12px on mobile. Odds default to hidden, including accessible target names, and a saved developer switch in Settings reveals all 13 probabilities. The Jackpot panel and target marker are removed; settlement rules and win celebrations remain. Round casino chips use varied local positions, rotations, and colors; each addition places another chip, up to five per target, with the total on top. Existing chips keep their positions through unrelated UI updates.
+
+The four preset amount buttons are removed. The wider amount field accepts exact integers and responds to ↑ / ↓ in 5 G steps, with a 1 G minimum. A first-game dialog explains betting and payouts when the saved player has no roll and has not dismissed the guide. Dismissal persists for that player in this browser. Existing roll history suppresses the guide.
+
+Verified in this pass:
+
+- All 34 existing rule, persistence, and HTTP tests passed. TypeScript and the production build passed; `git diff --check` passed.
+- Headless Chrome checked at 1280×900, 1024×844, 768×844, 390×844, and 320×844. No horizontal page overflow occurred. Desktop and mobile screenshots were visually reviewed, including the guide and Settings. Mobile uses vertical scrolling.
+- ↑ / ↓ changed 10 → 15 → 10, clamped 2 → 1, and preserved exact values through 9,007,199,254,740,993 → 9,007,199,254,740,998 → 9,007,199,254,740,993. Invalid input stayed invalid until corrected. Busy actions disabled the amount control.
+- All 13 probability labels and accessible probability descriptions were absent by default, appeared with the developer switch, persisted through reload, and disappeared when switched off. Toggling preserved existing chip positions.
+- The guide appeared for a fresh player, stayed dismissed after reload, and did not appear when a saved roll existed even after its local dismissal key was removed.
+- Repeated additions placed multiple chips and preserved the exact aggregate wager. All 13 targets accepted wagers at 320px. Editor reduction/removal, right-click cancellation, Clear, and Shake removed the corresponding chips. Reduce motion skipped placement animations.
+- The deterministic sole 10 G wager on 6 still returned 240 G and settled at 330 G. Settlement cleared the chips and wagers; free Shake kept the balance. No page errors occurred during the main interaction checks.
+- Browser checks caught and fixed a dropped first bet after amount entry: amount changes now update the editor without replacing the board contents during the click.
+
+Previews: [Desktop](screenshots/hidden-odds-desktop.png) · [Mobile](screenshots/hidden-odds-mobile.png) · [First-game guide](screenshots/first-game-guide.png).
+
+Browser QA used the isolated in-memory fixture and did not touch the normal game database. Probability hiding is a presentation choice; the client API still receives the stored odds. Physical phones, Safari, Firefox, and screen-reader speech were not tested. Earlier entries describe superseded designs.
+
 ## Casino table and animation refinement — October 9, 2026
 
 The current design uses Balatro-inspired placement: a left information rail, a stationary felt table, and wager/roll controls below it. Bets are coin stacks with a landing animation. The die has six physical faces and a 1.1-second toss with a bounce, shadow, and landing ring. Winning targets glow and show rising returns; coins and sparks accompany the bankroll count-up. Jackpot celebrations use more coins and sparks. The server still settles all results before animation begins.
@@ -118,7 +168,7 @@ For the large-integer case, stop the fixture process and run:
 SCENARIO=large npm run preview:fixture
 ```
 
-Reload the fixture page, wager the displayed `9007199254740993` G on 1, and Roll. Test fixture scores do not enter the normal leaderboard. Both fixture processes were stopped after verification.
+Reload the fixture page, wager the displayed `9007199254740993` G on 1, and Roll. The result is `54043195528445958` G. Test fixture scores do not enter the normal leaderboard. Both fixture processes were stopped after verification.
 
 ## Screenshots
 

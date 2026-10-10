@@ -4,6 +4,7 @@ import { Store } from "../server/store.ts";
 import { createGameServer } from "../server/http.ts";
 
 const large = process.env.SCENARIO === "large";
+const tower = process.env.SCENARIO === "tower";
 let draws = 0;
 const random = () => {
   const index = draws++;
@@ -24,6 +25,14 @@ class FixtureStore extends Store {
   }
 }
 const store = new FixtureStore(":memory:", random);
+if (tower) {
+  // Synthetic opponents only exist in this isolated, in-memory QA scenario.
+  for (const [nickname, best] of [["Crown Keeper", "900"], ["High Roller", "600"], ["Lucky Seven", "300"], ["Red Fox", "220"], ["Night Owl", "160"]]) {
+    const { state } = store.create();
+    store.db.prepare("UPDATE players SET nickname = ?, best_gold = ? WHERE id = ?").run(nickname, best, state.id);
+  }
+  draws = 0;
+}
 const vite = await createServer({
   server: { middlewareMode: true, hmr: { port: 24679 } },
   appType: "spa",
@@ -33,7 +42,7 @@ const server = createGameServer(store, (req, res) =>
 );
 server.listen(5174, "127.0.0.1", () =>
   console.log(
-    `Isolated ${large ? "large Gold" : "Jackpot"} fixture: http://qa.localhost:5174`,
+    `Isolated ${large ? "large Gold" : tower ? "leaderboard tower" : "Jackpot"} fixture: http://qa.localhost:5174`,
   ),
 );
 async function stop() {
