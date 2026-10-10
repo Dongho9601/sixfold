@@ -1,5 +1,22 @@
 # Verification report
 
+## Numeral centering, expanded guide, and peripheral UI — October 9, 2026
+
+Replaced SVG text-box centering with Canvas actual glyph measurements. The old SVG bounds included the same font ascent/descent area for every digit, leaving Georgia’s descending 3, 4, and 5 visibly low. The new positions center the visible numeral shapes and remove the downward text shadow.
+
+Bankroll and Personal Best now share flat surfaces and consistent spacing, with aligned values on mobile. Wager controls share a baseline and height on desktop. Utility buttons, the leaderboard, the bet editor, and Settings use quieter borders, typography, and spacing. The felt board, chips, and game rules retain their existing design and behavior. The guide follows the personal guide-design reading style, reopens through **How to play**, and explains uneven starting odds, probability redistribution, a concrete 40% → 30% example, and play hints. It explicitly avoids promising equal odds.
+
+Verified:
+
+- All 34 automated tests, TypeScript, the production build, and `git diff --check` passed.
+- Chrome checked at 1600, 1280, 1101, 1024, 768, 650, 390, and 320px widths, with no horizontal overflow. Screenshot pixel bounds (48 digit samples) placed all visible numeral centers within 1px of their cell centers. Mobile balance values and desktop amount/action controls aligned within 1px.
+- All 13 targets accepted wagers at 320px; the board dimensions remained stable. Amount keys, reduction/removal, Clear, probability visibility, a deterministic 330 G Jackpot settlement, and free Shake passed. An 81-digit balance and a long leaderboard name did not create overflow at 320px or 1280px.
+- Initial guide display, persistent dismissal, reopening, focus return, the expanded odds example, print layout, and touch-emulated guide controls passed. No page errors occurred. Desktop, mobile, Settings, the guide, and the leaderboard drawer were visually inspected.
+
+Previews: [Desktop](screenshots/polished-desktop.png) · [Mobile](screenshots/polished-mobile.png) · [Guide](screenshots/expanded-guide.png) · [Settings](screenshots/polished-settings.png) · [Leaderboard](screenshots/polished-leaderboard.png).
+
+Browser checks used the isolated in-memory tower fixture; normal game data was not changed. Physical phones, Safari, and Firefox were not tested.
+
 ## Personal-best bet limit removed — October 9, 2026
 
 Removed the 10% rule from server validation, the amount controls, roll eligibility, Settings, and the first-game guide. The Roll limit label and its hint are gone. Wagers may again use the full available bankroll; the 1 G minimum and existing overspending check remain. The leaderboard, cards, colors, number alignment, and win effects retain their latest design.

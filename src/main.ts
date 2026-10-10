@@ -20,6 +20,7 @@ const icon = (name: string) => {
     shake:
       '<path d="M4 8a8 8 0 0 1 14-3l2 3M20 3v5h-5M20 16A8 8 0 0 1 6 19l-2-3m0 5v-5h5"/>',
     close: '<path d="m6 6 12 12M18 6 6 18"/>',
+    help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 1.7-2.5 1.8-2.5 3.5M12 16h.01"/>',
     chevron: '<path d="m9 5 7 7-7 7"/>',
     dice: '<rect x="3" y="3" width="18" height="18" rx="4"/><circle cx="8" cy="8" r="1"/><circle cx="16" cy="16" r="1"/><circle cx="12" cy="12" r="1"/>',
   };
@@ -70,6 +71,16 @@ try {
   sessionStorage.removeItem("one-of-six-pending");
 }
 
+const oddsGuide = `
+  <h3>The die starts uneven</h3>
+  <p>A fresh board assigns <b>40%, 20%, 15%, 10%, 10%, and 5%</b> to the six numbers in a random order. The odds are hidden: some numbers are much more likely than others. Red and Black are not necessarily a 50–50 bet.</p>
+  <h3>Payouts change the odds</h3>
+  <p>After a payout other than a Jackpot, the rolled number gives up <b>25% of its current probability</b>, shared equally among the other five. Winning on a likely number can gradually even out a strong bias, so an early advantage can fade. Equal odds are not guaranteed.</p>
+  <details class="odds-example"><summary>See how a payout changes the die</summary><p>If a number has a 40% chance and a wager pays when it lands, its chance falls to 30%. Each other number gains 2 percentage points. This happens even if your other wagers leave the roll at break-even or a net loss. If no wager pays, the odds stay the same. A Jackpot instead resets the odds.</p></details>
+  <h3>A hint for your first few rolls</h3>
+  <p>Start with small bets and look for clues in the results. A few repeats do not prove a number is favored. Groups cover more outcomes but pay smaller multiples; adjust as payouts change the die. <b>Shake</b> is free: it reshuffles the starting odds and clears your bets, so any pattern you were tracking starts over.</p>
+`;
+
 app.innerHTML = `
   <div class="workspace">
     <main id="game" aria-label="${CONFIG.title} game">
@@ -78,9 +89,9 @@ app.innerHTML = `
         <section class="bankroll" aria-label="Your Gold">
           <div class="balance"><span class="eyebrow">Bankroll</span><div class="balance-value"><span id="gold">—</span><span class="gold-unit">G</span></div></div>
         </section>
-        <section class="personal-best" aria-label="Personal best"><span class="eyebrow">Personal best</span><div class="record-value"><span id="best-gold" class="best-value">—</span><span class="gold-unit">G</span></div><span class="record-note">Your highest climb</span></section>
+        <section class="personal-best" aria-label="Personal best"><span class="eyebrow">Personal best</span><div class="record-value"><span id="best-gold" class="best-value">—</span><span class="gold-unit">G</span></div></section>
         <section class="accounting" aria-label="Your wagers"><div><span>On the table</span><strong id="draft-total">0 G</strong></div><div><span>Available</span><strong id="available">— G</strong></div><div class="draft-actions"><button id="edit-draft" aria-expanded="false" aria-controls="draft-tray">Edit bets <span id="draft-count">0</span></button><button id="clear-draft">Clear</button></div></section>
-        <div class="sidebar-bottom"><div class="header-actions"><button id="leaderboard-open" class="utility-button" aria-label="Open leaderboard" aria-expanded="false">${icon("trophy")}<span>Leaderboard</span></button><button id="settings-open" class="utility-button" aria-label="Settings">${icon("settings")}<span>Settings</span></button></div><span class="play-note">A little luck. A little strategy.</span></div>
+        <div class="sidebar-bottom"><div class="header-actions"><button id="leaderboard-open" class="utility-button" aria-label="Open leaderboard" aria-expanded="false">${icon("trophy")}<span>Leaderboard</span></button><button id="guide-open" class="utility-button" aria-label="How to play">${icon("help")}<span>How to play</span></button><button id="settings-open" class="utility-button" aria-label="Settings">${icon("settings")}<span>Settings</span></button></div><span class="play-note">Play Gold only</span></div>
       </aside>
       <div class="playfield">
         <section class="table-area" aria-label="Betting table">
@@ -107,15 +118,15 @@ app.innerHTML = `
     </main>
   </div>
   <div id="effects" class="effects" aria-hidden="true"></div>
-  <dialog id="leaderboard-dialog" class="leaderboard-dialog" aria-labelledby="leaderboard-title"><div id="leaderboard-content"><div class="tower-heading"><div><span class="eyebrow">CLAIM THE SUMMIT</span><h2 id="leaderboard-title">Leaderboard</h2></div><button class="icon-button" data-close="leaderboard-dialog" aria-label="Close leaderboard">${icon("close")}</button></div><div class="tower-crown" aria-hidden="true">${icon("trophy")}<span>THE SUMMIT</span></div><div class="tower-floors"><ol id="leaders" aria-label="Players ranked by personal best"></ol></div><div class="tower-progress"><span id="tower-position">Your climb</span><p id="tower-next">Play to raise your personal best.</p><div id="tower-meter" class="tower-meter" role="progressbar" aria-label="Progress toward the next rank" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div></div><div class="your-record"><span id="your-nickname"></span><strong id="your-best"></strong></div><p class="leaderboard-note">Each new personal best takes you higher.</p></div></dialog>
-  <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title"><div class="dialog-top"><div><h2 id="settings-title">Settings & how to play</h2></div><button class="icon-button" data-close="settings-dialog" aria-label="Close settings">${icon("close")}</button></div>
+  <dialog id="leaderboard-dialog" class="leaderboard-dialog" aria-labelledby="leaderboard-title"><div id="leaderboard-content"><div class="tower-heading"><div><span class="eyebrow">HIGHEST BANKROLLS</span><h2 id="leaderboard-title">Leaderboard</h2></div><button class="icon-button" data-close="leaderboard-dialog" aria-label="Close leaderboard">${icon("close")}</button></div><div class="tower-floors"><ol id="leaders" aria-label="Players ranked by personal best"></ol></div><div class="tower-progress"><span id="tower-position">Your climb</span><p id="tower-next">Play to raise your personal best.</p><div id="tower-meter" class="tower-meter" role="progressbar" aria-label="Progress toward the next rank" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div></div><div class="your-record"><span id="your-nickname"></span><strong id="your-best"></strong></div><p class="leaderboard-note">Ranked by each player’s personal best.</p></div></dialog>
+  <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title"><div class="dialog-top"><div><h2 id="settings-title">Settings</h2></div><button class="icon-button" data-close="settings-dialog" aria-label="Close settings">${icon("close")}</button></div>
     <form id="nickname-form"><label for="nickname">Your leaderboard name</label><div class="nickname-row"><input id="nickname" maxlength="48" required autocomplete="nickname"/><button type="submit" id="save-nickname">Save</button></div><p id="nickname-status" role="status"></p></form>
     <label class="sound-control"><span>Sound effects<small>Coin showers, fanfares, and dice sounds</small></span><input id="sound" type="checkbox" role="switch" ${sound ? "checked" : ""}/></label>
     <label class="sound-control"><span>Reduce motion<small>Skip dice movement and celebration effects</small></span><input id="motion" type="checkbox" role="switch" ${shouldReduceMotion() ? "checked" : ""}/></label>
     <label class="sound-control"><span>Show probabilities<small>Developer option · Reveal the hidden odds</small></span><input id="show-probabilities" type="checkbox" role="switch" ${showProbabilities ? "checked" : ""}/></label>
-    <div class="instructions"><h3>How to play</h3><p>Play Gold only. No real money.</p><p>Enter an amount, then tap any number or group to add a wager. The + / − buttons and ↑ / ↓ keys in the amount field change it by 5 G. Right-click a target to remove its entire wager. Use <b>Edit bets</b> to reduce or remove wagers on any device. Overlapping bets are welcome.</p><p><b>Roll</b> samples one outcome using hidden odds. Each winning wager pays its total return: number ×6, row ×2, column ×3, color ×2. Returns include the winning stake.</p><p>When any wager pays, the rolled number gives 25% of its probability to the other five equally—even on a break-even or net-loss Roll. A complete miss leaves the odds unchanged.</p><p><b>Jackpot ×24:</b> a sole wager on the least likely number pays ×24 on a hit, then automatically Shakes to a fresh board. The target is hidden; the lowest number breaks ties.</p><p><b>Shake</b> is free and unlimited. It refreshes the probabilities and clears your draft. Gold stays yours. Rolls also clear your draft. At zero Gold, start again; your best record stays.</p><p>Gold and odds save automatically. A refresh resumes your board. Uncommitted drafts are local to this tab and clear on refresh. On desktop, <kbd>R</kbd> rolls and <kbd>S</kbd> shakes. All controls also work with Tab and Enter. Reduced-motion preferences are respected.</p></div>
+    <div class="instructions"><h3>Place a wager</h3><p>Enter a whole amount, then tap any number or group to add it. The + / − buttons and ↑ / ↓ keys in the amount field change it by 5 G. Right-click a target to remove its entire wager, or use <b>Edit bets</b> to reduce or remove wagers on any device. You can bet on several spaces, up to your available Gold.</p><h3>Roll & collect</h3><p><b>Roll</b> draws one outcome using the hidden odds. Each winning wager pays its total return: number ×6, column ×3, row or color ×2. Returns include the winning stake: a 10 G number bet returns 60 G, a 50 G gain if that was your only bet.</p>${oddsGuide}<h3>The hidden Jackpot</h3><p>A sole wager on the least likely number pays <b>×24</b> on a hit instead of ×6, then automatically Shakes to a fresh board. The target is hidden; the lowest number breaks ties.</p><h3>Your Gold stays with you</h3><p>Shake keeps your Gold. Rolls and Shakes clear your draft. At zero Gold, start again with 100 G; your personal best stays.</p><p>Gold and odds save automatically. A refresh resumes your board but clears uncommitted bets. On desktop, <kbd>R</kbd> rolls and <kbd>S</kbd> shakes. All controls also work with Tab and Enter.</p><p>Play Gold only. No real money.</p></div>
   </dialog>
-  <dialog id="welcome-dialog" class="welcome-dialog" aria-labelledby="welcome-title" aria-describedby="welcome-intro"><div class="dialog-top"><h2 id="welcome-title">Your first roll</h2><button class="icon-button" data-close="welcome-dialog" aria-label="Close gameplay guide">${icon("close")}</button></div><p id="welcome-intro" class="dialog-intro">You have 100 G to play with. Make a call and see where the die lands.</p><ol class="welcome-steps"><li><h3>Set your stake</h3><p>Type any whole amount. Use + / − or ↑ / ↓ in the amount field to change it by 5 G.</p></li><li><h3>Put your chips down</h3><p>Tap a number, row, column, or color. Tap again to add more. You can bet on several spaces in one roll.</p></li><li><h3>Let it roll</h3><p>A number pays ×6, a column ×3, and a row or color ×2. Returns include your winning stake.</p></li></ol><p class="welcome-note">The odds are hidden and change as you play. <b>Shake</b> refreshes them for free and clears your bets. Use <b>Edit bets</b> to take chips back.</p><button id="welcome-start" class="roll-button">Let’s play ${icon("chevron")}</button><p class="welcome-footnote">Play Gold only · Find the full rules in Settings</p></dialog>
+  <dialog id="welcome-dialog" class="welcome-dialog" aria-labelledby="welcome-title" aria-describedby="welcome-intro"><div class="dialog-top"><h2 id="welcome-title">How to play</h2><button class="icon-button" data-close="welcome-dialog" aria-label="Close gameplay guide">${icon("close")}</button></div><p id="welcome-intro" class="dialog-intro">You have 100 G to play with. Make a call and see where the die lands.</p><ol class="welcome-steps"><li><h3>Place your bets</h3><p>Type a whole amount, then tap a number, row, column, or color. Tap again to add more. Use <b>Edit bets</b> to take chips back before rolling.</p></li><li><h3>Roll & collect</h3><p>A number pays ×6, a column ×3, and a row or color ×2. Returns include your winning stake. A sole bet on the hidden, least likely number pays a Jackpot ×24 if it hits.</p></li></ol><div class="guide-odds">${oddsGuide}</div><button id="welcome-start" class="roll-button">Let’s play ${icon("chevron")}</button><p class="welcome-footnote">Play Gold only · Full rules in Settings</p></dialog>
 `;
 
 function targetButton(id: string, classes: string, style = "") {
@@ -403,6 +414,20 @@ function updateHighlight() {
       ),
     );
 }
+const numberMeasure = document.createElement("canvas").getContext("2d")!;
+function centerBoardNumbers() {
+  document.querySelectorAll<SVGTextElement>(".number text").forEach(text => {
+    const style = getComputedStyle(text);
+    numberMeasure.font = `${style.fontStyle} ${style.fontWeight} ${style.fontSize} ${style.fontFamily}`;
+    numberMeasure.textAlign = "center";
+    // SVG getBBox includes the font's ascent/descent box for text, not its ink.
+    // Actual glyph metrics also account for Georgia's descending 3, 4, and 5.
+    const ink = numberMeasure.measureText(text.textContent || "");
+    text.setAttribute("x", String(50 + (ink.actualBoundingBoxLeft - ink.actualBoundingBoxRight) / 2));
+    text.setAttribute("y", String(50 + (ink.actualBoundingBoxAscent - ink.actualBoundingBoxDescent) / 2));
+  });
+}
+void document.fonts.ready.then(centerBoardNumbers);
 function render() {
   if (!state) return;
   $("gold").textContent = formatGold(state.gold);
@@ -465,11 +490,7 @@ function render() {
   $("retry").hidden = !pending || busy;
   $("your-nickname").textContent = `${state.nickname} · you`;
   $("your-best").textContent = `${formatGold(state.bestGold)} G`;
-  // Center the visible glyph, rather than the font's line box (Georgia's 4 descends).
-  document.querySelectorAll<SVGTextElement>(".number text").forEach(text => {
-    const bounds = text.getBBox();
-    text.setAttribute("transform", `translate(${50 - bounds.x - bounds.width / 2} ${50 - bounds.y - bounds.height / 2})`);
-  });
+  centerBoardNumbers();
   renderDraft();
   updateHighlight();
 }
@@ -608,12 +629,12 @@ async function refreshLeaderboard() {
     $("leaders").innerHTML = leaders
       .map(
         (leader) =>
-          `<li class="${leader.id === state?.id ? "you" : ""}" ${leader.id === state?.id ? 'aria-current="true"' : ""} style="--floor-inset:${Math.max(0, 18 - (leader.rank - 1) * 3)}px"><span class="rank">${String(leader.rank).padStart(2, "0")}</span><span class="leader-name">${escape(leader.nickname)}${leader.id === state?.id ? "<small>YOU</small>" : ""}</span><strong>${formatGold(leader.bestGold)}<small> G</small></strong></li>`,
+          `<li class="${leader.id === state?.id ? "you" : ""}" ${leader.id === state?.id ? 'aria-current="true"' : ""}><span class="rank">${String(leader.rank).padStart(2, "0")}</span><span class="leader-name">${escape(leader.nickname)}${leader.id === state?.id ? "<small>YOU</small>" : ""}</span><strong>${formatGold(leader.bestGold)}<small> G</small></strong></li>`,
       )
       .join("");
     if (!leaders.length) $("leaders").innerHTML = '<li class="empty-floor">The summit is waiting.</li>';
     const next = ownRank ? leaders.find(leader => leader.rank === ownRank - 1) : leaders.at(-1);
-    $("tower-position").textContent = ownRank === 1 ? "You hold the summit" : ownRank ? `Your floor · #${ownRank}` : `Climb into the top ${CONFIG.leaderboardLimit}`;
+    $("tower-position").textContent = ownRank === 1 ? "You’re in first place" : ownRank ? `Your rank · ${ownRank}` : `Reach the top ${CONFIG.leaderboardLimit}`;
     if (state && next) {
       const goal = BigInt(next.bestGold) + 1n;
       const gap = goal - BigInt(state.bestGold);
@@ -910,9 +931,17 @@ $("show-probabilities").addEventListener("change", () => {
   render();
 });
 $("welcome-start").addEventListener("click", () => $<HTMLDialogElement>("welcome-dialog").close());
+let guideReturnFocus = $("bet-amount");
+$("guide-open").addEventListener("click", () => {
+  guideReturnFocus = $("guide-open");
+  $("welcome-intro").textContent = `You have ${formatGold(state?.gold || CONFIG.startingGold)} G to play with. Make a call and see where the die lands.`;
+  const guide = $<HTMLDialogElement>("welcome-dialog");
+  guide.showModal();
+  guide.scrollTop = 0;
+});
 $("welcome-dialog").addEventListener("close", () => {
   if (state) localStorage.setItem(`sixfold-guide-seen:${state.id}`, "yes");
-  $("bet-amount").focus({ preventScroll: true });
+  guideReturnFocus.focus({ preventScroll: true });
 });
 function showFirstGameGuide() {
   if (!state || pending) return;
