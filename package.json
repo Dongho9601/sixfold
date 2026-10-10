@@ -13,6 +13,7 @@
     "test": "tsx --test tests/*.test.ts",
     "test:ui": "tsx --test tests/ui.test.mjs",
     "test:balance": "tsx scripts/tune-tilt.ts",
+    "audit:strategies": "tsx scripts/audit-strategies.ts",
     "preview:fixture": "tsx scripts/fixture-server.ts"
   },
   "devDependencies": {

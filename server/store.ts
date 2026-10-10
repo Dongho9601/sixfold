@@ -12,6 +12,7 @@ import type {
 import {
   freshProbabilities,
   GameError,
+  jackpotAvailable,
   marker,
   parseGold,
   settle,
@@ -28,6 +29,8 @@ interface Row {
   revision: string;
   last_roll: string | null;
   can_shake: number;
+  rolls_used: number;
+  has_completed_run: number;
 }
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 export const secureRandom: Random = () =>
@@ -50,7 +53,9 @@ export class Store {
         id TEXT PRIMARY KEY, session_hash TEXT NOT NULL UNIQUE,
         nickname TEXT NOT NULL, gold TEXT NOT NULL, best_gold TEXT NOT NULL,
         probabilities TEXT NOT NULL, revision TEXT NOT NULL, last_roll TEXT,
-        can_shake INTEGER NOT NULL DEFAULT 0 CHECK (can_shake IN (0, 1))
+        can_shake INTEGER NOT NULL DEFAULT 0 CHECK (can_shake IN (0, 1)),
+        rolls_used INTEGER NOT NULL DEFAULT 0 CHECK (rolls_used BETWEEN 0 AND 100),
+        has_completed_run INTEGER NOT NULL DEFAULT 0 CHECK (has_completed_run IN (0, 1))
       ) STRICT;
       CREATE TABLE IF NOT EXISTS receipts (
         player_id TEXT NOT NULL REFERENCES players(id), request_id TEXT NOT NULL,
@@ -59,9 +64,29 @@ export class Store {
       ) STRICT;
       CREATE INDEX IF NOT EXISTS best_gold_order ON players(length(best_gold) DESC, best_gold DESC, id);
     `);
-    const columns = this.db.prepare("PRAGMA table_info(players)").all();
-    if (!columns.some((column) => column.name === "can_shake"))
-      this.db.exec("ALTER TABLE players ADD COLUMN can_shake INTEGER NOT NULL DEFAULT 0 CHECK (can_shake IN (0, 1))");
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const version = this.db.prepare("PRAGMA user_version").get()!.user_version as number;
+      if (version < 1) {
+        // One-time reset requested for the new competition. Old endless-game
+        // scores, sessions and receipts must not enter or replay into ranked runs.
+        this.db.exec("DELETE FROM receipts; DELETE FROM players;");
+        const columns = this.db.prepare("PRAGMA table_info(players)").all();
+        for (const [name, check] of [
+          ["can_shake", "can_shake IN (0, 1)"],
+          ["rolls_used", "rolls_used BETWEEN 0 AND 100"],
+          ["has_completed_run", "has_completed_run IN (0, 1)"],
+        ]) {
+          if (!columns.some(column => column.name === name))
+            this.db.exec(`ALTER TABLE players ADD COLUMN ${name} INTEGER NOT NULL DEFAULT 0 CHECK (${check})`);
+        }
+        this.db.exec("PRAGMA user_version = 1");
+      }
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
   }
   close() {
     this.db.close();
@@ -73,11 +98,14 @@ export class Store {
       nickname: row.nickname,
       gold: row.gold,
       bestGold: row.best_gold,
+      hasCompletedRun: row.has_completed_run === 1,
+      rollsUsed: row.rolls_used,
       probabilities,
       tiltLevel: tiltLevel(probabilities),
       canShake: row.can_shake === 1,
       revision: row.revision,
       jackpotNumber: marker(probabilities),
+      jackpotAvailable: jackpotAvailable(probabilities),
       lastRoll: row.last_roll ? JSON.parse(row.last_roll) : null,
     };
   }
@@ -105,7 +133,7 @@ export class Store {
         hash(token),
         `Player ${id.slice(0, 4).toUpperCase()}`,
         CONFIG.startingGold,
-        CONFIG.startingGold,
+        "0",
         JSON.stringify(freshProbabilities(this.random)),
         "0",
       );
@@ -114,7 +142,7 @@ export class Store {
   leaderboard(): Leader[] {
     const rows = this.db
       .prepare(
-        "SELECT id, nickname, best_gold FROM players ORDER BY length(best_gold) DESC, best_gold DESC, id ASC LIMIT ?",
+        "SELECT id, nickname, best_gold FROM players WHERE has_completed_run = 1 ORDER BY length(best_gold) DESC, best_gold DESC, id ASC LIMIT ?",
       )
       .all(CONFIG.leaderboardLimit) as unknown as Row[];
     return rows.map((row, i) => ({
@@ -153,12 +181,7 @@ export class Store {
             409,
           );
         this.db.exec("COMMIT");
-        const response = JSON.parse(receipt.response) as ActionResponse;
-        // Receipts from before these fields existed still replay their original
-        // outcome. Do not infer a new Shake entitlement from an old payout.
-        response.state.canShake ??= false;
-        response.state.tiltLevel ??= tiltLevel(response.state.probabilities);
-        return response;
+        return JSON.parse(receipt.response) as ActionResponse;
       }
       const state = this.get(id);
       if (state.revision !== request.revision)
@@ -168,6 +191,9 @@ export class Store {
         );
       const action = request.action;
       let result: ActionResponse["result"] = null;
+      const finished = state.rollsUsed >= CONFIG.rollsPerRun || state.gold === "0";
+      if (finished && (action.kind === "roll" || action.kind === "shake"))
+        throw new GameError("This run has ended. Start a new run with 100 G.");
       if (action.kind === "roll") {
         const settled = settle(
           BigInt(state.gold),
@@ -178,24 +204,28 @@ export class Store {
         state.gold = settled.gold.toString();
         state.probabilities = settled.probabilities;
         state.lastRoll = result = settled.result;
+        state.rollsUsed++;
         state.canShake = settled.result.jackpot
           ? false
           : state.canShake || settled.result.net !== "0";
-        if (settled.gold > BigInt(state.bestGold)) state.bestGold = state.gold;
+        if (state.rollsUsed === CONFIG.rollsPerRun) {
+          if (!state.hasCompletedRun || settled.gold > BigInt(state.bestGold))
+            state.bestGold = state.gold;
+          state.hasCompletedRun = true;
+        }
+        if (state.gold === "0" || state.rollsUsed === CONFIG.rollsPerRun)
+          state.canShake = false;
       } else if (action.kind === "shake") {
         if (!state.canShake)
           throw new GameError("Shake unlocks after a roll changes your bankroll. Break-even rolls do not count.");
         state.probabilities = freshProbabilities(this.random);
         state.canShake = false;
       } else if (action.kind === "restart") {
-        if (state.gold !== "0")
-          throw new GameError(
-            "A new game is available when your Gold reaches zero.",
-          );
         state.gold = CONFIG.startingGold;
         state.probabilities = freshProbabilities(this.random);
         state.lastRoll = null;
         state.canShake = false;
+        state.rollsUsed = 0;
       } else {
         const nickname = action.nickname.trim().normalize("NFC");
         if (
@@ -208,10 +238,11 @@ export class Store {
       }
       state.revision = (BigInt(state.revision) + 1n).toString();
       state.jackpotNumber = marker(state.probabilities);
+      state.jackpotAvailable = jackpotAvailable(state.probabilities);
       state.tiltLevel = tiltLevel(state.probabilities);
       this.db
         .prepare(
-          "UPDATE players SET nickname = ?, gold = ?, best_gold = ?, probabilities = ?, revision = ?, last_roll = ?, can_shake = ? WHERE id = ?",
+          "UPDATE players SET nickname = ?, gold = ?, best_gold = ?, probabilities = ?, revision = ?, last_roll = ?, can_shake = ?, rolls_used = ?, has_completed_run = ? WHERE id = ?",
         )
         .run(
           state.nickname,
@@ -221,6 +252,8 @@ export class Store {
           state.revision,
           state.lastRoll ? JSON.stringify(state.lastRoll) : null,
           state.canShake ? 1 : 0,
+          state.rollsUsed,
+          state.hasCompletedRun ? 1 : 0,
           id,
         );
       const response = { state, result };

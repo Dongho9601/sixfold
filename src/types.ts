@@ -16,11 +16,14 @@ export interface PlayerState {
   nickname: string;
   gold: string;
   bestGold: string;
+  hasCompletedRun: boolean;
+  rollsUsed: number;
   probabilities: number[];
   tiltLevel: number;
   canShake: boolean;
   revision: string;
   jackpotNumber: number;
+  jackpotAvailable: boolean;
   lastRoll: Settlement | null;
 }
 export type Action =

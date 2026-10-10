@@ -37,24 +37,17 @@ main { width: min(1540px, 100%); margin: 0 auto; display: grid; grid-template-co
 .wordmark svg { position: absolute; left: 0; top: 9px; color: var(--gold); width: 27px; height: 27px; transform: rotate(-8deg); }
 .wordmark > span { display: block; margin-top: 10px; font: 9px "Helvetica Neue", Arial, sans-serif; letter-spacing: 2px; color: var(--muted); }
 .eyebrow { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 1.8px; text-transform: uppercase; }
-.bankroll, .personal-best { padding: 20px 18px; background: #1e2922; border: 1px solid #37463b; border-radius: 6px; }
-.bankroll .eyebrow, .personal-best .eyebrow { font-size: 12px; font-weight: 400; letter-spacing: .2px; text-transform: none; }
+.stat-card { padding: 20px 18px; background: #1e2922; border: 1px solid #37463b; border-radius: 6px; }
+.stat-card .eyebrow { font-size: 12px; font-weight: 400; letter-spacing: .2px; text-transform: none; }
 .balance { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
 .balance-value { display: flex; align-items: baseline; gap: 8px; font-size: 44px; font-weight: 500; line-height: 1.15; color: var(--gold); margin: 0; font-variant-numeric: tabular-nums; letter-spacing: -1.5px; }
 #gold { display: inline-block; min-width: 0; overflow-wrap: anywhere; }
 .gold-unit { font-size: 16px; font-weight: 400; letter-spacing: 0; color: #aab5a8; }
-.personal-best { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; min-width: 0; }
-.record-value { display: flex; align-items: baseline; gap: 8px; color: #e7e8de; }
-.best-value { font-size: 36px; line-height: 1.15; font-weight: 400; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; min-width: 0; }
-#gold.long-gold, .best-value.long-record { font-size: 24px; letter-spacing: -.5px; }
-.accounting { padding: 24px 0 0; font-size: 12px; }
-.accounting > div:not(.draft-actions) { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 13px; }
-.accounting span { color: var(--muted); }
-.accounting strong { min-width: 0; max-width: 62%; overflow-wrap: anywhere; text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; }
-.draft-actions { display: flex; justify-content: space-between; border-top: 1px solid var(--border); }
-.draft-actions button { background: transparent; min-height: 44px; padding: 0; font-size: 12px; color: #d4d6c4; }
-.draft-actions button:hover { color: var(--gold); }
-#draft-count { margin-left: 6px; }
+.remaining-rolls, .table-wager { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; min-width: 0; }
+.remaining-rolls { border-color: #9c895b; background: #2b3023; }
+.rolls-value { color: #ffe1a0; font-size: 52px; line-height: 1; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -1px; }
+.wager-value { font-size: 30px; line-height: 1.2; font-weight: 400; font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
+#gold.long-gold, #draft-total.long-gold { font-size: 24px; letter-spacing: -.5px; }
 .sidebar-bottom { margin-top: auto; padding-top: 32px; }
 .header-actions { display: grid; gap: 4px; }
 .utility-button { display: flex; align-items: center; justify-content: flex-start; gap: 12px; padding: 0 10px; background: transparent; color: #bec8bb; min-height: 44px; border-radius: 4px; font-size: 12px; text-align: left; }
@@ -118,6 +111,7 @@ main { width: min(1540px, 100%); margin: 0 auto; display: grid; grid-template-co
 .target.paid { background-image: radial-gradient(ellipse at bottom, #edd58935, transparent 75%); }
 .target.missed .chip-pile { opacity: .32; }
 .chip-pile { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.target:not(:disabled) .table-chip { pointer-events: auto; cursor: pointer; }
 .table-chip { --chip-ink: #315549; --chip-rim: #203e34; position: absolute; left: var(--chip-x); top: var(--chip-y); width: 48px; height: 48px; padding: 6px; border: 1px solid var(--chip-rim); border-radius: 50%; background: repeating-conic-gradient(var(--chip-ink) 0deg 24deg, #eee4c8 24deg 36deg, var(--chip-ink) 36deg 60deg); transform: translate(-50%, -50%) rotate(var(--chip-turn)); box-shadow: 0 2px 0 #e1d4af, 0 4px 0 var(--chip-rim), 2px 6px 6px #071b1499, inset 0 0 0 1px #f4e7bc77; }
 .chip-tone-1 { --chip-ink: #944b48; --chip-rim: #5a2c2c; }
 .chip-tone-2 { --chip-ink: #a17b3d; --chip-rim: #674c29; }
@@ -168,15 +162,6 @@ main { width: min(1540px, 100%); margin: 0 auto; display: grid; grid-template-co
 .notice { margin: 0; text-align: center; color: #ebd7a4; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
 .notice.error { color: #ffc2b7; }
 .text-button, .restart-button { display: block; margin: 12px auto; padding: 13px 18px; border-radius: 5px; background: #e6ce91; color: #18372a; font-size: 16px; }
-.draft-tray { position: fixed; left: max(18px, calc(50vw - 610px)); bottom: 30px; width: min(390px, calc(100vw - 36px)); max-height: min(480px, 75svh); overflow: auto; padding: 16px 20px; background: #1e2922; border: 1px solid #52604e; border-radius: 6px; box-shadow: 0 12px 40px #0005; z-index: 20; }
-.draft-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.draft-top h2 { font: 24px Georgia, serif; margin: 0; }
-#draft-rows > p { color: var(--muted); font-size: 14px; }
-.draft-row { display: flex; align-items: center; gap: 10px; min-height: 54px; font-size: 14px; border-top: 1px solid #54604d; }
-.draft-row > span { flex: 1; min-width: 0; }
-.draft-row > strong { max-width: 35%; font-weight: 500; overflow-wrap: anywhere; }
-.draft-row button { min-width: 44px; min-height: 44px; padding: 8px; font-size: 13px; background: transparent; border-radius: 3px; }
-.draft-row button[data-reduce] { font-size: 23px; }
 .icon-button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; background: transparent; color: #d4e0d4; }
 .icon-button:hover { color: #fff; }
 .effects { position: fixed; inset: 0; pointer-events: none; z-index: 50; overflow: hidden; }
@@ -192,7 +177,6 @@ main { width: min(1540px, 100%); margin: 0 auto; display: grid; grid-template-co
 .win-confetti { position: absolute; width: 9px; height: 18px; background: var(--confetti-color); opacity: 0; }
 .flying-coin { position: absolute; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; border: 3px double #8c652a; background: #efcc7c; color: #8c652a; font-size: 12px; box-shadow: 0 3px 0 #a7772e; opacity: 0; }
 .payout-label { position: absolute; bottom: 23px; left: 0; right: 0; z-index: 4; color: #fff2b2; font-size: 21px; font-weight: 700; text-align: center; text-shadow: 0 2px 4px #152217; pointer-events: none; }
-.your-record strong { overflow-wrap: anywhere; min-width: 0; }
 dialog {
   background: #1e2922;
   color: #eee9df;
@@ -242,8 +226,7 @@ dialog::backdrop {
 .leaderboard-rail { min-width: 0; position: sticky; top: 32px; }
 #leaderboard-content { display: flex; flex-direction: column; min-width: 0; }
 .tower-heading { display: flex; justify-content: space-between; align-items: start; gap: 8px; padding: 12px 0 24px; }
-.tower-heading .eyebrow { font-size: 9px; font-weight: 400; letter-spacing: 1.3px; color: #aab6a3; }
-.tower-heading h2 { font: 24px/1.2 Georgia, serif; margin: 12px 0 0; }
+.tower-heading h2 { font: 24px/1.2 Georgia, serif; margin: 0; }
 .leaderboard-rail .tower-heading .icon-button { display: none; }
 .tower-floors { max-height: min(440px, 52svh); overflow: auto; }
 #leaders { list-style: none; padding: 0; margin: 0; }
@@ -251,21 +234,11 @@ dialog::backdrop {
 #leaders .rank { font-size: 12px; font-variant-numeric: tabular-nums; color: #94a58f; }
 #leaders li:first-child .rank { color: #e2c58b; }
 #leaders .leader-name { min-width: 0; overflow-wrap: anywhere; font-size: 12px; line-height: 1.5; }
-#leaders .leader-name small { display: block; font-size: 9px; letter-spacing: .7px; color: #c7b384; margin-top: 2px; }
 #leaders li > strong { max-width: 84px; color: #e2dfcd; font-size: 14px; font-weight: 400; font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; }
 #leaders li > strong small { font-size: 10px; color: #9aa993; }
 #leaders li.you { background: #dbc68c0c; }
 #leaders li.you .rank, #leaders li.you > strong { color: #e2c58b; }
 #leaders .empty-floor { display: block; font-size: 13px; color: #b7c3ab; }
-.tower-progress { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); }
-#tower-position { color: #e2dfcd; font-size: 12px; }
-#tower-next { font-size: 12px; line-height: 1.65; color: #a9b5a1; overflow-wrap: anywhere; margin: 8px 0 14px; }
-.tower-meter { height: 3px; background: #344235; border-radius: 2px; overflow: hidden; }
-.tower-meter > span { display: block; width: 0; height: 100%; background: #cbb581; transition: width 800ms ease-out; }
-.your-record { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding-top: 20px; font-size: 11px; line-height: 1.5; }
-.your-record > span { min-width: 0; overflow-wrap: anywhere; color: #a9b5a1; }
-.your-record > strong { min-width: 0; overflow-wrap: anywhere; color: #d8c594; font-weight: 400; }
-.leaderboard-note { font-size: 11px; line-height: 1.6; color: #93a18c; margin: 12px 0; }
 .settings-dialog, .welcome-dialog { width: 560px; }
 .welcome-dialog .dialog-intro { margin: 20px 0 28px; }
 .welcome-steps { list-style: decimal-leading-zero; padding-left: 26px; margin: 0; }
@@ -337,6 +310,15 @@ dialog::backdrop {
   gap: 5px;
 }
 #settings-guide { display: inline-flex; align-items: center; gap: 8px; margin-top: 12px; }
+.settings-restart { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); }
+.danger-button, .cancel-button { min-height: 44px; padding: 12px 18px; border-radius: 5px; font-size: 15px; }
+.danger-button { background: #a83e38; color: #fff5f3; }
+.danger-button:hover:not(:disabled) { background: #be4941; }
+.danger-button:disabled { opacity: .45; }
+.cancel-button { background: #344239; color: #eee9df; }
+.cancel-button:hover { background: #425348; }
+.restart-dialog { width: 440px; }
+.confirm-actions { display: flex; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
 .sound-control input {
   width: 20px;
   height: 20px;
@@ -389,7 +371,6 @@ dialog::backdrop {
   .wordmark > span { letter-spacing: 2px; font-size: 8px; }
   .bankroll { padding-inline: 12px; }
   .balance-value { font-size: 40px; }
-  .accounting { font-size: 11px; }
   .utility-button { font-size: 12px; }
   .felt { padding-inline: 12px; }
   .table-area { padding: 8px; border-radius: 27px; }
@@ -429,14 +410,12 @@ dialog::backdrop {
   #gold { max-height: 58px; overflow: auto; }
   .gold-unit { font-size: 15px; }
   .balance .eyebrow { font-size: 11px; }
-  .personal-best { grid-row: 2; grid-column: 2; padding: 16px 14px; margin: 0; gap: 10px; min-height: 104px; }
-  .personal-best .eyebrow { font-size: 11px; }
-  .best-value { font-size: 32px; max-height: 60px; overflow: auto; }
-  .accounting { grid-column: 1 / -1; grid-row: 3; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; padding: 4px 0 0; font-size: 11px; }
-  .accounting > div:not(.draft-actions) { flex-direction: column; gap: 6px; margin: 0; min-width: 0; }
-  .accounting strong { max-width: 100%; max-height: 32px; overflow: auto; text-align: left; }
-  .draft-actions { grid-column: 1 / -1; gap: 10px; }
-  .draft-actions button { font-size: 12px; }
+  .remaining-rolls { grid-row: 2; grid-column: 2; padding: 16px 14px; margin: 0; gap: 10px; min-height: 104px; }
+  .remaining-rolls .eyebrow { font-size: 11px; }
+  .rolls-value { font-size: 44px; }
+  .table-wager { grid-column: 1 / -1; grid-row: 3; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; margin: 0; padding: 14px; align-items: center; }
+  .table-wager .eyebrow { grid-column: 1; font-size: 11px; }
+  .table-wager .wager-value { grid-column: 2; text-align: right; font-size: 26px; }
   .table-area { border-radius: 23px; padding: 7px; }
   .felt { border-radius: 16px; padding: 0 10px; }
   .stage { height: 108px; grid-template-columns: minmax(0, 1fr) 76px minmax(0, 1fr); }
@@ -488,7 +467,6 @@ dialog::backdrop {
   .hint { font-size: 10px; margin-top: 1px; }
   .notice { font-size: 12px; }
   #gold.long-gold { font-size: 22px; }
-  .best-value.long-record { font-size: 19px; }
   dialog { padding: 23px; max-width: calc(100vw - 24px); }
   .welcome-dialog { --guide-inset: 23px; }
 }
@@ -497,8 +475,6 @@ dialog::backdrop {
   .felt { padding-inline: 7px; }
   .group { padding-inline: 5px; }
   .number { width: 55px; height: 55px; }
-  .accounting { gap: 10px; }
-  .draft-actions { gap: 8px; }
   .actions kbd { display: none; }
 }
 @media (hover: none), (pointer: coarse) {

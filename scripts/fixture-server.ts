@@ -16,7 +16,7 @@ class FixtureStore extends Store {
   override create() {
     const { token, state } = super.create();
     this.db.prepare("UPDATE players SET probabilities = ? WHERE id = ?")
-      .run(JSON.stringify([0.4, 0.2, 0.15, 0.1, 0.1, 0.05]), state.id);
+      .run(JSON.stringify([0.4, 0.2, 0.15, 0.12, 0.1, 0.03]), state.id);
     draws = 0;
     if (large)
       this.db
@@ -30,7 +30,7 @@ if (tower) {
   // Synthetic opponents only exist in this isolated, in-memory QA scenario.
   for (const [nickname, best] of [["Crown Keeper", "900"], ["High Roller", "600"], ["Lucky Seven", "300"], ["Red Fox", "220"], ["Night Owl", "160"]]) {
     const { state } = store.create();
-    store.db.prepare("UPDATE players SET nickname = ?, best_gold = ? WHERE id = ?").run(nickname, best, state.id);
+    store.db.prepare("UPDATE players SET nickname = ?, best_gold = ?, has_completed_run = 1 WHERE id = ?").run(nickname, best, state.id);
   }
   draws = 0;
 }

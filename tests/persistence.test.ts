@@ -21,12 +21,12 @@ const request = (revision: string, action: Action): ActionRequest => ({
   revision,
   action,
 });
-function fixture(store: Store, id: string, gold = "100", best = gold) {
+function fixture(store: Store, id: string, gold = "100", best = "0") {
   store.db
     .prepare(
-      "UPDATE players SET gold = ?, best_gold = ?, probabilities = ? WHERE id = ?",
+      "UPDATE players SET gold = ?, best_gold = ?, probabilities = ?, has_completed_run = ? WHERE id = ?",
     )
-    .run(gold, best, JSON.stringify(p), id);
+    .run(gold, best, JSON.stringify(p), best === "0" ? 0 : 1, id);
 }
 test("all actions are retry-safe, revision guarded, atomic, and survive reopening SQLite", () => {
   const dir = mkdtempSync(join(tmpdir(), "one-six-"));
@@ -39,7 +39,7 @@ test("all actions are retry-safe, revision guarded, atomic, and survive reopenin
     const response = store.act(state.id, roll);
     assert.equal(response.state.gold, "150");
     assert.equal(response.state.revision, "1");
-    assert.equal(response.state.bestGold, "150");
+    assert.equal(response.state.bestGold, "0");
     assert.equal(response.state.canShake, true);
     assert.equal(response.state.tiltLevel, tiltLevel(response.state.probabilities));
     assert.deepEqual(store.act(state.id, roll), response);
@@ -70,11 +70,12 @@ test("all actions are retry-safe, revision guarded, atomic, and survive reopenin
     assert.deepEqual(store.session(token), named.state);
     assert.deepEqual(store.act(state.id, roll), response);
     assert.deepEqual(store.get(state.id), named.state);
-    assert.equal(store.leaderboard()[0].nickname, "Ada");
+    assert.deepEqual(store.leaderboard(), []);
+    assert.equal(named.state.rollsUsed, 1);
     const action = request(named.state.revision, { kind: "shake" });
     const next = store.act(state.id, action);
     assert.equal(next.state.gold, "150");
-    assert.equal(next.state.bestGold, "150");
+    assert.equal(next.state.bestGold, "0");
     assert.equal(next.state.canShake, false);
     assert.notDeepEqual(next.state.probabilities, p);
     assert.deepEqual(store.act(state.id, action), next);
@@ -109,7 +110,7 @@ test("record integrity: break-even, loss, bankruptcy, retry and restart keep his
     );
     assert.equal(lost.state.gold, "0");
     assert.equal(lost.state.bestGold, "180");
-    assert.equal(lost.state.canShake, true);
+    assert.equal(lost.state.canShake, false);
     const restart = request("2", { kind: "restart" });
     const next = store.act(state.id, restart);
     assert.equal(next.state.gold, "100");
@@ -117,10 +118,124 @@ test("record integrity: break-even, loss, bankruptcy, retry and restart keep his
     assert.equal(next.state.lastRoll, null);
     assert.equal(next.state.canShake, false);
     assert.deepEqual(store.act(state.id, restart), next);
-    assert.throws(
-      () => store.act(state.id, request("3", { kind: "restart" })),
-      /reaches zero/,
-    );
+  } finally {
+    store.close();
+  }
+});
+
+test("restarting an unfinished run resets progress without posting it or changing completed scores", () => {
+  const store = new Store(":memory:", () => 0.1);
+  try {
+    for (const best of ["0", "180"]) {
+      const { state } = store.create();
+      fixture(store, state.id, "100", best);
+      const won = store.act(state.id, request("0", { kind: "roll", wagers: { n1: "50" } }));
+      assert.equal(won.state.gold, "350");
+      assert.equal(won.state.rollsUsed, 1);
+      assert.equal(won.state.canShake, true);
+      const leaders = store.leaderboard();
+      const restart = request("1", { kind: "restart" });
+      const next = store.act(state.id, restart);
+      assert.equal(next.state.gold, "100");
+      assert.equal(next.state.rollsUsed, 0);
+      assert.equal(next.state.lastRoll, null);
+      assert.equal(next.state.canShake, false);
+      assert.equal(next.state.bestGold, best);
+      assert.equal(next.state.hasCompletedRun, best !== "0");
+      assert.equal(next.state.nickname, state.nickname);
+      assert.notDeepEqual(next.state.probabilities, won.state.probabilities);
+      assert.deepEqual(store.leaderboard(), leaders);
+      assert.deepEqual(store.act(state.id, restart), next);
+      assert.throws(() => store.act(state.id, request("1", { kind: "restart" })), /Another tab/);
+      assert.deepEqual(store.get(state.id), next.state);
+      const firstRoll = store.act(state.id, request("2", { kind: "roll", wagers: { red: "1", black: "1" } }));
+      assert.equal(firstRoll.state.rollsUsed, 1);
+    }
+  } finally {
+    store.close();
+  }
+});
+
+test("100 rolls post only final Gold, freeze the run, and retain the best completed score", () => {
+  const dir = mkdtempSync(join(tmpdir(), "sixfold-run-"));
+  const path = join(dir, "game.sqlite");
+  let store = new Store(path, () => 0.1);
+  try {
+    const { state, token } = store.create();
+    fixture(store, state.id);
+    const act = (action: Action) => store.act(state.id, request(store.get(state.id).revision, action));
+    assert.deepEqual(store.leaderboard(), []);
+    act({ kind: "roll", wagers: { n1: "10" } }); // Peak 150 G is not a score.
+    act({ kind: "shake" });
+    assert.equal(store.get(state.id).rollsUsed, 1);
+    for (let roll = 2; roll <= 99; roll++) {
+      const result = act({ kind: "roll", wagers: { red: "1", black: "1" } });
+      assert.equal(result.state.rollsUsed, roll);
+      assert.equal(result.state.hasCompletedRun, false);
+      assert.equal(result.state.bestGold, "0");
+      assert.deepEqual(store.leaderboard(), []);
+    }
+    store.close();
+    store = new Store(path, () => 0.1);
+    assert.equal(store.session(token)!.rollsUsed, 99);
+    const finalRequest = request(store.get(state.id).revision, { kind: "roll", wagers: { n6: "50" } });
+    const final = store.act(state.id, finalRequest);
+    assert.equal(final.state.gold, "100");
+    assert.equal(final.state.rollsUsed, 100);
+    assert.equal(final.state.bestGold, "100");
+    assert.equal(final.state.hasCompletedRun, true);
+    assert.equal(final.state.canShake, false);
+    assert.equal(store.leaderboard()[0].bestGold, "100");
+    assert.deepEqual(store.act(state.id, finalRequest), final);
+    assert.throws(() => act({ kind: "roll", wagers: { red: "1" } }), /run has ended/);
+    assert.throws(() => act({ kind: "shake" }), /run has ended/);
+    act({ kind: "nickname", nickname: "Finisher" });
+    assert.equal(store.leaderboard()[0].nickname, "Finisher");
+    const restartRequest = request(store.get(state.id).revision, { kind: "restart" });
+    const restarted = store.act(state.id, restartRequest);
+    assert.equal(restarted.state.gold, "100");
+    assert.equal(restarted.state.rollsUsed, 0);
+    assert.equal(restarted.state.bestGold, "100");
+    assert.equal(restarted.state.lastRoll, null);
+    assert.deepEqual(store.act(state.id, restartRequest), restarted);
+    store.act(state.id, finalRequest);
+    assert.deepEqual(store.get(state.id), restarted.state);
+    for (const gold of ["80", "250"]) {
+      store.db.prepare("UPDATE players SET rolls_used = 99, gold = ? WHERE id = ?").run(gold, state.id);
+      act({ kind: "roll", wagers: { red: "1", black: "1" } });
+      assert.equal(store.leaderboard()[0].bestGold, gold === "80" ? "100" : "250");
+      act({ kind: "restart" });
+    }
+    store.db.prepare("UPDATE players SET rolls_used = 99, probabilities = ? WHERE id = ?")
+      .run(JSON.stringify([0.09, 0.03, 0.4, 0.2, 0.15, 0.13]), state.id);
+    const jackpotFinish = act({ kind: "roll", wagers: { n2: "10" } });
+    assert.equal(jackpotFinish.result!.jackpot, true);
+    assert.equal(jackpotFinish.state.rollsUsed, 100);
+    assert.equal(jackpotFinish.state.bestGold, "330");
+    assert.equal(jackpotFinish.state.canShake, false);
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("early bankruptcy is unranked; bankruptcy on roll 100 submits a zero score", () => {
+  const store = new Store(":memory:", () => 0.1);
+  try {
+    const { state } = store.create();
+    fixture(store, state.id);
+    const act = (action: Action) => store.act(state.id, request(store.get(state.id).revision, action));
+    const lost = act({ kind: "roll", wagers: { n6: "100" } });
+    assert.equal(lost.state.gold, "0");
+    assert.equal(lost.state.rollsUsed, 1);
+    assert.deepEqual(store.leaderboard(), []);
+    assert.throws(() => act({ kind: "shake" }), /run has ended/);
+    assert.equal(act({ kind: "restart" }).state.rollsUsed, 0);
+    store.db.prepare("UPDATE players SET rolls_used = 99 WHERE id = ?").run(state.id);
+    const final = act({ kind: "roll", wagers: { n6: "100" } });
+    assert.equal(final.state.gold, "0");
+    assert.equal(final.state.hasCompletedRun, true);
+    assert.equal(store.leaderboard()[0].bestGold, "0");
   } finally {
     store.close();
   }
@@ -133,9 +248,9 @@ test("large integer balances persist, settle, transport as strings and rank nume
     const a = store.create().state;
     const b = store.create().state;
     const c = store.create().state;
-    fixture(store, a.id, "9007199254740993");
-    fixture(store, b.id, "100000000000000000000000000000001");
-    fixture(store, c.id, "9007199254740992");
+    fixture(store, a.id, "9007199254740993", "9007199254740993");
+    fixture(store, b.id, "100000000000000000000000000000001", "100000000000000000000000000000001");
+    fixture(store, c.id, "9007199254740992", "9007199254740992");
     assert.deepEqual(
       store.leaderboard().map((x) => x.id),
       [b.id, a.id, c.id],
@@ -236,9 +351,8 @@ test("HTTP: independent sessions, concurrent duplicates, stale tab, lost respons
     assert.equal(recovered.state.gold, "140");
     assert.equal(recovered.state.revision, "2");
     const board = await (await fetch(url + "/api/leaderboard")).json();
-    assert.equal(board.length, 2);
-    assert.equal(board[0].id, a.id);
-    assert.equal(board[0].bestGold, "150");
+    assert.deepEqual(board, []);
+    assert.equal(recovered.state.rollsUsed, 2);
     assert.equal((await post("", request("0", { kind: "shake" }))).status, 401);
     assert.equal(
       (
@@ -266,10 +380,23 @@ test("HTTP: independent sessions, concurrent duplicates, stale tab, lost respons
     const retried = await (await post(cookie, roll)).json();
     assert.deepEqual(retried, results[0]);
     assert.equal(store.get(a.id).gold, "140");
-    fixture(store, b.id, "100000000000000000000000000000001");
+    fixture(store, b.id, "100000000000000000000000000000001", "100000000000000000000000000000001");
     const largeBoard = await (await fetch(url + "/api/leaderboard")).json();
     assert.equal(largeBoard[0].id, b.id);
     assert.equal(largeBoard[0].bestGold, "100000000000000000000000000000001");
+    store.db.prepare("UPDATE players SET rolls_used = 99 WHERE id = ?").run(a.id);
+    const completions = [0, 1].map(() => request("2", {
+      kind: "roll", wagers: { red: "1", black: "1" },
+    }));
+    const racing = await Promise.all(completions.map(action => post(cookie, action)));
+    assert.deepEqual(racing.map(response => response.status).sort(), [200, 409]);
+    const winner = racing.findIndex(response => response.status === 200);
+    const finished = await racing[winner].json();
+    assert.equal(finished.state.rollsUsed, 100);
+    assert.equal(finished.state.bestGold, "140");
+    assert.deepEqual(await (await post(cookie, completions[winner])).json(), finished);
+    assert.equal(store.get(a.id).rollsUsed, 100);
+    assert.equal(store.leaderboard().find(player => player.id === a.id)!.bestGold, "140");
   } finally {
     await stop();
     store.close();
@@ -327,6 +454,7 @@ test("Jackpot's automatic reset consumes the bankroll change and locks the new b
     const win = store.act(state.id, request("0", { kind: "roll", wagers: { n1: "1" } }));
     assert.equal(win.state.canShake, true);
     draw = 0.999;
+    store.db.prepare("UPDATE players SET probabilities = ? WHERE id = ?").run(JSON.stringify([0.4, 0.2, 0.15, 0.12, 0.1, 0.03]), state.id);
     const jackpot = store.act(state.id, request("1", { kind: "roll", wagers: { n6: "10" } }));
     assert.equal(jackpot.result!.jackpot, true);
     assert.equal(jackpot.state.gold, "335");
@@ -337,26 +465,28 @@ test("Jackpot's automatic reset consumes the bankroll change and locks the new b
   }
 });
 
-test("legacy databases and receipts migrate without resetting Gold, odds or records", () => {
+test("the competition migration clears old saves and receipts exactly once", () => {
   const dir = mkdtempSync(join(tmpdir(), "sixfold-migration-"));
   const path = join(dir, "game.sqlite");
   let store = new Store(path, () => 0.1);
   try {
     const { state, token } = store.create();
     fixture(store, state.id, "101", "900");
-    const name = request("0", { kind: "nickname", nickname: "Existing player" });
-    const previous = store.act(state.id, name);
-    const old = JSON.parse(JSON.stringify(previous));
-    delete old.state.canShake;
-    delete old.state.tiltLevel;
-    store.db.prepare("UPDATE receipts SET response = ? WHERE player_id = ?")
-      .run(JSON.stringify(old), state.id);
-    store.db.exec("ALTER TABLE players DROP COLUMN can_shake");
+    store.act(state.id, request("0", { kind: "nickname", nickname: "Old record" }));
+    store.db.exec("ALTER TABLE players DROP COLUMN can_shake; ALTER TABLE players DROP COLUMN rolls_used; ALTER TABLE players DROP COLUMN has_completed_run; PRAGMA user_version = 0");
     store.close();
     store = new Store(path);
-    assert.deepEqual(store.session(token), previous.state);
-    assert.deepEqual(store.act(state.id, name), previous);
-    assert.throws(() => store.act(state.id, request("1", { kind: "shake" })), /changes your bankroll/);
+    assert.equal(store.session(token), null);
+    assert.deepEqual(store.leaderboard(), []);
+    assert.equal(store.db.prepare("SELECT count(*) AS n FROM receipts").get()!.n, 0);
+    const fresh = store.create();
+    assert.equal(fresh.state.gold, "100");
+    assert.equal(fresh.state.bestGold, "0");
+    assert.equal(fresh.state.rollsUsed, 0);
+    assert.equal(fresh.state.hasCompletedRun, false);
+    store.close();
+    store = new Store(path);
+    assert.deepEqual(store.session(fresh.token), fresh.state);
   } finally {
     store.close();
     rmSync(dir, { recursive: true, force: true });

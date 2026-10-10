@@ -2,20 +2,24 @@
 export const CONFIG = {
   title: "Sixfold",
   startingGold: "100",
+  rollsPerRun: 100,
+  jackpotMaxProbability: 1 / 24,
   minimumWager: "1",
   selectedWager: "10",
   probabilityFloor: 0.02,
-  // Indexed by the board's Tilt before the roll, from level 1 through 5.
+  // Indexed by the board's Tilt before the roll, from level 1 through 6.
   // Tuned with scripts/tune-tilt.ts; see docs/PROBABILITY_MODEL.md.
   transferRates: [
-    { min: 0.06, max: 0.12 },
-    { min: 0.09, max: 0.18 },
-    { min: 0.12, max: 0.24 },
-    { min: 0.15, max: 0.30 },
-    { min: 0.18, max: 0.36 },
+    { min: 0.04, max: 0.08 },
+    { min: 0.042, max: 0.084 },
+    { min: 0.044, max: 0.088 },
+    { min: 0.046, max: 0.092 },
+    { min: 0.048, max: 0.096 },
+    { min: 0.05, max: 0.10 },
   ],
   // Effective-outcome cutoffs, from nearly even to strongly concentrated.
-  tiltThresholds: [5.4, 4.8, 4.2, 3.6],
+  // Split the old middle band; the former levels 4 and 5 become 5 and 6.
+  tiltThresholds: [5.4, 4.8, 4.5, 4.2, 3.6],
   multipliers: { number: 6, row: 2, column: 3, color: 2, jackpot: 24 },
   animationMs: 1100,
   replacementMs: 800,

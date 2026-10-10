@@ -1,5 +1,82 @@
 # Verification report
 
+## Six Tilt levels and longer upper-band windows — October 10, 2026
+
+Tilt now has six levels. The former middle band is split at 4.5 effective outcomes; old Tilt 4 becomes 5 and old Tilt 5 becomes 6. Transfer ranges are 4–8%, 4.2–8.4%, 4.4–8.8%, 4.6–9.2%, 4.8–9.6%, and 5–10%. The mean increases only from 6% to 7.5%, giving concentrated boards more time while keeping every ordinary paying update active. The guide, labels, arithmetic examples, README, specification, and probability model match.
+
+On the table now contains only its label and wager total. Edit bets, Clear, their editor, and the Jackpot availability line are removed. Clicking or tapping a placed chip takes back its target’s entire wager. Right-click or Delete/Backspace on a focused target also removes it. Target backgrounds and Enter/Space still add wagers. Exact large wagers remain available in target tooltips and accessible names.
+
+Verified:
+
+- `npm test`: **50 passed**, including six-level classification, label/normalization invariance, exact transfer arithmetic, upper-band pacing through actual settlement, probability conservation, persistence, restart, and final-roll scoring.
+- `npm run build`: TypeScript and production build passed. `git diff --check` passed.
+- Chromium browser suite: **12 passed**. Added all-six-level rendering and accessible-label checks, removal through actual touch hit testing, chip clicks, right-clicks, Delete, and Backspace. Existing restart confirmation/animation, pending actions, keyboard shortcuts, guide, and 100-roll submission checks pass.
+- Layouts at 1280, 768, 390, and 320 px have no horizontal overflow. Visually inspected current 1280 and 320 px screenshots. Tests use in-memory databases; touch was browser emulation, not a physical phone.
+- `npm run test:balance`: **10,000 seeded starts per profile/policy**. Current Tilt 5 lasts a median **three strongest-face rolls or four group rolls**; Tilt 6 lasts **two or four**, respectively. Full coverage gives two-roll medians for both. A chance includes the roll that first changes the starting Tilt; these are medians, not guaranteed minimums. Near-boundary boards can still move after one paying roll.
+- `npm run audit:strategies`: **5,000 seeded 100-roll runs per policy**. Mean final Gold is **102.08** for random-number bets, **80.29** for the old hedge-to-12% strategy, and **144.10** for known-best-return selection. The former hedge strategy produced zero Jackpots. These fixed-small-wager diagnostics do not establish optimal play or human balance.
+
+Restarted the normal development server on port 5173 and confirmed HTTP 200. Read-only database counts before and after the restart matched: schema version 1, three players, and 223 receipts. No save or leaderboard reset was performed.
+
+Previews: [Six Tilt levels, desktop](screenshots/six-tilts-desktop.png) · [Six Tilt levels, mobile](screenshots/six-tilts-mobile.png).
+
+Earlier sections below document previous layouts and transfer profiles.
+
+## Restart from Settings — October 10, 2026
+
+Added a red **Restart run** button at the bottom of Settings. Its confirmation explains that current progress and bets are discarded and a fresh run starts with 100 G and 100 rolls, while the completed leaderboard score remains. Cancel has initial focus. Cancel or Escape returns to Settings with the same saved state and draft. Confirm closes the dialogs and uses the existing restart animation. The server now accepts restart during an unfinished run and never posts that abandoned balance; action revision and duplicate-request protections still apply.
+
+Verified:
+
+- `npm test`: **49 passed**, including active-run resets, unchanged completed scores, no premature leaderboard submission, fresh odds, and duplicate/stale restart requests.
+- `npm run build`: TypeScript and production build passed.
+- Browser suite: **10 passed**. New coverage verifies Cancel/Escape, focus restoration, ignored R/S shortcuts, retained draft, confirmed restart animation, locked controls, and the saved fresh run after reload. Restart is also disabled during a pending Roll.
+- Visually checked Settings at 1280 and 320 px and the confirmation at 320 px. No horizontal overflow. Browser tests use an isolated in-memory database.
+
+Previews: [Settings](screenshots/settings-restart-mobile.png) · [Restart confirmation](screenshots/restart-confirm-mobile.png).
+
+## Compact scoreboard, remaining rolls, restart, and slower Tilt — October 10, 2026
+
+The left rail now contains exactly three cards: Bankroll, a highlighted Rolls remaining count, and On the table with Edit bets/Clear controls. Removed the Best completed run card, Available readout, and duplicate used-roll counter. The leaderboard shows its title and ranked names/scores, with the current player's row highlighted. Removed its explanatory copy, personal-record footer, and next-rank progress. The server still records final Bankroll on roll 100 and keeps each player's best completed score.
+
+New run now slides out the old die and brings in a fresh one, counts the Bankroll back to 100 G, and fades/slides the three cards into place over approximately 800 ms. All actions stay locked during the transition. Reduced motion skips the movement. This presents the already-committed restart without adding another roll or changing the saved result.
+
+Scaled every probability-transfer rate bound by **0.8**. Tilt levels 1–5 now use **4.8–9.6%, 7.2–14.4%, 9.6–19.2%, 12–24%, and 14.4–28.8%** of the paying face's probability above the floor. The Tilt thresholds are unchanged; a board near a boundary can still change level after one paying roll. The guide derives its ranges/example from configuration; the README, specification, and probability model match.
+
+Verified:
+
+- `npm test`: **48 passed**, including updated exact transfer arithmetic, probability conservation, pacing regression, settlement, persistence, final-roll scoring, and API/startup checks.
+- `npm run build`: TypeScript and the production build passed. `git diff --check` passed.
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' npm run test:ui`: **nine passed**. Added three-card/compact-leaderboard checks and a real bankruptcy restart with active die/card animations, disabled controls, ignored R/S shortcuts, cleaned-up animation elements, and saved 100 G / zero rolls used. The existing 100-roll completion test still verifies a 280 G final score after an earlier 330 G peak and reduced-motion restart.
+- Browser layouts at **1280, 768, 390, and 320 px** showed exactly three cards, a count at least 40 px tall, and no horizontal page overflow. Desktop/mobile layouts and the in-progress restart screenshot were visually inspected. Browser tests used an isolated in-memory database.
+- `npm run test:balance`: all six candidate profiles and the configured profile completed, with 10,000 seeded boards per policy. Under rotating group bets, the median first Tilt 1 moved from **16 to 20 rolls**; the starting strongest-face opportunity window moved from **13 to 18 rolls**. Tilt 1 arrival within 20 rolls fell from **69.0% to 53.2%**. These are policy-specific measurements, not minimum stays at any Tilt level.
+- `npm run audit:strategies`: 5,000 seeded 100-roll runs per policy completed. Mean final Gold was **101.53** for blind random-number bets, **73.93** for the former hedge-to-12% strategy, and **134.69** for selection using exact expected returns. The former hedge strategy produced zero Jackpots. Wagers were fixed at 1 G; this does not prove optimal play or human balance.
+
+Restarted the normal development server on port 5173 to load the new server-side rates. The game and leaderboard endpoints responded successfully. No new save-data reset was performed; schema version 1, three player records, and 98 action receipts were preserved.
+
+Previews: [Three cards, desktop](screenshots/three-cards-desktop.png) · [Three cards, mobile](screenshots/three-cards-mobile.png) · [Restart transition](screenshots/restart-transition.png).
+
+Physical phones, Safari, Firefox, assistive-technology speech, and timed human play were not tested. Earlier entries below describe previous layouts and rates.
+
+## 100-roll competition and rare Jackpot — October 10, 2026
+
+Implemented 100 G starts, a durable 100-roll limit, ordinary ×6 singles, and ×24 Jackpot only for a sole wager on the least likely face when its normalized pre-roll chance is at most 1/24. Every settlement consumes one roll, including break-even wagers. Shake does not consume or replenish rolls. Only final Gold on roll 100 enters the leaderboard; each player retains their best completed run. Early bankruptcy submits nothing. A final zero score is valid. Completed or bankrupt runs disable wagering and Shake, and New run restores 100 G and zero rolls used.
+
+The UI displays the roll count, Jackpot availability without the target, the best completed score, and the final result. The guide, README, specification, probability model, and offline strategy audit now describe these rules. The developer odds setting remains available.
+
+Verified:
+
+- `npm test`: **48 passed**, including inclusive Jackpot threshold and pre-roll normalization; ordinary ×6 above the threshold; all 100 settlements with no early score; final balance rather than peak; persistent roll 99; restart and old-receipt replay; concurrent requests competing for roll 100; and early versus final-roll bankruptcy. The persistence suite also passed after adding an explicit Jackpot-on-roll-100 check: its automatic reset keeps the completed count and posts the score once.
+- `npm run build`: TypeScript and the production build passed. `git diff --check` passed.
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' npm run test:ui`: **seven passed**. The complete run case grows to 330 G, remains unranked through 99 rolls, posts a 280 G final score, rejects further R/S input, survives reload, and restarts at 100 G / zero rolls while retaining the 280 G record. Existing shortcut, pending-action, Settings, and guide checks passed.
+- Completed-run layouts at 1280, 390, and 320 px had no horizontal page overflow. Desktop and mobile completion screenshots and the mobile new-run screenshot were visually inspected. No page errors were reported. Tests used reduced motion and isolated in-memory/temporary databases.
+- `npm run audit:strategies`: 5,000 seeded 100-roll runs per policy completed. Mean final Gold was **101.17** for blind random-number bets, **68.97** for the old hedge-to-12% strategy, and **130.82** for selection using exact expected returns. The former hedge strategy produced zero Jackpots under the new threshold. All attack wagers were 1 G, with no manual Shake or restart; this is a diagnostic comparison, not a proof of optimal play or human balance.
+
+Applied the requested reset to the normal `data/one-of-six.sqlite` after isolated verification. It contained **seven players and 271 receipts** at schema version 0; migration to version 1 left **zero players, zero receipts, and an empty leaderboard**. The migration test verifies that subsequent opens retain new saves instead of resetting again. Browser preference settings and archived backups are outside this active-save reset.
+
+Previews: [Completed run, desktop](screenshots/100-rolls-desktop.png) · [Completed run, mobile](screenshots/100-rolls-mobile.png).
+
+Physical phones, Safari, Firefox, assistive-technology speech, and timed human play sessions were not tested. Earlier entries below describe previous rules and scores.
+
 ## Additional 1.5× Tilt speed increase — October 10, 2026
 
 Increased every transfer-rate bound by 1.5× relative to the preceding tuning. Tilt levels 1–5 now use **6–12%, 9–18%, 12–24%, 15–30%, and 18–36%** of the paying face's probability above the 2% floor. This is the 3× original-baseline profile in the pacing experiment. The spec, README, probability model, exact arithmetic tests, and browser guide assertions now match. The guide reads its rates and example directly from configuration.

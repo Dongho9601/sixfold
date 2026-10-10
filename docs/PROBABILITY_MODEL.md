@@ -1,5 +1,13 @@
 # Random odds, Tilt, and Shake
 
+## Current competition rules
+
+Each run starts with 100 G and allows exactly 100 dice rolls. Losses and break-even wagers count; manual Shake changes neither the count nor its limit. The server posts final Gold only on roll 100 and ranks each player’s best completed score. Early bankruptcy ends without posting. New run is available after either ending; it preserves completed records and resets Gold, odds, and the roll counter. The transition clears old endless-game saves, sessions, scores, and receipts once through a versioned database migration.
+
+Singles retain ×6. Jackpot ×24 requires a sole wager on the least likely face **and** that face’s normalized pre-roll probability at most `1/24` (approximately 4.17%). Otherwise that number pays ×6. Availability and the target stay hidden in the normal UI. This eliminates the old near-even-board Jackpot farm. Full coverage remains legal and costs a roll, making preparation compete with opportunities to score. A Jackpot’s automatic reset never restores the roll budget.
+
+The developer odds setting remains available in this development build. Run `npm run audit:strategies` to compare three fixed-1-G policies over the current 100-roll budget: blind random numbers, the former hedge-to-12% strategy, and selection using exact expected returns. This diagnoses balance without accessing any database. In 5,000 seeded 100-roll runs per policy, mean final Gold with the current six-level tuning was 102.08 for random numbers, 80.29 for the old hedge strategy, and 144.10 for informed selection. The old hedge strategy recorded no Jackpots; reaching a 12% minimum now makes Jackpot unavailable. These tests use fixed small wagers, not human play or optimized wager sizes. They do not prove that every adaptive strategy is balanced. With ordinary ×6 retained, the blind-number policy has expected net `3 × p_min` on Jackpot-eligible boards (at most 0.125 G per 1 G wager), and zero otherwise. Positive opportunities are compatible with competition for a finite-run score.
+
 The board should vary enough to reward exploration, while retaining enough continuity for a player to learn from results. This model randomizes every fresh board and every paying update. It keeps the earlier rule that an ordinary paying outcome gives probability to the other faces. Resampling the whole board after every payout would discard the evidence the player had just collected.
 
 ## How does a fresh board get its odds?
@@ -22,13 +30,14 @@ First sample and settle exactly one outcome using the board before the roll. If 
 
 | Pre-roll Tilt | Random transfer rate | Mean rate |
 |---|---:|---:|
-| 1 | 6–12% | 9% |
-| 2 | 9–18% | 13.5% |
-| 3 | 12–24% | 18% |
-| 4 | 15–30% | 22.5% |
-| 5 | 18–36% | 27% |
+| 1 | 4–8% | 6% |
+| 2 | 4.2–8.4% | 6.3% |
+| 3 | 4.4–8.8% | 6.6% |
+| 4 | 4.6–9.2% | 6.9% |
+| 5 | 4.8–9.6% | 7.2% |
+| 6 | 5–10% | 7.5% |
 
-These rates are 1.5× the immediately preceding tuning, or 3× the original baseline. They implement the request to reach low Tilt sooner, with a shorter opportunity window before a concentrated board changes. High-Tilt boards transfer a larger fraction of the rolled face's available probability. The actual amount also depends on that face's probability, so a rare face on a high-Tilt board can give away less than a common face on a low-Tilt board. If a transfer crosses a Tilt boundary, the new range applies on the next paying roll. This preserves the meaning of the level the player saw when committing a wager.
+The gap in mean transfer speed is now 6–7.5% across six levels, compared with 7.2–21.6% across the previous five. High Tilt remains slightly faster, while the former top two bands change much more gently. The actual amount also depends on the paying face's probability, so a rare face can give away less than a common face at a lower Tilt. A new range applies on the next paying roll after a level boundary is crossed.
 
 For rolled face `i`:
 
@@ -38,17 +47,17 @@ p'[i] = p[i] - delta
 p'[j] = p[j] + delta × q[j]     for each of the other five faces
 ```
 
-Both the transfer amount and the receiving shares change randomly. The mean rate increases with Tilt, and each recipient's expected share is one fifth. Each realized update preserves the total, keeps a new-model board above its floor, and usually reduces the rolled face. A face already at the floor gives nothing away. Older saved boards may contain smaller probabilities; those faces also give nothing away until they have received enough mass. Migration does not silently replace an existing board.
+Both the transfer amount and the receiving shares change randomly. The mean rate increases with Tilt, and each recipient's expected share is one fifth. Each realized update preserves the total, keeps a new-model board above its floor, and usually reduces the rolled face. A face already at the floor gives nothing away. The transfer function also handles older probability vectors below the floor without taking mass from those faces. The competition migration clears old saves once, so newly created runs use the current floor.
 
-For example, take `[40, 20, 15, 10, 10, 5]%`, a Tilt 2 board. An ordinary payout on face 1 with rate 13.5% transfers `13.5% × (40% − 2%) = 5.13 percentage points`. If the random recipient shares happen to be `[40, 25, 15, 12, 8]%`, the next board is `[34.87, 22.052, 16.2825, 10.7695, 10.6156, 5.4104]%`. This is one possible update, not a fixed sequence.
+For example, take `[40, 20, 15, 10, 10, 5]%`, a Tilt 2 board. An ordinary payout on face 1 with rate 6.3% transfers `6.3% × (40% − 2%) = 2.394 percentage points`. If the random recipient shares happen to be `[40, 25, 15, 12, 8]%`, the next board is `[37.606, 20.9576, 15.5985, 10.3591, 10.28728, 5.19152]%`. This is one possible update, not a fixed sequence.
 
 Apply one update per paying roll, regardless of the wager amount or number of matching targets. A paying roll can still lose Gold overall or break even. This can make a board more even when a common face pays, but reducing a rare face can make it less even; equal odds are not a guaranteed destination.
 
-A successful sole wager on the least likely face still pays Jackpot ×24 and generates a fresh board instead of applying a transfer. Exact probability ties choose the lowest numerical face. A missed Jackpot attempt leaves the odds unchanged.
+A successful sole wager on the least likely face pays Jackpot ×24 and generates a fresh board only when that face’s normalized chance before the roll is at most 1/24. Otherwise it pays ×6 and applies an ordinary transfer. Exact probability ties choose the lowest numerical face. A missed Jackpot attempt leaves the odds unchanged.
 
 ## What does Tilt reveal?
 
-Tilt is a single integer from 1 to 5, displayed prominently in gold on the table. Clicking or tapping it opens the guide directly at the low/high Tilt explanation, with keyboard focus returned to the control on closing. Levels 1–2 describe a more even spread and gentle changes; levels 4–5 describe stronger concentration and faster changes; level 3 lies between them. A larger value means probability is concentrated on fewer outcomes. It cannot tell the player which face is favored: permuting the six probabilities leaves it unchanged. Many different distributions share a level, and the same level can produce very different row, column, color, and Jackpot chances. Higher Tilt therefore does not by itself mean a better wager.
+Tilt is a single integer from 1 to 6, displayed prominently in gold on the table. Clicking or tapping it opens the guide directly at the low/high Tilt explanation, with keyboard focus returned to the control on closing. Levels 1–2 describe a more even spread and gentle changes; levels 5–6 describe stronger concentration and slightly faster changes; levels 3–4 lie between them. A larger value means probability is concentrated on fewer outcomes. It cannot tell the player which face is favored: permuting the six probabilities leaves it unchanged. Many different distributions share a level, and the same level can produce very different row, column, color, and Jackpot chances. Higher Tilt therefore does not by itself mean a better wager.
 
 Compute Shannon entropy from the current unrounded probabilities, then its effective number of outcomes:
 
@@ -63,17 +72,18 @@ Entropy reaches its maximum at equal probabilities. [NIST’s Shannon index refe
 |---|---:|
 | 5.4 or more | 1 |
 | 4.8 to below 5.4 | 2 |
-| 4.2 to below 4.8 | 3 |
-| 3.6 to below 4.2 | 4 |
-| Below 3.6 | 5 |
+| 4.5 to below 4.8 | 3 |
+| 4.2 to below 4.5 | 4 |
+| 3.6 to below 4.2 | 5 |
+| Below 3.6 | 6 |
 
-These are fixed design thresholds, not percentiles recalculated from other players. A deterministic simulation of 100,000 fresh boards produced level frequencies of approximately 9.7%, 36.1%, 34.2%, 15.3%, and 4.7%. Thus ordinary starting boards mostly show levels 2–3, while stronger concentration is unusual. The most likely face averaged about 37.9% across that simulation. These results describe the generator, not proven player enjoyment or long-term game balance.
+These are fixed design thresholds, not percentiles recalculated from other players. Splitting the former middle band adds detail without changing which boards belong to the old highest two bands: old Tilt 4 is now 5, and old Tilt 5 is now 6. A deterministic simulation of 100,000 fresh boards produced frequencies of 9.8%, 36.2%, 19.5%, 14.9%, 15.0%, and 4.6%. The generator itself is unchanged.
 
 Recompute Tilt from every settled board, including after Shake and Jackpot. A transfer can change hidden odds without crossing a level boundary. The developer probability switch remains separate from Tilt and does not affect the game.
 
 ## When is Shake available?
 
-Each fresh board starts with `canShake = false`. After a roll, compare the total return with the total committed stake using exact integer arithmetic. If the net is nonzero, unlock Shake. Either direction counts, and the smallest qualifying change is 1 G.
+Each fresh board starts with `canShake = false`. A completed or bankrupt run cannot Shake. Manual Shake does not use or restore rolls. After a roll, compare the total return with the total committed stake using exact integer arithmetic. If the net is nonzero, unlock Shake. Either direction counts, and the smallest qualifying change is 1 G.
 
 The entitlement stays available until a reset. A later break-even result cannot remove it. A gain and a subsequent loss can return the bankroll to its earlier amount and still qualify: the rule asks whether a change happened, not whether the latest balance differs from a remembered baseline. Entitlements do not accumulate.
 
@@ -85,29 +95,74 @@ Roll keeps its tumbling die animation. Manual Shake and the automatic reset afte
 
 ## Which pace preserves opportunity and tension?
 
-On October 10, the transfer ranges were compared at 1×, 1.5×, 2×, 3×, and 4× the original baseline rates. The current **3× baseline profile** is in `src/config.ts`, a further 1.5× increase over the preceding 2× tuning. This follows the request for faster progression after reviewing the earlier 40-roll results. Neither the Tilt thresholds nor the fresh-board distribution changed; Tilt 1 remains the same measure of concentration.
+The six-level tuning targets roughly three to four chances at the former Tilt 4 (now 5) and at least two at the former Tilt 5 (now 6). These are pacing targets, not a guaranteed lock on the odds. A chance means a roll through the first change from the starting Tilt, including the roll that changes it. A board close to a boundary can still move after one paying roll.
 
-Run `npm run test:balance` to reproduce the experiment in [`scripts/tune-tilt.ts`](../scripts/tune-tilt.ts). It calls the production fresh-board, sampling, Tilt, and transfer functions. Candidate ranges are supplied only to the offline transfer call; live API clients cannot choose a range or seed. The script also runs the currently configured rates, so future tuning can be compared with the same baseline.
+`npm run test:balance` compares the previous and configured transfer curves on 10,000 identical seeded fresh starts per policy over 80 rolls without Shake. All starting levels are included; the upper-band measurements use only starts in that band. Both profiles use the new display bands; assigning the previous middle rate to both new middle levels reproduces the old transfer behavior. Every roll consumes a paired tape of seven random draws, including unused transfer draws on a miss. The policies are:
 
-Each profile uses the same 10,000 seeded fresh boards that start at Tilt 2–5, followed for 80 rolls without Shake. Starting boards already at Tilt 1 are excluded so they do not inflate success rates. Every roll consumes a paired tape of seven random draws, even when a miss does not use its transfer draws, keeping the comparison repeatable. There are two policies:
+- **Group exploration:** cycle all seven groups every three rolls. This uses no hidden odds.
+- **Full coverage:** bet every face so every roll pays and transfers. This stresses repeated board updates.
+- **Initially strongest face:** keep betting the face with the highest initial chance. This deliberately uses hidden information to test whether a discovered advantage vanishes too quickly.
 
-- **Group exploration:** wager 1 G on one group, cycling Top, Bottom, Left, Middle, Right, Red, and Black every three rolls. This uses no hidden probability information, gives every face opportunities to pay, and can afford all 80 rolls from 100 G even if every bet loses.
-- **Full coverage:** wager 1 G on each face. Every roll returns 6 G and triggers a transfer. This measures pacing when every outcome pays, with no bankroll risk and no Jackpot. It does not unlock Shake.
+| Policy | Tilt 5 chances, previous → current median | Tilt 6 chances, previous → current median | Current Tilt 5 / 6 changing after one roll |
+|---|---:|---:|---:|
+| Group exploration | 3 → 4 | 3 → 4 | 14.6% / 18.4% |
+| Full coverage | 1 → 2 | 1 → 2 | 29.9% / 40.3% |
+| Initially strongest face | 2 → 3 | 1 → 2 | 25.3% / 36.8% |
 
-For an opportunity measure, track the initially strongest face until its chance first falls below 30%, restricting that measurement to starts at or above 30%. A 30% face still offers a substantial ordinary number opportunity relative to the ×6 break-even chance of 1/6. The player cannot see this statistic; it is a diagnostic measure of how long a strong starting chance persists, not proof that a player will discover or profit from it. It also does not measure group or Jackpot opportunities.
+The new Tilt 4, a subdivision of the former middle band, lasts a median four group rolls, two full-coverage rolls, or three strongest-face rolls. The top-level medians meet the intended pacing under group exploration and strongest-face play. Full coverage remains a faster path through the bands because every result transfers probability. No policy has a guaranteed minimum stay.
 
-| Profile vs. original baseline | Group rolls to first Tilt change, median | Group rolls to first Tilt 1, median | Reach Tilt 1 within 20 group rolls | Starting opportunity window, median group rolls | Full-coverage rolls to first Tilt 1, median |
-|---|---:|---:|---:|---:|---:|
-| Original, 1× | 13 | 47 | 12.5% | 46 | 21 |
-| 1.5× | 8 | 31 | 23.8% | 29 | 14 |
-| Preceding tuning, 2× | 6 | 23 | 40.5% | 21 | 11 |
-| **Current, 3×** | **5** | **16** | **69.0%** | **13** | **7** |
-| 4× | 4 | 12 | 83.8% | 8 | 5 |
+Among starts above Tilt 1, the median group-play arrival at Tilt 1 moves from 20 to 37 rolls; full coverage moves from nine to 16. The initially strongest face stays at or above 30% for a median 35 group rolls, compared with 18 previously, among starts meeting that threshold. Under strongest-face play this window moves from seven to 13 rolls. The 30% measure is an internal opportunity proxy, not information shown to the player.
 
-The current profile prioritizes shorter sessions: the median first Tilt 1 falls from 23 to 16 group rolls, and the proportion reaching it within 20 rolls rises from 40.5% to 69.0%. The initially strongest face's median opportunity falls from 21 to 13 rolls. That tradeoff leaves less time to gather evidence about hidden odds, but makes the board react within fewer bets. A 4× baseline profile would shorten the opportunity further to eight rolls. Rate multipliers do not translate exactly into arrival-time multipliers because outcomes, misses, redistribution, and Tilt boundaries also determine the path.
+These results establish repeatable pacing differences; they do not model human recognition, stake choice, bankruptcy, Jackpot hunting, or strategic Shake timing. The rule suite checks actual settlement on the same upper-band scenarios, plus probability conservation, per-level transfer ranges, and longer group exploration. Existing saves retain their committed probabilities and scores; their Tilt is recomputed on read and new payouts use the current rates. No migration or save reset is needed. The guide derives its ranges and arithmetic example from configuration.
 
-Faster transfer also makes low Tilt more persistent under these policies. For the selected profile, 89.0% of group-play observations on rolls 21–40 are at Tilt 1, compared with 69.8% under the preceding tuning. Full coverage spends 99.9% of that interval at Tilt 1. This model therefore offers tension through a changing initial opportunity and the choice to Shake for another board; it does not create endless spontaneous swings back to high Tilt. A player who always bets the same group may evolve the board differently, because uncovered outcomes never transfer.
+## Can a player reliably farm Gold?
 
-These results establish repeatable pacing differences, not a scientifically proven “most fun” setting. The two policies do not model human learning, larger-stake bankruptcy, Jackpot hunting, or strategic Shake timing. Human playtesting should check whether the 13-roll opportunity proxy leaves enough time to recognize a pattern and whether low-Tilt play still feels engaging. The regular rule suite includes a smaller 1,000-board settlement simulation that guards the current pace: most boards reach Tilt 1 within 20 group rolls, with a median opportunity window of 10–16 rolls.
+**Historical analysis of the rules before 100-roll competition.** The findings, simulation results, and proposals below describe the earlier endless game with an unconditional least-likely-face Jackpot. They motivated the implemented rules above; ×5 payouts and attempt limits were not adopted. The audit script now tests the current rules, so its output supersedes the old 1,000-roll comparison below. It uses production settlement and never opens a database.
 
-The floor, per-level rate ranges, and Tilt thresholds live in `src/config.ts` and can be adjusted independently after playtesting. Existing saves and action receipts retain their committed odds and results; the selected rates apply at the next new ordinary paying roll. How to Play derives its displayed ranges and numerical example from the same configuration.
+### Why is the Jackpot too favorable on an even board?
+
+For a sole 1 G wager on the least likely face, let `p_min` be that face's actual normalized probability. The expected net is `24 × p_min − 1` G. The wager becomes favorable above `1/24`, or about 4.17%. Being the least likely face does not imply a chance that small: on an even board it is about 16.67%, where the expected net is +3 G per 1 G wager. At 12%, the expected net is +1.88 G.
+
+There is a second problem even without knowing the odds or Jackpot target. Choose a number uniformly at random, independently on each roll. Without Jackpot, the expected return is `6 × sum(p[i]) / 6 = 1` G. The Jackpot adds 18 G of return when the randomly chosen number is the marked face and it rolls, an event with probability `p_min / 6`. Thus:
+
+```text
+Expected net per 1 G random-number wager = 3 × p_min
+```
+
+On boards obeying the current 2% floor, this is at least +0.06 G and can reach +0.50 G. Legacy boards below the floor need not meet the 6% lower bound. Every positive-probability board still gives this policy a positive conditional expectation. Positive expectation does not prevent losing streaks or bankruptcy.
+
+### How does free preparation amplify it?
+
+Wager 1 G on Red and 1 G on Black. Exactly one pays 2 G on every outcome, so Gold never changes. Nevertheless, `settle` triggers an ordinary probability transfer on every roll because a target paid. Repeating this lets the player move the board toward even odds without spending Gold. The existing Shake lock does not stop this: these rolls use Roll, not Shake. Equal wagers on both rows, all three columns, or all six numbers provide other versions of the same mechanism.
+
+The current API exposes `probabilities` and `jackpotNumber` in player state. Settlement and stored last-roll records also expose the before/after probabilities and marker. Settings offers a developer probability display. A player can therefore wait until every face has at least a 12% chance, identify the minimum, and place sole 1 G wagers on it. A miss leaves the board unchanged, so that favorable chance and target persist until a Jackpot hit. The hit pays 24 G and resets the board; the player can then prepare the next board for free.
+
+The audit simulated 5,000 runs per policy, starting at 100 G and stopping at bankruptcy, at least 200 G, or 1,000 rolls. Preparation rolls count toward the limit. Neither policy uses Shake or restart, and every attack wager is 1 G. Both policies start with the same seeded fresh boards; their later random streams diverge. The Jackpot policy falls back to a sole Jackpot wager if only 1 G remains, because it cannot afford the two-target hedge.
+
+| Policy | Reached 200 G | Bankrupt | Still below target at 1,000 rolls | Median rolls among successes |
+|---|---:|---:|---:|---:|
+| Random number, no odds information | 4,783 / 5,000 (95.66%) | 17 (0.34%) | 200 (4.00%) | 356 |
+| Free preparation to 12% minimum, then known Jackpot | 5,000 / 5,000 (100%) | 0 | 0 | 243 |
+
+The second policy needed a median 28 hedge rolls per completed preparation and had a mean Jackpot chance of 12.25% across attack rolls. These are deterministic simulation observations, not a proof of optimality, a prediction of human play, or a guarantee. A long enough sequence of missed Jackpot bets still exhausts a finite bankroll. The audit also verifies the hedge's zero net and probability change separately for each of the six possible outcomes.
+
+### Is any win literally guaranteed?
+
+No ordinary wager portfolio guarantees a positive one-roll profit. Each target's multiplier times its number of covered outcomes equals six. Consequently, summing an ordinary portfolio's net returns over all six outcomes gives zero. A portfolio that never loses must therefore break even on every outcome. Jackpot requires a sole number wager, which loses on the other five outcomes. Overlapping bets do not evade this argument.
+
+There is a separate long-run leaderboard problem. Bankruptcy restores 100 G for free and retains the historical best. For any fixed finite score target, some finite sequence of all-in ordinary number wins reaches it. Each required face has at least a 2% chance on current-model boards. Unlimited fresh attempts therefore make eventually reaching that target a probability-one event in the idealized unlimited-time model. This does not give a finite completion deadline or guarantee first place against other players. It does mean lifetime best with unlimited free retries rewards repeated attempts even if expected returns are reduced.
+
+Doubling a losing bet is not a risk-free solution either. Starting with 100 G, stakes of 1, 2, 4, 8, 16, and 32 G consume 63 G after six losses, leaving too little for the next 64 G wager. Misses preserving the board do not prevent that loss sequence.
+
+### Which changes address the actual mechanism?
+
+The intended game rewards discovering temporary favorable bets. Eliminating every favorable wager would change that premise. A practical redesign should instead charge for information and preparation, remove the unconditional Jackpot subsidy, and make leaderboard opportunities comparable.
+
+1. **Keep hidden state on the server.** Return only player-visible state and Tilt. Remove probabilities and the marked number from state, action results, last-roll data, replayed receipts, and error responses. Gate the developer display to an isolated unranked mode. Hiding labels or removing the setting alone is insufficient, and server-only odds do not by themselves cure the blind positive-expectation strategy.
+2. **Give scored runs a fixed roll budget.** For example, start with 100 G and allow 100 rolls, counting hedges and charging a turn for Shake. This proposed length needs playtesting. Full coverage then costs an opportunity to score. Reject portfolios that return the exact stake on all six outcomes as an additional direct block on free hedging; check the complete portfolio, since banning Red plus Black alone leaves equivalent combinations. Rejecting exact hedges alone still permits nearly hedged, low-cost information gathering. Simply disabling transfers on break-even results also leaves free sampling of a stationary board.
+3. **Reprice Jackpot and its ordinary baseline together.** Restricting ×24 to `p_min ≤ 1/24` removes the especially profitable near-even Jackpot, but keeping ordinary ×6 still leaves the random-number bonus positive whenever Jackpot is available. One concrete candidate is ordinary numbers ×5, with ×24 only when the least likely face has `p_min ≤ 1/24`; otherwise that face also pays ×5. The blind random-number policy then returns at most `(5 + 19/24) / 6 = 139/144`, or about 96.53% of stake, on eligible boards, and 83.33% otherwise. This closes the unconditional number-bet subsidy while allowing a discovered ordinary face above 20% to be favorable. It does not prove that no adaptive strategy can profit, and group wagers require their own balance checks. A limited Jackpot token per scored run is another way to bound repeated harvesting, though it does not remove the subsidy on a qualifying roll.
+4. **Bound ranked attempts as well as turns.** Separate unlimited practice from a limited number of scored runs over a defined period, and rank those results. A finite run alone does not solve unlimited attempts retaining the best. Anonymous cookie identities cannot enforce a meaningful per-person limit, so a competitive implementation needs an identity model or must accept this limitation.
+
+If the goal is instead to make every informed wager nonprofitable in expectation, its total-return multiplier `m` must satisfy `p(target) × m ≤ 1`, including any bonus. A house margin makes that inequality strict. Unequal probabilities with ×6 on every ordinary face cannot satisfy this: some face must exceed 1/6 unless all six are equal. Dynamic probability-based payouts would meet a different design goal, but would also disclose information about the hidden odds and substantially change Sixfold's learning loop.
+
+The audit passed, the existing 45 automated tests passed, and the TypeScript/production build passed. No gameplay or UI changes were made in this audit, and no live player records were accessed.
