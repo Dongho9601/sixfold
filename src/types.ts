@@ -17,7 +17,11 @@ export interface PlayerState {
   gold: string;
   bestGold: string;
   previousBestGold: string | null;
+  /** Whether a leaderboard-eligible run has ever been completed. */
   hasCompletedRun: boolean;
+  showProbabilities: boolean;
+  /** Once probabilities are shown, this run stays ineligible until restart. */
+  leaderboardEligible: boolean;
   rollsUsed: number;
   probabilities: number[];
   tiltLevel: number;
@@ -30,6 +34,7 @@ export type Action =
   | { kind: "roll"; wagers: Wagers }
   | { kind: "shake" }
   | { kind: "restart"; nickname?: string }
+  | { kind: "probabilities"; enabled: boolean }
   | { kind: "nickname"; nickname: string };
 export interface ActionRequest {
   requestId: string;

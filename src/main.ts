@@ -70,7 +70,6 @@ let actionRetryAt = 0;
 let retryTimer: ReturnType<typeof setTimeout> | undefined;
 let hoverTarget: string | null = null;
 let sound = preferences.get("one-of-six-sound") !== "off";
-let showProbabilities = preferences.get("sixfold-show-probabilities") === "on";
 type ChipPose = { x: number; y: number; rotation: number; tone: number };
 const chipPoses = new Map<string, ChipPose[]>();
 let audioContext: AudioContext | undefined;
@@ -91,7 +90,7 @@ try {
   pending = saved?.request ?? saved;
   pendingPlayerId = saved?.playerId;
   if (Number.isFinite(saved?.retryAt)) actionRetryAt = Math.min(saved.retryAt, Date.now() + 120000);
-  if (pending && (typeof pending.requestId !== "string" || typeof pending.revision !== "string" || !pending.action || !["roll", "shake", "restart", "nickname"].includes(pending.action.kind)))
+  if (pending && (typeof pending.requestId !== "string" || typeof pending.revision !== "string" || !pending.action || !["roll", "shake", "restart", "nickname", "probabilities"].includes(pending.action.kind)))
     throw new Error("Invalid saved action.");
 } catch {
   pending = null;
@@ -147,13 +146,19 @@ app.innerHTML = `
     <form id="nickname-form"><label for="nickname">Your leaderboard name</label><div class="nickname-row"><input id="nickname" maxlength="48" required autocomplete="nickname"/><button type="submit" id="save-nickname">Save</button></div><p id="nickname-status" role="status"></p></form>
     <label class="sound-control"><span>Sound effects</span><input id="sound" type="checkbox" role="switch" ${sound ? "checked" : ""}/></label>
     <label class="sound-control"><span>Reduce motion</span><input id="motion" type="checkbox" role="switch" ${prefersReducedMotion() ? "checked" : ""}/></label>
-    <label class="sound-control"><span>Show probabilities (developer)</span><input id="show-probabilities" type="checkbox" role="switch" ${showProbabilities ? "checked" : ""}/></label>
+    <label class="sound-control"><span>Show probabilities</span><input id="show-probabilities" type="checkbox" role="switch" aria-describedby="probabilities-status" disabled/></label>
+    <p id="probabilities-status" class="settings-note"></p>
     <div class="settings-restart"><button id="settings-restart" class="danger-button" aria-haspopup="dialog" aria-controls="restart-dialog" disabled>Restart run</button></div>
   </dialog>
   <dialog id="restart-dialog" class="restart-dialog" aria-labelledby="restart-title" aria-describedby="restart-description">
     <div class="dialog-top"><h2 id="restart-title">Restart this run?</h2></div>
     <p id="restart-description" class="dialog-intro">Your current progress and bets will be discarded. Start fresh with ${formatGold(CONFIG.startingGold)} G and ${CONFIG.rollsPerRun} rolls. Your completed leaderboard score stays.</p>
     <div class="confirm-actions"><button id="restart-cancel" class="cancel-button" data-close="restart-dialog" autofocus>Cancel</button><button id="restart-confirm" class="danger-button" disabled>Restart run</button></div>
+  </dialog>
+  <dialog id="probabilities-dialog" class="probabilities-dialog" aria-labelledby="probabilities-title" aria-describedby="probabilities-description">
+    <div class="dialog-top"><h2 id="probabilities-title">Show probabilities?</h2></div>
+    <p id="probabilities-description" class="dialog-intro">This reveals the odds for every bet. This run’s score will not enter the leaderboard, even if you turn probabilities off later. Your existing leaderboard record stays. Each new run starts with probabilities off.</p>
+    <div class="confirm-actions"><button id="probabilities-cancel" class="cancel-button" data-close="probabilities-dialog" autofocus>Cancel</button><button id="probabilities-confirm" class="danger-button" disabled>Show probabilities</button></div>
   </dialog>
   <dialog id="run-dialog" class="run-dialog" aria-labelledby="run-title" aria-describedby="run-comparison">
     <span id="run-eyebrow" class="eyebrow">100 rolls complete</span>
@@ -616,6 +621,8 @@ function renderRunDialog() {
   $("run-best").textContent = `${formatGold(state.bestGold)} G`;
   $("run-comparison").textContent = !completed
     ? "This run ended before 100 rolls. No score was posted."
+    : state.leaderboardEligible === false
+    ? "Probabilities were enabled in this run. This score is excluded from the leaderboard. Your existing record stays."
     : previous === null
     ? "Your first completed run. Personal best set!"
     : BigInt(state.gold) > BigInt(previous ?? state.bestGold)
@@ -633,16 +640,21 @@ function renderRunDialog() {
 }
 function render() {
   if (!state) return;
+  const showProbabilities = state.showProbabilities === true;
   showGold(state.gold);
   $("rolls-remaining").textContent = String(CONFIG.rollsPerRun - state.rollsUsed);
-  $("run-status").hidden = !runEnded();
-  $("run-status").textContent = state.rollsUsed === CONFIG.rollsPerRun
+  $("run-status").hidden = !runEnded() && state.leaderboardEligible !== false;
+  $("run-status").textContent = state.leaderboardEligible === false
+    ? runEnded()
+      ? "Probabilities were enabled. No leaderboard score was posted."
+      : "Probabilities were enabled. This run’s score will not enter the leaderboard."
+    : state.rollsUsed === CONFIG.rollsPerRun
     ? `Final score: ${formatGold(state.gold)} G.`
     : "Out of Gold. This run ended before 100 rolls; no score was posted.";
   if (runEnded() && !busy) {
     $("table-status").textContent = "Run complete";
     $("result-display").className = "result-display";
-    $("result-display").innerHTML = `<span class="result-label">${state.rollsUsed === CONFIG.rollsPerRun ? "FINAL SCORE" : "OUT OF GOLD"}</span><strong class="result-value">${compactGold(state.gold)} G</strong><span class="result-detail">${state.rollsUsed === CONFIG.rollsPerRun ? "100 rolls complete" : "No score posted"}</span>`;
+    $("result-display").innerHTML = `<span class="result-label">${state.rollsUsed === CONFIG.rollsPerRun ? "FINAL SCORE" : "OUT OF GOLD"}</span><strong class="result-value">${compactGold(state.gold)} G</strong><span class="result-detail">${state.leaderboardEligible === false ? "No leaderboard score posted" : state.rollsUsed === CONFIG.rollsPerRun ? "100 rolls complete" : "No score posted"}</span>`;
   }
   $("tilt-level").textContent = String(state.tiltLevel);
   $("tilt-info").setAttribute("aria-label", `Board Tilt, level ${state.tiltLevel} of 6. Open Tilt guide.`);
@@ -673,9 +685,7 @@ function render() {
       if (isNumber) {
         button.innerHTML = `<svg class="number" viewBox="0 0 100 100" aria-hidden="true"><text x="50" y="50" text-anchor="middle" fill="currentColor">${target.coverage[0]}</text></svg>${showProbabilities ? `<span class="probability">${percent(probability)}</span>` : ""}${placed !== "0" ? chipPile(id, placed) : ""}`;
       } else {
-        const name = target.kind === "color"
-          ? target.label
-          : target.coverage.join(" · ");
+        const name = target.label;
         button.innerHTML = `<span class="group-title"><span>${name}</span><b>×${target.multiplier}</b></span>${showProbabilities ? `<span class="group-odds">${percent(probability)}</span>` : ""}${placed !== "0" ? chipPile(id, placed) : ""}`;
       }
     });
@@ -693,6 +703,12 @@ function render() {
   $<HTMLButtonElement>("roll").disabled =
     busy || !!pending || runEnded() || totalDraft() === 0n;
   $<HTMLButtonElement>("save-nickname").disabled = busy || !!pending;
+  $<HTMLInputElement>("show-probabilities").checked = showProbabilities;
+  $<HTMLInputElement>("show-probabilities").disabled = busy || !!pending || runEnded();
+  $<HTMLButtonElement>("probabilities-confirm").disabled = busy || !!pending || runEnded();
+  $("probabilities-status").textContent = state.leaderboardEligible === false
+    ? "This run is excluded from the leaderboard. Start a new run to enter a score."
+    : "Off at the start of each run. Turning this on excludes this run’s score from the leaderboard.";
   $("roll").querySelector("span")!.textContent = busy ? actionPhase || "Saving…" : "Roll dice";
   for (const id of ["settings-restart", "restart-confirm"])
     $<HTMLButtonElement>(id).disabled = busy || !!pending;
@@ -940,7 +956,8 @@ async function perform(action?: Action) {
   const before = state;
   busy = true;
   actionPhase = request.action.kind === "roll" ? "Rolling…" : request.action.kind === "shake" ? "New die…" : request.action.kind === "restart" ? "New run…" : "Saving…";
-  if (request.action.kind !== "nickname") clearResult();
+  const changesBoard = ["roll", "shake", "restart"].includes(request.action.kind);
+  if (changesBoard) clearResult();
   if (request.action.kind === "roll" || request.action.kind === "shake") {
     $("table-status").textContent = request.action.kind === "roll" ? "No more bets" : "Fresh odds coming";
   }
@@ -999,12 +1016,16 @@ async function perform(action?: Action) {
       setAmount(CONFIG.selectedWager);
       await presentNewRun(data.state);
       announce("New run. 100 Gold and 100 rolls remaining.");
-    } else {
+    } else if (request.action.kind === "nickname") {
       $("nickname-status").textContent = "Name saved.";
+    } else if (request.action.kind === "probabilities") {
+      announce(request.action.enabled
+        ? "Probabilities shown. This run’s score will not enter the leaderboard."
+        : "Probabilities hidden. This run’s score remains excluded from the leaderboard.");
     }
     state = data.state;
     if (request.action.kind === "restart") $("table-status").textContent = "Place your bets";
-    if (request.action.kind !== "nickname") draft = {};
+    if (changesBoard) draft = {};
     savePending(null);
     actionRetryAt = 0;
     networkError = false;
@@ -1207,9 +1228,16 @@ $("sound").addEventListener("change", () => {
   else stopSound();
 });
 $("show-probabilities").addEventListener("change", () => {
-  showProbabilities = $<HTMLInputElement>("show-probabilities").checked;
-  preferences.set("sixfold-show-probabilities", showProbabilities ? "on" : "off");
-  render();
+  const enabled = $<HTMLInputElement>("show-probabilities").checked;
+  $<HTMLInputElement>("show-probabilities").checked = state?.showProbabilities === true;
+  if (!state || busy || pending || runEnded()) return;
+  if (enabled) $<HTMLDialogElement>("probabilities-dialog").showModal();
+  else void perform({ kind: "probabilities", enabled: false });
+});
+$("probabilities-confirm").addEventListener("click", () => {
+  if (!state || busy || pending || runEnded()) return;
+  $<HTMLDialogElement>("probabilities-dialog").close();
+  void perform({ kind: "probabilities", enabled: true });
 });
 function renderGuide() {
   const copy = guides[guideLanguage];

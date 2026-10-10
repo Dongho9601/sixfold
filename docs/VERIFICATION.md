@@ -1,5 +1,21 @@
 # Verification report
 
+## Board labels and per-run probability scoring — October 10, 2026
+
+Columns now read **1st 2**, **2nd 2**, and **3rd 2**; rows read **Odds** and **Evens**. Their coverage and payout multipliers remain the established pairs at ×3 and parity groups at ×2.
+
+Show probabilities is a standard Settings switch. Every new run starts with it off. Turning it on requires confirmation before the server saves visibility and excludes the current run from leaderboard scoring. Turning it off later, Shake, Jackpot, reload, and server restart preserve that exclusion; starting a new run restores eligibility. Excluded runs cannot create a leaderboard record or improve an existing one. Probability changes preserve draft wagers and chip positions. In-game status and results explain exclusion. All seven guide languages, the specification, README, probability model, and public rules/storage description reflect the new behavior.
+
+Schema 4 adds two per-run fields with defaults while preserving competition saves, records, sessions, moderation, and historical receipts. The local administrative script now requires schema 4 for operations other than backup. Checks used temporary or in-memory data on macOS arm64 with Node v26.4.0:
+
+- **`npm test`: 72 passed**, covering defaults, persistence across SQLite reopen, hiding after enabling, preserved records despite a higher assisted final score or Jackpot, assisted final-roll zero, eligibility after restart, stale revisions and receipt replay, invalid visibility inputs, and schema migration.
+- **`npm run build`: passed**, including TypeScript, Vite, and Brotli/gzip precompression.
+- **`PLAYWRIGHT_CHROMIUM_EXECUTABLE='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' npm run test:ui`: 29 passed**. New cases cover labels and accessibility names, confirmation cancellation and Escape, focus restoration, preserved draft chips, enabled/hidden settings through reload, excluded completion with a previous record, fresh-run reset, and recovery after a lost confirmation response. Existing interaction and all seven language-layout checks also pass.
+- Visually inspected the board at 1280px and 390px and the confirmation at 320px. Automated layout checks cover 1280px, 390px, and 320px without horizontal overflow. Screenshots are generated under the ignored `test-results/` directory.
+- **`git diff --check`: passed**. No real player database was opened or reset, and no production deployment was performed.
+
+These changes track use of the probability switch. The API continues to expose odds independently, as documented in the specification and probability model; this work does not establish a secrecy boundary against browser inspection. Previous release measurements below remain historical.
+
 ## Release-candidate closure — October 10, 2026
 
 This was a bounded closure pass, without repeating the optimization workloads or changing gameplay/server settlement code. At entry, `main`, local `origin/main`, and a fresh `git ls-remote --heads origin main` check all identified `661f4768be147614584d4d65f49cc91fb483e2cb`. The prepared release was **uncommitted**: 16 modified tracked files and nine untracked files. All 25 reported preparation files and all seven before/after benchmark reports existed. No changes were staged, committed, pushed, deployed, or written to real player data.

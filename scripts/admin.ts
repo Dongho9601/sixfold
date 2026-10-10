@@ -16,7 +16,7 @@ try {
   const version = database.prepare("PRAGMA user_version").get()!.user_version;
   // A read-only snapshot is also needed before the first upgrade, when the
   // database still has the old schema. It never interprets or migrates its rows.
-  if (version !== 3 && command !== "backup") throw new Error("Use the administrative script matching this database's release. This script never migrates data.");
+  if (version !== 4 && command !== "backup") throw new Error("Use the administrative script matching this database's release. This script never migrates data.");
   if (command === "hide" || command === "show") {
     if (args.length !== 1 || !/^[a-f0-9-]{36}$/.test(args[0])) throw new Error("Supply the public player ID from the leaderboard (not a session cookie).");
     const result = database.prepare("UPDATE players SET leaderboard_hidden=? WHERE id=?").run(command === "hide" ? 1 : 0, args[0]);

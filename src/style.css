@@ -324,13 +324,14 @@ dialog::backdrop {
   gap: 5px;
 }
 .settings-restart { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); }
+.settings-note { margin: 12px 0 0; color: #b8c4b1; font-size: 13px; line-height: 1.6; }
 .danger-button, .cancel-button { min-height: 44px; padding: 12px 18px; border-radius: 5px; font-size: 15px; }
 .danger-button { background: #a83e38; color: #fff5f3; }
 .danger-button:hover:not(:disabled) { background: #be4941; }
 .danger-button:disabled { opacity: .45; }
 .cancel-button { background: #344239; color: #eee9df; }
 .cancel-button:hover { background: #425348; }
-.restart-dialog { width: 440px; }
+.restart-dialog, .probabilities-dialog { width: 440px; }
 .run-dialog { width: 460px; }
 .run-dialog > .eyebrow { display: block; margin-bottom: 12px; }
 .run-score { display: flex; flex-direction: column; gap: 10px; margin: 30px 0 12px; }

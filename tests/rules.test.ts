@@ -63,6 +63,8 @@ test("all 13 targets derive from the requested board mapping", () => {
   };
   for (const [id, coverage] of Object.entries(expected))
     assert.deepEqual(TARGET_BY_ID.get(id)!.coverage, coverage);
+  assert.deepEqual(["col0", "col1", "col2", "row0", "row1"].map(id => TARGET_BY_ID.get(id)!.label),
+    ["1st 2", "2nd 2", "3rd 2", "Odds", "Evens"]);
 });
 for (const target of TARGETS) {
   test(`target ${target.id}: all six outcomes pay only covered numbers`, () => {

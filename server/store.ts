@@ -31,6 +31,8 @@ interface Row {
   can_shake: number;
   rolls_used: number;
   has_completed_run: number;
+  show_probabilities: number;
+  leaderboard_eligible: number;
 }
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 export const secureRandom: Random = () =>
@@ -52,7 +54,7 @@ export class Store {
     this.db = new DatabaseSync(path, { timeout: 5000 });
     try {
       const existingVersion = this.db.prepare("PRAGMA user_version").get()!.user_version as number;
-      if (existingVersion > 3) throw new Error("Database schema is newer than this build. Use the matching release; do not downgrade this database.");
+      if (existingVersion > 4) throw new Error("Database schema is newer than this build. Use the matching release; do not downgrade this database.");
       const existingPlayers = this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='players'").get();
       if (existingVersion === 0 && existingPlayers && this.db.prepare("SELECT 1 FROM players LIMIT 1").get())
         throw new Error("Legacy endless-game data cannot be reset automatically. Keep the original database and run its previous release, or choose a new DB_PATH for competition games.");
@@ -106,6 +108,14 @@ export class Store {
             this.db.exec("ALTER TABLE players ADD COLUMN leaderboard_hidden INTEGER NOT NULL DEFAULT 0 CHECK (leaderboard_hidden IN (0,1))");
           this.db.exec("PRAGMA user_version = 3");
         }
+        if (version < 4) {
+          const columns = this.db.prepare("PRAGMA table_info(players)").all();
+          if (!columns.some(column => column.name === "show_probabilities"))
+            this.db.exec("ALTER TABLE players ADD COLUMN show_probabilities INTEGER NOT NULL DEFAULT 0 CHECK (show_probabilities IN (0,1))");
+          if (!columns.some(column => column.name === "leaderboard_eligible"))
+            this.db.exec("ALTER TABLE players ADD COLUMN leaderboard_eligible INTEGER NOT NULL DEFAULT 1 CHECK (leaderboard_eligible IN (0,1))");
+          this.db.exec("PRAGMA user_version = 4");
+        }
         this.db.exec(`DROP INDEX IF EXISTS best_gold_order;
           CREATE INDEX IF NOT EXISTS ranked_gold_order ON players(length(best_gold) DESC, best_gold DESC, id ASC)
           WHERE has_completed_run = 1 AND leaderboard_hidden = 0;`);
@@ -129,6 +139,8 @@ export class Store {
       bestGold: row.best_gold,
       previousBestGold: row.previous_best_gold,
       hasCompletedRun: row.has_completed_run === 1,
+      showProbabilities: row.show_probabilities === 1,
+      leaderboardEligible: row.leaderboard_eligible === 1,
       rollsUsed: row.rolls_used,
       probabilities,
       tiltLevel: tiltLevel(probabilities),
@@ -242,7 +254,7 @@ export class Store {
       const action = request.action;
       let result: ActionResponse["result"] = null;
       const finished = state.rollsUsed >= CONFIG.rollsPerRun || state.gold === "0";
-      if (finished && (action.kind === "roll" || action.kind === "shake"))
+      if (finished && (action.kind === "roll" || action.kind === "shake" || action.kind === "probabilities"))
         throw new GameError("This run has ended. Start a new run with 100 G.");
       if (action.kind === "roll") {
         const settled = settle(
@@ -258,7 +270,7 @@ export class Store {
         state.canShake = settled.result.jackpot
           ? false
           : state.canShake || settled.result.net !== "0";
-        if (state.rollsUsed === CONFIG.rollsPerRun) {
+        if (state.rollsUsed === CONFIG.rollsPerRun && state.leaderboardEligible) {
           state.previousBestGold = state.hasCompletedRun ? state.bestGold : null;
           if (!state.hasCompletedRun || settled.gold > BigInt(state.bestGold))
             state.bestGold = state.gold;
@@ -279,6 +291,11 @@ export class Store {
         state.canShake = false;
         state.rollsUsed = 0;
         state.previousBestGold = null;
+        state.showProbabilities = false;
+        state.leaderboardEligible = true;
+      } else if (action.kind === "probabilities") {
+        state.showProbabilities = action.enabled;
+        if (action.enabled) state.leaderboardEligible = false;
       } else {
         state.nickname = this.nickname(action.nickname);
       }
@@ -286,7 +303,7 @@ export class Store {
       state.jackpotNumber = marker(state.probabilities);
       state.tiltLevel = tiltLevel(state.probabilities);
       this.prepare(
-          "UPDATE players SET nickname = ?, gold = ?, best_gold = ?, probabilities = ?, revision = ?, last_roll = ?, can_shake = ?, rolls_used = ?, has_completed_run = ?, previous_best_gold = ? WHERE id = ?",
+          "UPDATE players SET nickname = ?, gold = ?, best_gold = ?, probabilities = ?, revision = ?, last_roll = ?, can_shake = ?, rolls_used = ?, has_completed_run = ?, previous_best_gold = ?, show_probabilities = ?, leaderboard_eligible = ? WHERE id = ?",
         )
         .run(
           state.nickname,
@@ -299,6 +316,8 @@ export class Store {
           state.rollsUsed,
           state.hasCompletedRun ? 1 : 0,
           state.previousBestGold,
+          state.showProbabilities ? 1 : 0,
+          state.leaderboardEligible ? 1 : 0,
           id,
         );
       const response = { state, result };
@@ -342,15 +361,17 @@ export class Store {
       !action ||
       typeof action !== "object" ||
       Array.isArray(action) ||
-      !["roll", "shake", "restart", "nickname"].includes(action.kind)
+      !["roll", "shake", "restart", "nickname", "probabilities"].includes(action.kind)
     )
       throw new GameError("Unknown action.");
     const allowed =
       action.kind === "roll"
         ? ["kind", "wagers"]
-        : action.kind === "nickname" || action.kind === "restart"
-          ? ["kind", "nickname"]
-          : ["kind"];
+        : action.kind === "probabilities"
+          ? ["kind", "enabled"]
+          : action.kind === "nickname" || action.kind === "restart"
+            ? ["kind", "nickname"]
+            : ["kind"];
     if (Object.keys(action).some((k) => !allowed.includes(k)))
       throw new GameError("Unexpected action field.");
     // Validate the shallow wire shape before fingerprinting. Nested wager values
@@ -361,5 +382,7 @@ export class Store {
       throw new GameError("Invalid nickname.");
     if (action.kind === "restart" && "nickname" in action && typeof action.nickname !== "string")
       throw new GameError("Invalid nickname.");
+    if (action.kind === "probabilities" && typeof action.enabled !== "boolean")
+      throw new GameError("Probability visibility must be true or false.");
   }
 }

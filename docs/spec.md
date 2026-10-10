@@ -1,6 +1,6 @@
 # Sixfold — Current Implementation Specification
 
-**Version:** 0.6
+**Version:** 0.7
 
 **Updated:** October 10, 2026
 
@@ -22,21 +22,21 @@ This file is the current specification, not the earlier design proposal. Rule co
 
 The fixed board has two rows and three columns:
 
-| | Left | Middle | Right |
+| | 1st 2 | 2nd 2 | 3rd 2 |
 |---|---|---|---|
-| Top | 1 — Red | 3 — Black | 5 — Red |
-| Bottom | 2 — Black | 4 — Red | 6 — Black |
+| Odds | 1 — Red | 3 — Black | 5 — Red |
+| Evens | 2 — Black | 4 — Red | 6 — Black |
 
 Shake changes probabilities, never positions or colors. All group coverage derives from this mapping.
 
 | Target | ID | Covered outcomes | Total return |
 |---|---|---|---:|
 | Single number | `n1` … `n6` | That number | ×6 |
-| Top row | `row0` | 1, 3, 5 | ×2 |
-| Bottom row | `row1` | 2, 4, 6 | ×2 |
-| Left column | `col0` | 1, 2 | ×3 |
-| Middle column | `col1` | 3, 4 | ×3 |
-| Right column | `col2` | 5, 6 | ×3 |
+| Odds | `row0` | 1, 3, 5 | ×2 |
+| Evens | `row1` | 2, 4, 6 | ×2 |
+| 1st 2 | `col0` | 1, 2 | ×3 |
+| 2nd 2 | `col1` | 3, 4 | ×3 |
+| 3rd 2 | `col2` | 5, 6 | ×3 |
 | Red | `red` | 1, 4, 5 | ×2 |
 | Black | `black` | 2, 3, 6 | ×2 |
 | Exclusive Jackpot hit | The current least likely number | See Section 6 | ×24 |
@@ -89,7 +89,7 @@ Nonempty pre-competition databases are now rejected without changing their data;
 
 ### 4.2 Hidden odds and visible Tilt
 
-Number probabilities, group probabilities, and the Jackpot target are hidden in ordinary play. Jackpot is available on every board; no availability message appears beneath the table. Settings has a **Show probabilities (developer)** switch, off by default, which reveals number and group percentages. It does not reveal a Jackpot marker or alter the rules. Hidden percentages are also omitted from target accessible names and tooltips.
+Number probabilities, group probabilities, and the Jackpot target are hidden in ordinary play. Jackpot is available on every board; no availability message appears beneath the table. Settings has a standard **Show probabilities** switch, off at the start of every run, which reveals number and group percentages after confirmation. The confirmation explains that enabling it excludes the current run’s score from the leaderboard permanently for that run, even if the player turns it off later. Cancel, Escape, or the backdrop keeps it off without changing state, with initial focus on Cancel. Confirm saves the setting and exclusion in one revision-guarded, retry-safe server action before displaying odds. The switch is disabled during pending actions and after the run ends. Visibility and exclusion survive reloads, tab synchronization, and server restarts; a new run resets visibility to false and eligibility to true. Shake and Jackpot preserve both flags. Existing completed records remain eligible, and an excluded final score cannot update the saved best. Turning visibility on or off preserves draft bets, Gold, roll count, last roll, and board odds. The setting does not reveal a Jackpot marker or change payouts. A visible status explains exclusion during play and in the results dialog. Hidden percentages are also omitted from target accessible names and tooltips.
 
 This is presentation hiding: the state API still returns the probabilities and Jackpot number. It is not a secrecy boundary against browser inspection.
 
@@ -184,15 +184,15 @@ For settled bankroll `B`, total committed stakes `S`, and total return `P`:
 BNext = B - S + P
 NetChange = P - S
 RollsUsed = previous RollsUsed + 1
-On roll 100 only: BestGold = max(previous completed BestGold, BNext)
+On eligible roll 100 only: BestGold = max(previous completed BestGold, BNext)
 Before the first completed run: no leaderboard entry
 ```
 
 The server transaction checks request identity and revision, validates wagers, snapshots probabilities and Jackpot target, samples one outcome, settles all payouts, updates probabilities, the roll count and Shake eligibility, posts a completed score on roll 100, increments the revision, and stores the full response receipt together.
 
-Gold, wagers, returns, records, and revisions use **BigInt** internally and canonical decimal **strings** in JSON and SQLite. Probability values remain unrounded doubles. The sampler multiplies a uniform draw by the stored probability sum to absorb rounding drift; it does not smooth the board. Developer labels show up to two decimals and never feed settlement. Large displayed chip amounts may be abbreviated; tooltips and accessible names retain exact wagers.
+Gold, wagers, returns, records, and revisions use **BigInt** internally and canonical decimal **strings** in JSON and SQLite. Probability values remain unrounded doubles. The sampler multiplies a uniform draw by the stored probability sum to absorb rounding drift; it does not smooth the board. Probability labels show up to two decimals and never feed settlement. Large displayed chip amounts may be abbreviated; tooltips and accessible names retain exact wagers.
 
-Player state, roll counts, completion flags, and receipts are durable in SQLite. Earlier schema version 1 introduced competition fields with a reset; this build refuses nonempty version-0 databases without deleting anything. Schema version 2 adds nullable `previous_best_gold` without deleting players or receipts. Schema version 3 adds `leaderboard_hidden` and a partial score-order index, preserving competition players, scores, cookies, and receipts. Newer unsupported schemas also fail closed. Roll 100 captures the prior completed best (null for the first completion) in the same transaction as settlement. Restart clears that comparison field. Migrated existing completed runs use their saved best because an earlier best cannot be reconstructed. Subsequent opens preserve new saves; stale cookies create a new player. Pending browser actions use a new storage key so pre-competition actions cannot replay into a new run. The default database is `data/one-of-six.sqlite`, using WAL, FULL synchronous mode, and `BEGIN IMMEDIATE` action transactions. An anonymous 256-bit session cookie identifies a player; only its hash is stored. Clearing the cookie creates a new player and does not delete the old score.
+Player state, roll counts, completion flags, and receipts are durable in SQLite. Earlier schema version 1 introduced competition fields with a reset; this build refuses nonempty version-0 databases without deleting anything. Schema version 2 adds nullable `previous_best_gold` without deleting players or receipts. Schema version 3 adds `leaderboard_hidden` and a partial score-order index. Schema version 4 adds `show_probabilities` (default 0) and `leaderboard_eligible` (default 1), preserving competition players, scores, cookies, and receipts. Historical receipts retain their original response shape. Newer unsupported schemas also fail closed. Roll 100 captures the prior completed best (null for the first completion) in the same transaction as settlement. Restart clears that comparison field. Migrated existing completed runs use their saved best because an earlier best cannot be reconstructed. Subsequent opens preserve new saves; stale cookies create a new player. Pending browser actions use a new storage key so pre-competition actions cannot replay into a new run. The default database is `data/one-of-six.sqlite`, using WAL, FULL synchronous mode, and `BEGIN IMMEDIATE` action transactions. An anonymous 256-bit session cookie identifies a player; only its hash is stored. Clearing the cookie creates a new player and does not delete the old score.
 
 Every new action includes a unique request ID, expected revision, and a player ID that must match the cookie session. Older saved requests without the player field remain compatible; the binding does not change their receipt fingerprint. Replaying the same ID with the same revision/action returns the original receipt without resettling. Reusing an ID for different data is rejected. A stale revision returns the latest state without settling; the client clears the stale draft. Complete receipts and their replay fingerprints are retained indefinitely. The local administrative script may losslessly compress responses in batches; replay still reconstructs the complete original response. It does not delete or expire records.
 
@@ -200,7 +200,7 @@ Uncommitted drafts belong to the current tab and clear on refresh, settlement, S
 
 ## 8. Leaderboard and identity
 
-A player’s score is their highest final balance from a completed 100-roll run. New players have no leaderboard entry and see a prompt to complete 100 rolls for their first record. The saved `hasCompletedRun` flag distinguishes this from a valid completed score of zero. Intermediate gains never update the score. Roll 100 settles and submits atomically; repeated receipts cannot submit twice. Lower completed scores, early bankruptcy, and new runs preserve a previous best.
+A player’s leaderboard score is their highest final balance from a completed 100-roll run in which probability visibility was never enabled. Excluded runs cannot create an entry or replace an existing best, including when probabilities were hidden again before completion. New players have no leaderboard entry and see a prompt to complete 100 rolls for their first record. The saved `hasCompletedRun` flag distinguishes this from a valid completed score of zero. Intermediate gains never update the score. Roll 100 settles and submits atomically; repeated receipts cannot submit twice. Lower completed scores, early bankruptcy, and new runs preserve a previous best.
 
 The shared leaderboard lists the top 10 visible players by best Gold descending, plus the current player’s best completed record and up to two players immediately above it in the full ranking. The session cookie identifies the current player; the API returns the union, sorted by global rank, without duplicates. A gap marks skipped ranks. Exact decimal strings sort by length, then lexical value; ties use stable ascending player ID. There is no score cap or cutoff for personal context. Players without a completed run see a prompt to finish 100 rolls. Rows normally measure 40 px, with a slightly taller highlighted personal row. Large scores use compact display values while retaining exact values in tooltips and accessible labels.
 
@@ -230,13 +230,13 @@ Hovered targets use brighter fills and a gold inset outline; covered numbers use
 
 ### 9.3 Settings and How to Play
 
-Settings contains the nickname form, **Sound effects**, **Reduce motion**, and **Show probabilities (developer)** controls, plus Restart run. How to Play is available from the separate sidebar control and Tilt; Settings has no guide link. Rule descriptions and explanations of these preferences live in **How to Play**.
+Settings contains the nickname form, **Sound effects**, **Reduce motion**, and **Show probabilities** controls, plus Restart run. How to Play is available from the separate sidebar control and Tilt; Settings has no guide link. Rule descriptions and explanations of these preferences live in **How to Play**.
 
 The guide leads with two playing steps, payout multipliers, Tilt, Shake, Jackpot, and a keyboard reference. An expandable section covers wager editing, probability transfers and a numerical example, persistence, final-score submission, new runs, and preference descriptions. English, Korean, Japanese, Simplified Chinese, Spanish, French, and German versions share the same structure. A native language selector starts with the first supported browser language (falling back to English) and remembers an explicit choice across reloads; the dialog language and accessible controls update with it. It uses a white reading surface, dark 18 px serif body text, simple headings, and a sticky close control. The Tilt control opens it at the appropriate section; closing restores focus to its trigger.
 
 The guide opens automatically for a player with no previous roll who has not dismissed it. Dismissal is saved per player in the browser and survives refreshes and restarts. How to Play can reopen it at any time.
 
-Sound defaults to on after a user interaction; a saved mute stays muted, and disabling sound stops scheduled notes. Reduced motion follows the system preference or the manual switch and skips movement and particle effects. Sound, manual motion preference, and probability visibility save in browser local storage.
+Sound defaults to on after a user interaction; a saved mute stays muted, and disabling sound stops scheduled notes. Reduced motion follows the system preference or the manual switch and skips movement and particle effects. Sound and manual motion preferences save in browser local storage. Probability visibility and run eligibility save on the server with the current run. Older local probability preferences are ignored.
 
 ## 10. Runtime and API
 
@@ -248,7 +248,7 @@ The application uses TypeScript, HTML/CSS/SVG, Vite, a Node HTTP server, SQLite,
 |---|---|
 | `GET /api/state` | Resume a session or create a new anonymous player; return current state and last roll. |
 | `GET /api/leaderboard` | Return top 10 plus personal best and up to two immediately higher visible ranks, nickname, player ID, and best Gold. |
-| `POST /api/action` | Apply `roll`, `shake`, `restart`, or `nickname` using request ID, revision, and player binding. |
+| `POST /api/action` | Apply `roll`, `shake`, `restart`, `nickname`, or `probabilities` (with boolean `enabled`) using request ID, revision, and player binding. |
 | `GET /healthz` | Lightweight database readiness check without a session cookie. |
 
 The API does not accept authoritative balances, scores, probability vectors, or random seeds from the client. Actions require bounded valid UTF-8 JSON, known fields/targets, a valid session, and an exact same-origin Origin header. New player bindings protect cookie replacement during a pending action. Session cookies are HttpOnly, SameSite=Lax, and Secure for an HTTPS public origin. Public API throttles, storage bounds, body/header/time limits, production static allowlists, private API revalidation, and graceful shutdown are specified in [README.md](../README.md). New clients opt into `X-Sixfold-Response: compact-v1`: a non-null settlement is represented by `result: "lastRoll"` and reconstructed from `state.lastRoll`, avoiding duplicate transmission. The server retains full receipts and the default response format for existing open clients. The playable server contains no fixture or test-seed endpoint.
@@ -261,7 +261,7 @@ Unless otherwise stated, examples start with 100 G and `[40, 20, 15, 10, 10, 5]%
 2. **Complete miss:** 10 G on 1, outcome 2 → 90 G, identical probabilities, Shake unlocked.
 3. **Break-even:** 10 G on every number, any outcome → 100 G and one transfer, no Jackpot. A locked Shake stays locked; an already-earned Shake remains available.
 4. **Net-loss payout:** 1 G on 1 and 20 G on 2, outcome 1 → 85 G, one transfer and Shake unlocked.
-5. **Overlap:** 10 G each on 1, Top, and Red, outcome 1 → 100 G return, 170 G bankroll, exactly one transfer.
+5. **Overlap:** 10 G each on 1, Odds, and Red, outcome 1 → 100 G return, 170 G bankroll, exactly one transfer.
 6. **Amount independence:** Identical boards and random draws with different positive ordinary stakes produce identical next probabilities.
 7. **Rare ordinary hit:** Full-coverage bets, outcome 6, rate 6.3%, equal recipient shares → face 6 falls from 5% to 4.811%; each other face gains 0.0378 percentage points. No Jackpot applies.
 8. **Jackpot:** On `[40, 20, 15, 12, 10, 3]%`, sole 10 G on 6, outcome 6 → 330 G, fresh board, Shake locked. Any additional positive target removes eligibility. On the default 5% board, the same hit also pays 330 G and draws a fresh board. On an exactly even board, number 1 is the Jackpot target.

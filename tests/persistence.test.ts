@@ -29,6 +29,129 @@ function fixture(store: Store, id: string, gold = "100", best = "0") {
     )
     .run(gold, best, JSON.stringify(p), best === "0" ? 0 : 1, id);
 }
+test("probability visibility persists per run, excludes its score after hiding, and resets on restart", () => {
+  const dir = mkdtempSync(join(tmpdir(), "sixfold-probabilities-"));
+  const path = join(dir, "game.sqlite");
+  let store = new Store(path, () => 0.1);
+  try {
+    const { state, token } = store.create();
+    assert.equal(state.showProbabilities, false);
+    assert.equal(state.leaderboardEligible, true);
+    fixture(store, state.id);
+    const enable = request("0", { kind: "probabilities", enabled: true });
+    const shown = store.act(state.id, enable);
+    assert.equal(shown.state.showProbabilities, true);
+    assert.equal(shown.state.leaderboardEligible, false);
+    assert.equal(shown.state.gold, "100");
+    assert.equal(shown.state.rollsUsed, 0);
+    assert.equal(shown.state.canShake, false);
+    assert.deepEqual(shown.state.probabilities, p);
+    assert.deepEqual(store.act(state.id, enable), shown);
+    assert.throws(() => store.act(state.id, request("0", { kind: "roll", wagers: { red: "1" } })), /Another tab/);
+    store.close();
+    store = new Store(path, () => 0.1);
+    assert.deepEqual(store.session(token), shown.state);
+    const act = (action: Action) => store.act(state.id, request(store.get(state.id).revision, action));
+    const won = act({ kind: "roll", wagers: { red: "1" } });
+    const hidden = act({ kind: "probabilities", enabled: false });
+    assert.equal(hidden.state.showProbabilities, false);
+    assert.equal(hidden.state.leaderboardEligible, false);
+    assert.deepEqual(hidden.state.lastRoll, won.state.lastRoll);
+    assert.deepEqual(hidden.state.probabilities, won.state.probabilities);
+    const shaken = act({ kind: "shake" });
+    assert.equal(shaken.state.leaderboardEligible, false);
+    store.close();
+    store = new Store(path, () => 0.1);
+    assert.deepEqual(store.session(token), shaken.state);
+    store.db.prepare("UPDATE players SET rolls_used=99 WHERE id=?").run(state.id);
+    const completed = act({ kind: "roll", wagers: { red: "1", black: "1" } });
+    assert.equal(completed.state.rollsUsed, 100);
+    assert.equal(completed.state.hasCompletedRun, false);
+    assert.equal(completed.state.bestGold, "0");
+    assert.deepEqual(store.leaderboard(), []);
+    assert.throws(() => act({ kind: "probabilities", enabled: true }), /run has ended/);
+    const restarted = act({ kind: "restart" });
+    assert.equal(restarted.state.showProbabilities, false);
+    assert.equal(restarted.state.leaderboardEligible, true);
+    assert.equal(restarted.state.rollsUsed, 0);
+    assert.deepEqual(store.act(state.id, enable), shown);
+    assert.deepEqual(store.get(state.id), restarted.state);
+    store.db.prepare("UPDATE players SET rolls_used=99 WHERE id=?").run(state.id);
+    const ranked = act({ kind: "roll", wagers: { red: "1", black: "1" } });
+    assert.equal(ranked.state.bestGold, "100");
+    assert.equal(ranked.state.hasCompletedRun, true);
+    assert.equal(store.leaderboard()[0].bestGold, "100");
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("probability-assisted runs preserve existing records even with a higher final score or Jackpot", () => {
+  let draw = 0.999;
+  const store = new Store(":memory:", () => draw);
+  try {
+    const { state } = store.create();
+    fixture(store, state.id, "100", "400");
+    const act = (action: Action) => store.act(state.id, request(store.get(state.id).revision, action));
+    act({ kind: "probabilities", enabled: true });
+    store.db.prepare("UPDATE players SET rolls_used=99 WHERE id=?").run(state.id);
+    const jackpot = act({ kind: "roll", wagers: { n6: "100" } });
+    assert.equal(jackpot.result!.jackpot, true);
+    assert.equal(jackpot.state.gold, "2400");
+    assert.equal(jackpot.state.showProbabilities, true);
+    assert.equal(jackpot.state.leaderboardEligible, false);
+    assert.equal(jackpot.state.bestGold, "400");
+    assert.equal(store.leaderboard()[0].bestGold, "400");
+    act({ kind: "restart" });
+    act({ kind: "probabilities", enabled: true });
+    draw = 0.1;
+    store.db.prepare("UPDATE players SET rolls_used=99 WHERE id=?").run(state.id);
+    const zero = act({ kind: "roll", wagers: { n6: "100" } });
+    assert.equal(zero.state.gold, "0");
+    assert.equal(zero.state.bestGold, "400");
+    assert.equal(store.leaderboard()[0].bestGold, "400");
+  } finally { store.close(); }
+});
+
+test("probability actions require a boolean and cannot submit leaderboard eligibility", () => {
+  const store = new Store(":memory:");
+  try {
+    const { state } = store.create();
+    for (const enabled of [undefined, null, "true", 1, {}, []])
+      assert.throws(() => store.act(state.id, request("0", { kind: "probabilities", enabled } as unknown as Action)), /must be true or false/);
+    assert.throws(() => store.act(state.id, request("0", { kind: "probabilities", enabled: true, leaderboardEligible: true } as Action)), /Unexpected action field/);
+    assert.equal(store.get(state.id).revision, "0");
+    assert.equal(store.get(state.id).leaderboardEligible, true);
+  } finally { store.close(); }
+});
+
+test("schema 4 migration preserves saves, scores and historical receipts with probabilities off", () => {
+  const dir = mkdtempSync(join(tmpdir(), "sixfold-probabilities-migration-"));
+  const path = join(dir, "game.sqlite");
+  let store = new Store(path, () => 0.1);
+  try {
+    const { state, token } = store.create();
+    fixture(store, state.id, "320", "400");
+    const rename = request("0", { kind: "nickname", nickname: "Existing player" });
+    const receipt = store.act(state.id, rename);
+    const historical = JSON.parse(JSON.stringify(receipt));
+    delete historical.state.showProbabilities;
+    delete historical.state.leaderboardEligible;
+    store.db.prepare("UPDATE receipts SET response=? WHERE player_id=?").run(JSON.stringify(historical), state.id);
+    store.db.exec("ALTER TABLE players DROP COLUMN show_probabilities; ALTER TABLE players DROP COLUMN leaderboard_eligible; PRAGMA user_version=3");
+    store.close();
+    store = new Store(path);
+    assert.deepEqual(store.session(token), receipt.state);
+    assert.deepEqual(store.act(state.id, rename), historical);
+    assert.equal(store.leaderboard()[0].bestGold, "400");
+    assert.equal(store.db.prepare("PRAGMA user_version").get()!.user_version, 4);
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("all actions are retry-safe, revision guarded, atomic, and survive reopening SQLite", () => {
   const dir = mkdtempSync(join(tmpdir(), "one-six-"));
   const path = join(dir, "game.sqlite");
@@ -294,7 +417,7 @@ test("the results migration preserves competition players, scores and receipts",
     assert.deepEqual(store.session(token), migrated);
     assert.deepEqual(store.act(state.id, rename), receipt);
     assert.equal(store.leaderboard()[0].bestGold, "400");
-    assert.equal(store.db.prepare("PRAGMA user_version").get()!.user_version, 3);
+    assert.equal(store.db.prepare("PRAGMA user_version").get()!.user_version, 4);
     store.close();
     store = new Store(path);
     assert.deepEqual(store.session(token), migrated);

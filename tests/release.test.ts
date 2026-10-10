@@ -379,11 +379,11 @@ test("pre-upgrade backup, competition migration and future-schema refusal preser
   store = new Store(path);
   assert.deepEqual(store.session(player.token), response.state);
   assert.deepEqual(store.act(player.state.id, request), response);
-  store.db.exec("PRAGMA user_version=4");
+  store.db.exec("PRAGMA user_version=5");
   store.close();
   assert.throws(() => new Store(path), /newer than this build/);
   const database = new DatabaseSync(path, { readOnly: true });
-  try { assert.equal(database.prepare("SELECT count(*) AS n FROM receipts").get()!.n, 1); assert.equal(database.prepare("PRAGMA user_version").get()!.user_version, 4); }
+  try { assert.equal(database.prepare("SELECT count(*) AS n FROM receipts").get()!.n, 1); assert.equal(database.prepare("PRAGMA user_version").get()!.user_version, 5); }
   finally { database.close(); }
 });
 

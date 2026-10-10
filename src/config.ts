@@ -59,14 +59,14 @@ export const TARGETS: BetTarget[] = [
   })),
   ...BOARD.map((row, i) => ({
     id: `row${i}`,
-    label: i === 0 ? "Top row" : "Bottom row",
+    label: i === 0 ? "Odds" : "Evens",
     kind: "row" as const,
     coverage: row.map((c) => c.number),
     multiplier: CONFIG.multipliers.row,
   })),
   ...[0, 1, 2].map((i) => ({
     id: `col${i}`,
-    label: `${["Left", "Middle", "Right"][i]} column`,
+    label: `${["1st", "2nd", "3rd"][i]} 2`,
     kind: "column" as const,
     coverage: BOARD.map((row) => row[i].number),
     multiplier: CONFIG.multipliers.column,

@@ -62,6 +62,121 @@ async function settled(page, gold) {
     !document.querySelector('[data-target="n1"]').disabled, gold);
 }
 
+test("columns show ordinal pairs and rows show Odds/Evens at desktop and mobile widths", async t => {
+  const page = await game(t);
+  for (const width of [1280, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const [id, label, coverage, multiplier] of [
+      ["col0", "1st 2", "1, 2", 3], ["col1", "2nd 2", "3, 4", 3], ["col2", "3rd 2", "5, 6", 3],
+      ["row0", "Odds", "1, 3, 5", 2], ["row1", "Evens", "2, 4, 6", 2],
+    ]) {
+      const target = page.locator(`[data-target="${id}"]`);
+      assert.equal(await target.locator(".group-title > span").innerText(), label);
+      assert.equal(await target.locator(".group-title b").innerText(), `×${multiplier}`);
+      assert.ok((await target.getAttribute("aria-label")).includes(`${label}, covers ${coverage}`));
+      assert.equal(await target.locator(".group-title").evaluate(element => element.scrollWidth > element.clientWidth), false);
+    }
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    await page.screenshot({ path: `test-results/board-labels-${width}.png`, fullPage: true });
+  }
+});
+
+test("probabilities need confirmation, preserve draft bets, exclude the run through reload and hiding, then reset", async t => {
+  const page = await game(t);
+  const id = (await saved(page)).id;
+  store.db.prepare("UPDATE players SET best_gold='80',has_completed_run=1 WHERE id=?").run(id);
+  await page.evaluate(() => localStorage.setItem("sixfold-show-probabilities", "on"));
+  await page.reload();
+  await page.waitForFunction(() => !document.querySelector('[data-target="n1"]').disabled);
+  assert.equal(await page.locator(".probability, .group-odds").count(), 0);
+  assert.equal((await saved(page)).showProbabilities, false);
+  await page.locator('[data-target="n1"]').click();
+  const chips = await page.locator('[data-target="n1"] .chip-pile').innerHTML();
+  await page.locator("#settings-open").click();
+  assert.equal(await page.locator('label:has(#show-probabilities) span').innerText(), "Show probabilities");
+  for (const width of [1280, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.locator("#show-probabilities").click();
+    assert.equal(await page.locator("#probabilities-dialog").isVisible(), true);
+    assert.equal(await page.evaluate(() => document.activeElement.id), "probabilities-cancel");
+    assert.match(await page.locator("#probabilities-description").innerText(), /will not enter the leaderboard, even if you turn probabilities off later/);
+    assert.equal(await page.locator("#show-probabilities").isChecked(), false);
+    assert.equal(await page.locator(".probability, .group-odds").count(), 0);
+    assert.equal((await saved(page)).revision, "0");
+    assert.equal(await page.locator("#probabilities-dialog").evaluate(element => element.scrollWidth > element.clientWidth), false);
+    await page.screenshot({ path: `test-results/probabilities-confirm-${width}.png`, fullPage: true });
+    if (width === 1280) await page.locator("#probabilities-cancel").click();
+    else await page.keyboard.press("Escape");
+    assert.equal((await saved(page)).leaderboardEligible, true);
+    assert.equal(await page.locator("#show-probabilities").isChecked(), false);
+    assert.equal(await page.evaluate(() => document.activeElement.id), "show-probabilities");
+  }
+  await page.locator("#show-probabilities").click();
+  await page.locator("#probabilities-confirm").click();
+  await page.waitForFunction(() => document.querySelectorAll(".probability, .group-odds").length === 13 && !document.querySelector("#show-probabilities").disabled);
+  assert.equal(await page.locator("#draft-total").textContent(), "10 G");
+  assert.equal(await page.locator('[data-target="n1"] .chip-pile').innerHTML(), chips);
+  const shown = await saved(page);
+  assert.equal(shown.showProbabilities, true);
+  assert.equal(shown.leaderboardEligible, false);
+  assert.equal(shown.rollsUsed, 0);
+  await page.reload();
+  await page.waitForFunction(() => document.querySelectorAll(".probability, .group-odds").length === 13);
+  await page.locator("#settings-open").click();
+  assert.equal(await page.locator("#show-probabilities").isChecked(), true);
+  await page.locator("#show-probabilities").click();
+  await page.waitForFunction(() => document.querySelectorAll(".probability, .group-odds").length === 0 && !document.querySelector("#show-probabilities").disabled);
+  assert.equal((await saved(page)).leaderboardEligible, false);
+  assert.match(await page.locator("#probabilities-status").innerText(), /excluded from the leaderboard/);
+  await page.keyboard.press("Escape");
+  store.db.prepare("UPDATE players SET rolls_used=99 WHERE id=?").run(id);
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector("#rolls-remaining").textContent === "1");
+  await page.locator("#bet-amount").fill("1");
+  await page.locator('[data-target="red"]').click();
+  await page.locator('[data-target="black"]').click();
+  await page.locator("#roll").click();
+  await page.waitForFunction(() => document.querySelector("#run-dialog").open);
+  assert.equal(await page.locator("#run-score").innerText(), "100 G");
+  assert.match(await page.locator("#run-comparison").innerText(), /excluded from the leaderboard/);
+  assert.equal(await page.locator("#run-best").innerText(), "80 G");
+  assert.equal(store.leaderboard(id).find(player => player.id === id).bestGold, "80");
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector("#run-dialog").open);
+  assert.match(await page.locator("#run-comparison").innerText(), /excluded from the leaderboard/);
+  await page.locator("#run-confirm").click();
+  await settled(page, "100");
+  const restarted = await saved(page);
+  assert.equal(restarted.showProbabilities, false);
+  assert.equal(restarted.leaderboardEligible, true);
+  assert.equal(restarted.bestGold, "80");
+  assert.equal(await page.locator(".probability, .group-odds").count(), 0);
+  assert.equal(await page.locator("#run-status").isVisible(), false);
+});
+
+test("a lost probability confirmation response recovers the committed setting after reload", async t => {
+  const page = await game(t);
+  await page.route("**/api/action", async route => {
+    const request = route.request().postDataJSON();
+    if (request.action.kind === "probabilities") {
+      await route.fetch();
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await page.locator("#settings-open").click();
+  await page.locator("#show-probabilities").click();
+  await page.locator("#probabilities-confirm").click();
+  await page.waitForFunction(() => !!sessionStorage.getItem("sixfold-100-rolls-pending") && !document.querySelector("#retry").hidden);
+  assert.equal((await saved(page)).leaderboardEligible, false);
+  await page.unroute("**/api/action");
+  await page.reload();
+  await page.waitForFunction(() => !sessionStorage.getItem("sixfold-100-rolls-pending") && document.querySelectorAll(".probability, .group-odds").length === 13);
+  const recovered = await saved(page);
+  assert.equal(recovered.revision, "1");
+  assert.equal(recovered.showProbabilities, true);
+  assert.equal(recovered.leaderboardEligible, false);
+});
+
 test("click a bet then R settles exactly once; uppercase R works too", async t => {
   const page = await game(t);
   await page.locator('[data-target="n6"]').click();
@@ -188,9 +303,11 @@ test("Settings stays compact and the complete guide works on desktop and mobile"
     await page.locator("#nickname").fill("Reader");
     await page.locator("#save-nickname").click();
     await page.waitForFunction(() => document.querySelector("#nickname-status").textContent === "Name saved.");
-    await page.locator("#show-probabilities").check();
-    assert.equal(await page.locator(".probability, .group-odds").count(), 13);
-    await page.locator("#show-probabilities").uncheck();
+    await page.locator("#show-probabilities").click();
+    await page.locator("#probabilities-confirm").click();
+    await page.waitForFunction(() => document.querySelectorAll(".probability, .group-odds").length === 13 && !document.querySelector("#show-probabilities").disabled);
+    await page.locator("#show-probabilities").click();
+    await page.waitForFunction(() => !document.querySelector("#show-probabilities").disabled);
     assert.equal(await page.locator("#settings-dialog").getByText("How to play", { exact: true }).count(), 0);
     await page.screenshot({ path: `test-results/settings-${width}.png` });
     await page.keyboard.press("Escape");
