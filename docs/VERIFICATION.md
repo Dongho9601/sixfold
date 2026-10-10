@@ -1,5 +1,184 @@
 # Verification report
 
+## Release-candidate closure — October 10, 2026
+
+This was a bounded closure pass, without repeating the optimization workloads or changing gameplay/server settlement code. At entry, `main`, local `origin/main`, and a fresh `git ls-remote --heads origin main` check all identified `661f4768be147614584d4d65f49cc91fb483e2cb`. The prepared release was **uncommitted**: 16 modified tracked files and nine untracked files. All 25 reported preparation files and all seven before/after benchmark reports existed. No changes were staged, committed, pushed, deployed, or written to real player data.
+
+The code state verified in this closure is the 32-file source/input manifest with SHA-256 **`cac65279e3633076851ef69dde51e55dbbb0a6abcf01657e3a533a48579baafe`**. It covers client/server code, public assets, package/lock/build configuration, scripts, and tests. [The closure artifact](benchmarks/release-candidate-closure.json) contains per-file hashes, build-output hashes, the exact Git state, local/untracked inventory, runtime acquisition details, checks, and storage measurements. Its broader candidate inventory also hashes repository documentation and the existing benchmark artifact, excluding only the closure artifact itself to avoid self-reference. The earlier benchmark JSON remains unchanged (SHA-256 `03ebbc6d5470dc4e32d5584740e9b19005757d7f018910c36d11cf33e3502ad0`). The baseline commit is not a commit of these release changes and must not be labeled as the verified release.
+
+### Linux attempt and native LTS checks
+
+**Linux execution remains blocked.** The available host is macOS arm64. Docker, Podman, Colima, Lima, Apple container, nerdctl, QEMU, and Vagrant were absent from PATH; no corresponding installed app, container state directory, or Docker socket was found. `.github/` was absent. Read-only `gh workflow list --repo Dongho9601/sixfold --all`, `gh run list --repo Dongho9601/sixfold --limit 5 --json databaseId,workflowName,status,conclusion,headSha`, and `gh api repos/Dongho9601/sixfold/actions/runners` returned no workflows/runs or self-hosted runners. There was no existing CI job in which to execute this local candidate. Creating and pushing a workflow was outside the requested pass. No Linux tests or Linux success are claimed.
+
+As additional operational evidence, the official **Node 24.21.0 LTS** Darwin arm64 archive was downloaded to a temporary directory. Its SHA-256 matched the official HTTPS `SHASUMS256.txt` (`bed7eea5325e1108f32ce5228ddd6a5f0f08a499ee42aa7442aea583702f6057`); the release signature was not separately verified. LTS status was checked against [Node's release announcement](https://nodejs.org/en/blog/release/v24.21.0). The actual runtime was **Node v24.21.0, npm 11.19.0, SQLite 3.53.4, macOS/Darwin arm64**. No project runtime/version declaration or dependency version was changed.
+
+With that archive's `bin` directory first in PATH:
+
+- **`npm test`: 68 passed**, zero failed/skipped. The existing restore regression was extended to copy the generated live-WAL backup into a new private directory, check saved state and the existing receipt, commit a new action, restart the restored store, and replay both receipts while preserving the source and backup.
+- **`npm run build`: passed** TypeScript, Vite 7.3.7, and Brotli/gzip precompression. The first attempt caught a TypeScript annotation omission in the newly added verification script; it was fixed before the successful build. The release implementation itself needed no compatibility fix.
+- **`npm ci --omit=dev`: passed** in a separate temporary runtime directory containing only the locked package files, `dist/`, `server/`, `src/config.ts`, `src/types.ts`, `scripts/admin.ts`, and `scripts/release-check.ts`. Four packages were installed; npm audited five packages and reported zero known vulnerabilities for that runtime install. npm warned about unapproved esbuild/fsevents install scripts; none were approved, and actual startup/admin checks worked with the installed packages.
+- **`node --import tsx scripts/release-check.ts`: passed** in that production-only directory, with Vite, TypeScript, and Playwright absent. Four real production starts and four SIGTERM exits (code 0) checked health and built HTML, source restart persistence, a backup made while the source remained open, restoration into a new isolated path, saved state, byte-identical old HTTP receipt replay, a new action, another restart, byte-identical replay of both receipts, exactly two receipts, `quick_check=ok`, no foreign-key failures, and file mode 0600. All test databases and the runtime copy were removed afterward.
+- **`git diff --check`: passed**. Source/build hashes and local documentation links were checked. Existing preparation evidence was retained.
+
+The production-only check is reproducible after selecting the desired Node binary and building from the repository:
+
+```sh
+npm test
+npm run build
+SIXFOLD_RC_RUNTIME=$(mktemp -d)
+cp package.json package-lock.json "$SIXFOLD_RC_RUNTIME/"
+cp -R server dist "$SIXFOLD_RC_RUNTIME/"
+mkdir -p "$SIXFOLD_RC_RUNTIME/src" "$SIXFOLD_RC_RUNTIME/scripts"
+cp src/config.ts src/types.ts "$SIXFOLD_RC_RUNTIME/src/"
+cp scripts/admin.ts scripts/release-check.ts "$SIXFOLD_RC_RUNTIME/scripts/"
+cd "$SIXFOLD_RC_RUNTIME"
+npm ci --omit=dev
+node --import tsx scripts/release-check.ts
+```
+
+Keep the selected Node `bin` first in PATH for every command and remove the temporary runtime directory after reviewing the result. `release-check.ts` creates/removes its own separate temporary data and accepts no existing DB path or public URL. Run this sequence on the eventual Linux LTS image; the commands above currently establish native macOS evidence only. The browser suite and balance/optimization workloads were not rerun in this closure because no gameplay/client logic changed; their earlier results remain historical, with the limitations already documented below.
+
+### Fresh database growth and recovery accounting
+
+The same production-only verification script measured **1,000 new roll actions**, ten newly created players, no seeded leaderboard records, and no receipt compaction. Every player completed 100 rolls with 1 G on Red and Black, using the existing cryptographic random outcomes and unchanged game rules. All 1,000 accepted receipts were retained. File lengths were sampled after every action; this does not measure filesystem allocation or sub-action peaks.
+
+| Storage component | Measured bytes |
+|---|---:|
+| Initial schema-only database after close/checkpoint | 28,672 |
+| Main database while open after actions | 1,781,760 |
+| WAL / SHM at largest sampled live total | 4,128,272 / 32,768 |
+| Largest sampled live DB + WAL + SHM | 5,942,800 |
+| Logical database and generated backup database | 2,002,944 |
+| Backup WAL / inspection SHM at measurement | 0 / 32,768 |
+| Database after clean close/checkpoint | 2,002,944 |
+| Growth above initial standalone size | **1,974,272** |
+| Growth/action, including the ten player records | **1,974.272** |
+
+The open main file understated the committed logical size because some pages were still in WAL. The live backup included those pages; its 1,000 receipts and integrity were checked. SQLite settings were WAL, `synchronous=FULL` (2), foreign keys enabled, page size 4,096 bytes, and automatic checkpoint trigger 1,000 pages. No durability setting changed. The WAL threshold is not a size cap. The live files plus this one backup and its inspection SHM totaled **7,978,512 bytes** at the measured endpoint, without counting temporary restored copies or the runtime/build files.
+
+[README's storage instructions](../README.md#storage-accounting-and-maintenance-space) now separate live DB/WAL/SHM, standalone snapshots, retained backups, restore copies, and maintenance space. A new online backup needs a full logical snapshot plus live-growth headroom. A restore rehearsal needs another database and journals while the source and snapshot remain. Compaction needs its pre-maintenance backup and journal headroom; it does not immediately shrink files. Offline VACUUM can need up to **twice the current database size in additional free space**, plus any newly created backup on that filesystem and operational margin, according to [SQLite](https://sqlite.org/lang_vacuum.html). A compaction cursor must restart at zero after VACUUM because implicit rowids can change. None of these operations deletes receipts or expiry identifiers. This one random-outcome macOS sample is not a host storage ceiling, Linux result, sustained soak, or capacity forecast.
+
+### Scope changes and remaining decisions
+
+Only the following seven files were added or amended by this closure; the earlier release-preparation implementation remains in place:
+
+| File | Closure change |
+|---|---|
+| `tests/release.test.ts` | Extend the live-backup regression through a copied restore, new action, and second restart/replays. |
+| `scripts/release-check.ts` (new) | Reproducible, isolated production-only HTTP recovery smoke and fixed fresh-database growth measurement. |
+| `README.md` | Record actual LTS/platform evidence and Linux blocker; clarify recovery, component storage accounting, maintenance free space, and owner decisions. |
+| `CREDITS.md` | Say ownership/license records have not yet been provided and publication rights remain unconfirmed, rather than treating them as unavailable or denied. |
+| `public/about.html` | State that a public operator contact has not yet been published; remove internal ownership/approval details from public copy. |
+| `docs/VERIFICATION.md` | Preserve historical results, distinguish the baseline commit from uncommitted results, and record this bounded closure. |
+| `docs/benchmarks/release-candidate-closure.json` (new) | Candidate manifests, exact runtime/check metadata, untracked inventory, and raw storage/recovery evidence. |
+
+**Owner decisions:** provide the actual public privacy/abuse contact, confirm rights to publish the code and assets, and review applicable dependency notices. Neither the corrected wording nor the public page supplies contact details or publication permission. The code and evidence remain local and uncommitted; a reviewed commit/release artifact is needed before distributing this candidate.
+
+**Host-specific checks:** run this candidate on a supported Linux LTS runtime; then check the chosen host's HTTPS/public Origin, exact proxy trust/header replacement, persistent local filesystem including WAL/SHM and permissions, available disk/backup/restore space, process supervision and shutdown window, caching/compression, backup schedule/retention, and proxy/supervisor log settings. These checks cannot be closed against an unselected host.
+
+**Verification limits:** no Linux execution, minimum Node 22.16 check, real TLS/proxy deployment, physical-device/Safari/Firefox verification, capacity claim, power-loss test, or multi-hour soak was added. Earlier Chromium/touch/hidden-tab checks remain emulated historical evidence. Restoring an older backup still loses post-snapshot changes and receipts and can permit those later requests to settle again; isolate and reconcile such a recovery as documented. Replay records remain indefinite. No deployment, push, visibility change, paid resource, or real player-data change occurred.
+
+## Public hosting preparation — October 10, 2026
+
+Audited the clean repository at commit `661f4768be147614584d4d65f49cc91fb483e2cb` before changing it. That commit identifies the baseline only: the final preparation tests and after measurements below used the uncommitted working tree, not that commit. A source manifest was not captured for those historical runs; the later closure section records the exact current source and build hashes for its own checks. The verified stack is TypeScript/Vite, Node's HTTP server, and built-in SQLite; no framework, database, or infrastructure migration was needed. The work prioritized settlement and saved-data correctness, then public request/static-serving protections and operations, then measured traffic/query improvements. No deployment, real-player writes, public-service load test, dependency version upgrade, paid resource, account system, or analytics was introduced.
+
+### Findings and implementation
+
+The existing cryptographic outcomes and session tokens, hashed session storage, exact BigInt Gold, bound SQL, escaped names, completed-run scoring, and transaction-protected revision/receipt settlement already worked. They remain authoritative. The tests cover retries and concurrent requests rather than replacing these safeguards with caches or client calculations. Odds remain visible in the state API and developer display; hiding them in ordinary play is still presentation behavior.
+
+Verified gaps were permissive methods/media types/origin handling, absent public rate limits and Secure-cookie/proxy configuration, unrestricted static file lookup, destructive legacy-database initialization, no local moderation/consistent backup tooling, duplicated client reads, and full ranking materialization on every leaderboard query. The implementation now validates bounded requests, rejects cross-origin mutations and cross-site API reads, uses explicit trusted-proxy addresses, bounds limiter/request/connection storage, sanitizes internal errors, and inventories allowed build files. Personalized API caching is private with revalidation; cookie creation, mutations, errors, and health are no-store. Static hashes are immutable, HTML revalidates, and build-time Brotli/gzip avoids request-path compression work.
+
+Schema 3 preserves competition players, scores, sessions, and complete receipts while adding local hide/show moderation and a partial ranking index. Nonempty legacy or newer unknown schemas fail without resetting data. The server reuses prepared statements and keeps WAL, synchronous=FULL, foreign keys, and the busy timeout. SQLite online backups are integrity checked and never overwrite a destination. The read-only backup command also accepts older schemas so the first schema-3 upgrade can be backed up before migration. Lossless receipt compaction examines at most 1,000 rows per invocation with a cursor; it does not delete replay IDs, fingerprints, or responses. Retention remains indefinite for saved games and replay safety. File shrinkage requires a separate offline VACUUM; backup rotation and bounded supervisor/proxy logs are operator tasks.
+
+The client uses the returned authoritative action state, avoids per-roll state/leaderboard refetches, shares one in-flight read per endpoint, refreshes visible leaderboard data at 30-second useful freshness, and uses state ETags for the five-second cross-tab fallback. BroadcastChannel hints speed same-player tab updates. Read retries have bounded backoff; uncertain mutations retain their stable ID and player binding, honor retry delays, and require manual retry or one reload recovery. Hidden tabs pause polling/audio/decorative motion and finish already-committed presentation safely. A new compact response format omits the settlement duplicated in `state.lastRoll`; existing clients and durable receipts retain the original full response.
+
+The changed files and their purposes are:
+
+| Files | Meaningful behavior or verification change |
+|---|---|
+| `server/http.ts`, `server/config.ts`, `server/limits.ts`, `server/static.ts`, `server/index.ts` | Validated public requests/configuration, explicit origin/cookie/proxy behavior, bounded resource limits, safe static delivery, health and shutdown. |
+| `server/store.ts`, `server/rules.ts` | Preserve competition saves and replay atomicity; refuse unsafe resets; indexed ranking, moderation flags, packed receipt decoding, and bounded malformed wager input before fingerprinting/BigInt. |
+| `src/main.ts`, `src/types.ts`, `src/style.css`, `index.html` | Player-bound pending actions, compact transport, fewer/coalesced reads, bounded reconnect behavior, hidden-tab rendering/audio handling, and factual public-information entry points. |
+| `scripts/admin.ts`, `scripts/compress.ts`, `scripts/workload.ts` | Filesystem-authorized moderation, pre-upgrade/live backup and receipt maintenance; build-time compression and reproducible isolated measurement. |
+| `package.json`, `package-lock.json` | Operational/build/workload commands; existing tsx moved to runtime dependencies without any dependency version upgrade. |
+| `tests/release.test.ts`, `tests/persistence.test.ts`, `tests/ui.test.mjs` | Release regression checks, non-destructive legacy handling, and real browser network/recovery/touch checks with isolated fixture data. |
+| `README.md`, `docs/spec.md`, `CREDITS.md`, `public/about.html`, `docs/VERIFICATION.md`, `docs/benchmarks/release-readiness.json` | Current operations/rules/privacy/credits, explicit rights/contact/host blockers, final checks and raw measured evidence. |
+
+Existing documentation history below remains intact.
+
+### Checks actually run
+
+Tested on macOS arm64 with **Node 26.4.0**, **SQLite 3.53.2**, **npm 11.17.0**, and headless **Chrome 154.0.8037.99** using the installed browser. Node 22.16 is the declared minimum, but that version and the eventual Linux/hosting image were not tested here.
+
+- Before modification: `npm test` **54 passed**, `npm run build` passed, and the existing Chromium suite **19 passed**. The first browser invocation could not start because the Playwright-managed executable was absent; supplying `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to the installed Chrome resolved the tooling issue.
+- Final `npm test`: **68 passed**. Fourteen new release tests include malformed/invalid UTF-8 and byte-bounded bodies, deeply nested invalid wagers rejected before fingerprinting, aborted uploads, origin/proxy/cookie behavior, isolated private ETags, player-bound and legacy retries, compact/full receipt equivalence, rate refill/storage bounds, rollback on injected receipt failure, SQL-like names, static allowlists/symlinks/compression, pre-upgrade snapshots without schema changes, schema preservation/refusal, ranking-oracle comparisons, two independent SQLite processes racing a duplicate, live WAL backup/restore, and actual production startup/SIGTERM/restart persistence. Existing full game-rule tests continue to pass.
+- Final `PLAYWRIGHT_CHROMIUM_EXECUTABLE='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' npm run test:ui`: **26 passed**. Added coverage checks bounded initial-read backoff with manual recovery of a saved action, ten ordinary rolls without per-roll refetches, coalesced focus events, simulated hidden-tab motion completion/poll pause/resume, reconnect/lost-response recovery, persisted 429 retry delay, cookie replacement, malformed or unavailable browser storage, nickname text rendering, and touch-capable mobile controls. The test helper awaits the queued guide-close focus restoration before issuing shortcuts; this fixed a timing-dependent fixture failure. Existing rules, shortcuts, seven guide languages, final scores, and restart behavior remain covered. Accelerated 100-roll fixtures explicitly widen only their isolated test server's limits; separate tests exercise limiting.
+- Final `npm run build`: TypeScript/Vite/precompression passed. JavaScript is **81.79 kB / 31.09 kB gzip**, versus **77.36 / 29.51 kB** before; release protections increased code size, so no JavaScript-size reduction is claimed. CSS is **29.85 / 7.73 kB gzip**. Four text outputs receive Brotli and gzip variants.
+- `npm run test:balance` completed the existing 10,000 seeded starts per profile/policy, 80-roll pacing experiment. Game constants and settlement probabilities were not changed. `npm audit --include=dev --json` reported **zero known vulnerabilities** at the time of the check; this is not a general security guarantee.
+- A separate temporary runtime directory installed with **`npm ci --omit=dev`**, without Vite, TypeScript, or Playwright. The built server started, served health, committed an action, shut down with SIGTERM, restored the same state after restart, replayed the identical receipt, and created a live backup through the administrative script. New database mode was 0600. Production game/public-information pages had no browser script errors; information-page widths 1280/390/320 px and the 320 px game had no horizontal overflow. Desktop and mobile screenshots were inspected.
+- `git diff --check` passed. All new verification used temporary/in-memory synthetic data. No production/player database was opened for these checks.
+
+### Local before/after measurements
+
+The [raw measurement artifact](benchmarks/release-readiness.json) records commands, methodology, full query plans, and every result. `scripts/workload.ts` starts only its own localhost server and temporary SQLite file; it accepts no public URL. Before measurements used an isolated `git archive` of the baseline commit with the same workload driver copied in and the same locked installed dependencies. Before and after runs were sequential. Seed/setup work is excluded. Each database starts with 5,000 synthetic completed leaderboard entries. Accelerated rate allowances belong only to these isolated workload workers.
+
+The API workload uses eight concurrent clients, two 100-roll runs each, red/black 1 G coverage to preserve bankroll, exact-ID retries every 20 rolls, leaderboard reads every ten rolls, and a restart between runs. It deliberately keeps the full legacy response format and the same requests on both builds. Latencies include reading the entire localhost response. CPU is measured in the child server; RSS is sampled every 20 ms with a final sample after query profiling. Body counters exclude HTTP headers.
+
+| API workload, 1,600 rolls | Before | After |
+|---|---:|---:|
+| Requests / successful responses | 1,856 / 1,856 | 1,856 / 1,856 |
+| Request JSON / response body bytes | 213,208 / 2,206,779 | 213,208 / 2,205,748 |
+| p50 / p95 response latency | 2.41 / 11.56 ms | 2.03 / 2.63 ms |
+| Elapsed / server CPU | 930.88 / 828.81 ms | 428.66 / 250.69 ms |
+| Sampled peak RSS | 88.12 MiB | 85.05 MiB |
+| Database after close / receipts | 4,456,448 bytes / 1,608 | 4,423,680 bytes / 1,608 |
+| Separate 100 distant-player leaderboard reads | 317.70 ms | 9.72 ms |
+
+The original query plan materialized the full ranked table, scanned players, and sorted temporary B-trees. The new top-ten read scans the partial ordered index only until ten rows; own-rank and neighbor queries use covering/range index searches and bounded neighbor results. An exact distant rank still counts the matching indexed ranges; this is not a claim of constant work for unlimited players.
+
+The longer repetition uses the same eight clients and 50 runs each: **40,000 rolls, 46,400 requests, and 40,392 retained receipts**, with every HTTP response 200. It is prolonged local repetition, not a multi-hour soak or a public capacity test.
+
+| Repeated workload | Before | After |
+|---|---:|---:|
+| p50 / p95 response latency | 3.75 / 8.69 ms | 2.05 / 2.93 ms |
+| Elapsed / server CPU | 22.30 / 18.38 s | 11.25 / 5.23 s |
+| Sampled peak RSS | 98.44 MiB | 96.34 MiB |
+| Database after close | 82.23 MiB | 82.16 MiB |
+| Separate 100 leaderboard reads | 309.20 ms | 10.07 ms |
+
+Database growth is essentially unchanged before explicit retention maintenance: preserving replay responses remains the main storage cost. In an additional 40,000-roll run, the pre-maintenance workload had p95 latency **3.75 ms** and server CPU **5.48 s**, illustrating local run variation. 41 bounded compaction invocations took **2.71 s** and reduced receipt text from **48,954,694 to 24,975,369 bytes**. File size stayed **86,261,760 bytes** after compaction; offline VACUUM reduced it to **37,425,152 bytes**, and `quick_check` returned `ok`. Receipt replay equivalence after compaction/restart/backup is covered separately by regression tests. No record expiration or durability relaxation produced these results.
+
+The browser workload uses the real built client at 1280×900, ten six-number 1 G full-coverage rolls with reduced motion, then 30 seconds of visible idle time. It measures initial loading as well as API traffic, including the client's new compact wire format. Chrome's encoded response counters include response headers/compressed bytes and exclude request headers; decoded body bytes are recorded separately. API calls revalidating with 304 have no response body.
+
+| One browser session, ten rolls + 30 s idle | Before | After |
+|---|---:|---:|
+| State / leaderboard / action requests | 17 / 17 / 10 | 7 / 2 / 10 |
+| Total API requests | 44 | 19 |
+| API response bodies, decoded | 38,802 bytes | 10,105 bytes |
+| API JSON request bodies | 1,530 bytes | 2,030 bytes |
+| API responses, encoded including response headers | 49,853 bytes | 19,149 bytes |
+| All responses, encoded including response headers | 158,556 bytes | 59,049 bytes |
+
+The additional request bytes bind each action to its player. Six API reads returned 304; the other 13 API responses were 200. Observed reductions were **57% fewer API requests**, **62% fewer encoded API response bytes**, and **63% fewer encoded total response bytes** for this workload. Static precompression accounts for much of the total transfer improvement. These are single sequential localhost measurements with cryptographic outcomes, small expected payload variations, no remote TLS/proxy latency, and no hosting capacity claim. The application does not dynamically compress API JSON; the selected proxy may do so.
+
+Reproduce the after workloads with a built client:
+
+```sh
+npm run build
+npm run benchmark -- --concurrency 8 --runs 2 --ranked 5000 --output /tmp/sixfold-api.json
+npm run benchmark -- --concurrency 8 --runs 50 --ranked 5000 --output /tmp/sixfold-repeat.json
+PLAYWRIGHT_CHROMIUM_EXECUTABLE='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' npm run benchmark -- --browser --ranked 5000 --output /tmp/sixfold-browser.json
+npm run benchmark -- --concurrency 8 --runs 50 --ranked 5000 --compact --output /tmp/sixfold-maintenance.json
+```
+
+### Launch blockers and limits
+
+A public contact and existing project license/ownership record have **not yet been provided for review**; publication rights remain **unconfirmed**. This does not establish that records are unavailable or that permission has been denied. Add a real privacy/abuse contact to the public page and confirm publication rights for the code and bundled assets before launch. Repository assertions of original work are documented, not treated as proof. Documentation changes alone do not resolve those owner decisions, and no legal-compliance assurance is made.
+
+The host is unselected. HTTPS termination, exact public Origin, trusted-header overwriting, private persistent local storage including WAL/SHM, process supervision, backup scheduling/restore rehearsal, log retention, and compression/cache responsibilities must be checked on the chosen host. Database restores to an older snapshot lose post-snapshot game state and replay receipts; keep such a restore isolated and reconcile affected clients, as described in README. Indefinite receipt/player retention remains intentional; disk usage must be monitored rather than blindly deleting deduplication records.
+
+No account recovery, distributed bot prevention, hidden-odds secrecy, dashboard, provider-specific service, or new background job was added. No physical phone, Safari/Firefox, actual HTTPS proxy, minimum Node version, Linux host, large-capacity load, or multi-hour soak was verified. Browser touch checks use emulation, and hidden-tab events were simulated. Complete those applicable manual/host checks before public exposure; the local results do not predict simultaneous-player capacity.
+
 ## Compact rankings, revised shortcuts, and localized guide — October 10, 2026
 
 Removed the “Play Gold only” labels from the sidebar, table, and guide. Leaderboard entries now use 40 px standard rows instead of 64 px, with a slightly taller highlighted personal record. Stronger target fills, gold hover outlines, and clearer group coverage make mouse feedback easier to see.

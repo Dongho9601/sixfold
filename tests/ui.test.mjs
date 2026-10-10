@@ -19,7 +19,10 @@ before(async () => {
   }
   store = new FixtureStore(":memory:", () => draws++ === 0 ? 0.99 : 0.1);
   vite = await createServer({ server: { middlewareMode: true, hmr: false }, appType: "spa" });
-  server = createGameServer(store, (req, res) => vite.middlewares(req, res));
+  server = createGameServer(store, (req, res) => vite.middlewares(req, res), {
+    // Only this in-memory fixture advances whole runs without human pacing.
+    limits: { actions: { capacity: 1000, perSecond: 1000 } },
+  });
   await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
   origin = `http://127.0.0.1:${server.address().port}`;
   browser = await chromium.launch({
@@ -35,8 +38,8 @@ after(async () => {
   store?.close();
 });
 
-async function game(t, width = 1280) {
-  const context = await browser.newContext({ viewport: { width, height: 900 } });
+async function game(t, width = 1280, options = {}) {
+  const context = await browser.newContext({ viewport: { width, height: 900 }, ...options });
   const page = await context.newPage();
   const errors = [];
   page.on("pageerror", error => errors.push(error.message));
@@ -47,9 +50,12 @@ async function game(t, width = 1280) {
   });
   await page.goto(origin);
   await page.locator("#welcome-start").click();
+  // dialog.close queues its close event and focus restoration separately.
+  await page.waitForFunction(() => !document.querySelector("#welcome-dialog").open && document.activeElement.id === "bet-amount");
   return page;
 }
-const saved = page => page.evaluate(async () => (await fetch("/api/state")).json());
+// Fixture SQL edits intentionally bypass action revisions; inspect them uncached.
+const saved = page => page.evaluate(async () => (await fetch("/api/state", { cache: "no-store" })).json());
 async function settled(page, gold) {
   await page.waitForFunction(value =>
     document.querySelector("#gold").textContent === value &&
@@ -736,4 +742,220 @@ test("compact leaderboard shows top 10 and distant personal context on desktop a
   await page.waitForFunction(() => document.querySelector("#leaders .you")?.value === 1);
   assert.equal(await page.locator("#leaders li[value]").count(), 10);
   assert.equal(await page.locator("#leaders .leader-gap").count(), 0);
+});
+
+test("ordinary rolls use their action response without per-roll state or leaderboard refetches", async t => {
+  const page = await game(t);
+  await page.locator("#leaders li").first().waitFor();
+  const counts = { state: 0, leaderboard: 0, action: 0 };
+  page.on("request", request => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith("/api/")) counts[path.slice(5)]++;
+  });
+  await page.locator("#bet-amount").fill("1");
+  for (let i = 0; i < 10; i++) {
+    await page.locator('[data-target="red"]').click();
+    await page.locator('[data-target="black"]').click();
+    await page.locator("#roll").click();
+    await page.waitForFunction(remaining => document.querySelector("#rolls-remaining").textContent === String(remaining) && !document.querySelector('[data-target="n1"]').disabled, 99 - i);
+  }
+  assert.equal(counts.action, 10);
+  assert.equal(counts.leaderboard, 0);
+  assert.ok(counts.state <= 2, JSON.stringify(counts));
+  assert.equal(await page.locator("#gold").innerText(), "100");
+});
+
+test("focus bursts share one state request; simulated hidden tabs finish committed motion and pause reads", async t => {
+  const page = await game(t);
+  const id = (await saved(page)).id;
+  let active = 0, peak = 0, reads = 0;
+  await page.route("**/api/state", async route => {
+    active++; reads++; peak = Math.max(peak, active);
+    await page.waitForTimeout(200);
+    const response = await route.fetch();
+    active--;
+    await route.fulfill({ response });
+  });
+  await page.evaluate(() => { for (let i = 0; i < 10; i++) window.dispatchEvent(new Event("focus")); });
+  await page.waitForTimeout(400);
+  assert.equal(peak, 1); assert.equal(reads, 1);
+  await page.unroute("**/api/state");
+  await page.locator("#settings-open").click();
+  await page.locator("#motion").uncheck();
+  await page.keyboard.press("Escape");
+  await page.locator('[data-target="n6"]').click();
+  const response = page.waitForResponse("**/api/action");
+  await page.locator("#roll").click();
+  await response;
+  await page.waitForFunction(() => document.querySelector("#die").getAttribute("aria-label") === "Die rolling");
+  let hiddenReads = 0;
+  page.on("request", request => { if (/\/api\/(state|leaderboard)$/.test(request.url())) hiddenReads++; });
+  // Browser DOM event emulation, not a physical-device claim.
+  await page.evaluate(() => {
+    window.testHidden = true;
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => window.testHidden });
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => window.testHidden ? "hidden" : "visible" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await settled(page, "330");
+  assert.equal(store.get(id).revision, "1");
+  assert.equal(await page.locator("#effects").evaluate(el => el.childElementCount), 0);
+  await page.waitForTimeout(5500);
+  assert.equal(hiddenReads, 0);
+  await page.evaluate(() => { window.testHidden = false; document.dispatchEvent(new Event("visibilitychange")); });
+  await page.waitForTimeout(400);
+  assert.equal(hiddenReads, 1);
+  assert.equal(store.get(id).revision, "1");
+  assert.equal(await page.locator("#gold").innerText(), "330");
+});
+
+test("a 429 after an uncertain commit keeps the stable action and retry delay across reload", async t => {
+  const page = await game(t);
+  const id = (await saved(page)).id;
+  const requests = [];
+  await page.route("**/api/action", async route => {
+    requests.push(route.request().postDataJSON());
+    if (requests.length === 1) {
+      await route.fetch(); // Simulate a proxy failure after the server committed.
+      await route.fulfill({ status: 429, contentType: "application/json", headers: { "Retry-After": "1" }, body: JSON.stringify({ error: "Retry shortly.", retryAfter: 1 }) });
+    } else await route.continue();
+  });
+  await page.locator('[data-target="n6"]').click();
+  await page.locator("#roll").click();
+  await page.waitForFunction(() => !document.querySelector("#retry").hidden);
+  assert.equal(await page.locator("#retry").isDisabled(), true);
+  const pending = await page.evaluate(() => JSON.parse(sessionStorage.getItem("sixfold-100-rolls-pending")));
+  assert.equal(pending.playerId, id); assert.deepEqual(pending.request, requests[0]);
+  assert.equal(store.get(id).revision, "1");
+  await page.reload();
+  await page.waitForFunction(() => !document.querySelector("#retry").hidden);
+  assert.equal(requests.length, 1);
+  await page.locator("#retry").click();
+  await settled(page, "330");
+  assert.equal(requests.length, 2);
+  assert.deepEqual(requests[0], requests[1]);
+  assert.equal(store.get(id).revision, "1");
+  assert.equal(await page.evaluate(() => sessionStorage.getItem("sixfold-100-rolls-pending")), null);
+});
+
+test("a cookie replacement cannot replay a pending roll into the new player, and invalid saved requests recover", async t => {
+  const page = await game(t);
+  const original = (await saved(page)).id;
+  let requests = 0;
+  await page.route("**/api/action", async route => { requests++; await route.abort("failed"); });
+  await page.locator('[data-target="n6"]').click();
+  await page.locator("#roll").click();
+  await page.waitForFunction(() => !document.querySelector("#retry").hidden);
+  assert.equal(requests, 1);
+  await page.context().clearCookies();
+  await page.reload();
+  await page.locator("#welcome-start").click();
+  const replacement = await saved(page);
+  assert.notEqual(replacement.id, original);
+  assert.equal(replacement.revision, "0"); assert.equal(replacement.gold, "100");
+  assert.equal(store.get(original).revision, "0"); assert.equal(requests, 1);
+  assert.match(await page.locator("#notice").innerText(), /session changed/);
+  assert.equal(await page.evaluate(() => sessionStorage.getItem("sixfold-100-rolls-pending")), null);
+  await page.evaluate(() => sessionStorage.setItem("sixfold-100-rolls-pending", "{}"));
+  await page.reload();
+  await page.waitForFunction(() => !document.querySelector('[data-target="n1"]').disabled);
+  assert.equal(await page.evaluate(() => sessionStorage.getItem("sixfold-100-rolls-pending")), null);
+});
+
+test("blocked browser storage permits play with in-tab retry recovery", async t => {
+  const page = await game(t);
+  await page.addInitScript(() => {
+    for (const name of ["localStorage", "sessionStorage"])
+      Object.defineProperty(window, name, { configurable: true, get: () => { throw new DOMException("Storage disabled", "SecurityError"); } });
+  });
+  await page.reload();
+  await page.locator("#welcome-start").click();
+  await page.locator("#settings-open").click();
+  await page.locator("#motion").check();
+  await page.keyboard.press("Escape");
+  const requests = [];
+  await page.route("**/api/action", async route => {
+    requests.push(route.request().postDataJSON());
+    if (requests.length === 1) { await route.fetch(); await route.abort("failed"); }
+    else await route.continue();
+  });
+  await page.locator('[data-target="n6"]').click();
+  await page.locator("#roll").click();
+  await page.waitForFunction(() => !document.querySelector("#retry").hidden);
+  assert.match(await page.locator("#notice").innerText(), /saved in this tab/);
+  await page.locator("#retry").click();
+  await settled(page, "330");
+  assert.deepEqual(requests[0], requests[1]);
+});
+
+test("initial reads stop after bounded backoff and Reconnect recovers a saved action exactly once", async t => {
+  const page = await game(t);
+  const id = (await saved(page)).id;
+  const requests = [];
+  await page.route("**/api/action", async route => {
+    requests.push(route.request().postDataJSON());
+    if (requests.length === 1) { await route.fetch(); await route.abort("failed"); }
+    else await route.continue();
+  });
+  await page.locator('[data-target="n6"]').click();
+  await page.locator("#roll").click();
+  await page.waitForFunction(() => !document.querySelector("#retry").hidden);
+  assert.equal(store.get(id).revision, "1");
+  await page.clock.install({ time: new Date("2030-01-01T00:00:00Z") });
+  await page.clock.pauseAt(new Date("2030-01-01T00:00:01Z"));
+  let reads = 0, disconnected = true;
+  await page.route("**/api/state", async route => {
+    reads++;
+    if (disconnected) await route.fulfill({ status: 503, contentType: "application/json", body: '{"error":"Offline fixture"}' });
+    else await route.continue();
+  });
+  const waitFor = async condition => {
+    for (let i = 0; i < 100; i++) {
+      if (await condition()) return;
+      await new Promise(resolve => setTimeout(resolve, 10));
+    }
+    assert.fail("Condition did not settle");
+  };
+  await page.reload();
+  await waitFor(() => page.locator("#notice").innerText().then(text => text.includes("Could not connect")));
+  assert.equal(reads, 1);
+  assert.equal(await page.locator("#reconnect").isVisible(), true);
+  for (const delay of [10000, 20000, 40000, 80000, 80000]) {
+    const previous = reads;
+    await page.clock.runFor(delay + 1);
+    await waitFor(() => reads === previous + 1);
+    // Allow response microtasks to schedule the next virtual timer.
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+  assert.equal(reads, 6);
+  assert.match(await page.locator("#notice").innerText(), /Reconnect/);
+  await page.clock.runFor(240000);
+  assert.equal(reads, 6);
+  assert.equal(requests.length, 1);
+  disconnected = false;
+  await page.locator("#reconnect").click({ force: true });
+  await waitFor(async () => await page.locator("#gold").innerText() === "330" && await page.evaluate(() => sessionStorage.getItem("sixfold-100-rolls-pending")) === null);
+  assert.equal(await page.locator("#reconnect").isVisible(), false);
+  assert.equal(requests.length, 2);
+  assert.deepEqual(requests[0], requests[1]);
+  assert.equal(store.get(id).revision, "1");
+});
+
+test("leaderboard names render as text and touch-capable mobile controls keep the layout within the viewport", async t => {
+  const page = await game(t, 390, { isMobile: true, hasTouch: true });
+  const id = (await saved(page)).id;
+  const nickname = "<svg/onload=alert(1)>";
+  store.act(id, { requestId: crypto.randomUUID(), revision: "0", action: { kind: "nickname", nickname } });
+  store.db.prepare("UPDATE players SET best_gold='100',has_completed_run=1 WHERE id=?").run(id);
+  await page.reload();
+  await page.locator("#leaderboard-open").tap();
+  await page.waitForSelector("#leaders .you");
+  assert.equal(await page.locator("#leaders .you .leader-name").evaluate(el => el.childNodes[0].textContent), nickname);
+  assert.equal(await page.locator("#leaders svg, #leaders script").count(), 0);
+  await page.locator('[data-close="leaderboard-dialog"]').tap();
+  await page.locator('[data-target="row1"]').tap();
+  await page.locator("#roll").tap();
+  await settled(page, "110");
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+  await page.screenshot({ path: "test-results/public-mobile-touch.png", fullPage: true });
 });

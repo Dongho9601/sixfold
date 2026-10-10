@@ -9,17 +9,21 @@
   "scripts": {
     "dev": "tsx server/index.ts",
     "start": "tsx server/index.ts --production",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc --noEmit && vite build && tsx scripts/compress.ts",
     "test": "tsx --test tests/*.test.ts",
     "test:ui": "tsx --test tests/ui.test.mjs",
     "test:balance": "tsx scripts/tune-tilt.ts",
     "audit:strategies": "tsx scripts/audit-strategies.ts",
-    "preview:fixture": "tsx scripts/fixture-server.ts"
+    "preview:fixture": "tsx scripts/fixture-server.ts",
+    "admin": "tsx scripts/admin.ts",
+    "benchmark": "tsx scripts/workload.ts"
+  },
+  "dependencies": {
+    "tsx": "^4.20.0"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",
     "playwright": "^1.64.0",
-    "tsx": "^4.20.0",
     "typescript": "^5.9.0",
     "vite": "^7.1.0"
   }

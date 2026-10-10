@@ -34,11 +34,18 @@ export type Action =
 export interface ActionRequest {
   requestId: string;
   revision: string;
+  /** Optional only for compatibility with already saved pre-release requests. */
+  playerId?: string;
   action: Action;
 }
 export interface ActionResponse {
   state: PlayerState;
   result: Settlement | null;
+}
+/** Opt-in wire representation; the complete result is already in state.lastRoll. */
+export interface ActionWireResponse {
+  state: PlayerState;
+  result: Settlement | null | "lastRoll";
 }
 export interface Leader {
   id: string;

@@ -5,6 +5,7 @@ import type {
   Action,
   ActionRequest,
   ActionResponse,
+  ActionWireResponse,
   Leader,
   PlayerState,
   Settlement,
@@ -45,6 +46,10 @@ const percent = (p: number) =>
     : `${(p * 100).toFixed(2).replace(/\.?0+$/, "")}%`;
 const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
   document.getElementById(id) as T;
+const preferences = {
+  get(key: string) { try { return localStorage.getItem(key); } catch { return null; } },
+  set(key: string, value: string) { try { localStorage.setItem(key, value); } catch { /* Preferences are optional. */ } },
+};
 let state: PlayerState | undefined;
 let draft: Wagers = {};
 let amount = CONFIG.selectedWager as string;
@@ -59,9 +64,13 @@ try {
 let busy = false;
 let actionPhase = "";
 let pending: ActionRequest | null = null;
+let pendingPlayerId: string | undefined;
+let pendingDurable = true;
+let actionRetryAt = 0;
+let retryTimer: ReturnType<typeof setTimeout> | undefined;
 let hoverTarget: string | null = null;
-let sound = localStorage.getItem("one-of-six-sound") !== "off";
-let showProbabilities = localStorage.getItem("sixfold-show-probabilities") === "on";
+let sound = preferences.get("one-of-six-sound") !== "off";
+let showProbabilities = preferences.get("sixfold-show-probabilities") === "on";
 type ChipPose = { x: number; y: number; rotation: number; tone: number };
 const chipPoses = new Map<string, ChipPose[]>();
 let audioContext: AudioContext | undefined;
@@ -71,13 +80,23 @@ let announcement = "";
 let networkError = false;
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 let manualReducedMotion =
-  localStorage.getItem("one-of-six-motion") === "reduce";
-const shouldReduceMotion = () => reducedMotion.matches || manualReducedMotion;
+  preferences.get("one-of-six-motion") === "reduce";
+const prefersReducedMotion = () => reducedMotion.matches || manualReducedMotion;
+const shouldReduceMotion = () => document.hidden || prefersReducedMotion();
 document.documentElement.classList.toggle("reduce-motion", manualReducedMotion);
 try {
-  pending = JSON.parse(sessionStorage.getItem("sixfold-100-rolls-pending") || "null");
+  const saved = JSON.parse(sessionStorage.getItem("sixfold-100-rolls-pending") || "null");
+  // Accept the previous request-only format for existing tabs; new writes bind
+  // recovery to a player so a lost/replaced cookie cannot act on another session.
+  pending = saved?.request ?? saved;
+  pendingPlayerId = saved?.playerId;
+  if (Number.isFinite(saved?.retryAt)) actionRetryAt = Math.min(saved.retryAt, Date.now() + 120000);
+  if (pending && (typeof pending.requestId !== "string" || typeof pending.revision !== "string" || !pending.action || !["roll", "shake", "restart", "nickname"].includes(pending.action.kind)))
+    throw new Error("Invalid saved action.");
 } catch {
-  sessionStorage.removeItem("sixfold-100-rolls-pending");
+  pending = null;
+  pendingPlayerId = undefined;
+  try { sessionStorage.removeItem("sixfold-100-rolls-pending"); } catch { /* Continue with in-memory recovery. */ }
 }
 
 const guideLanguageKey = "sixfold-guide-language";
@@ -97,7 +116,7 @@ app.innerHTML = `
         </section>
         <section class="stat-card remaining-rolls" aria-labelledby="rolls-label"><span id="rolls-label" class="eyebrow">Rolls remaining</span><strong class="stat-value"><span id="rolls-remaining" class="stat-number" aria-live="polite">${CONFIG.rollsPerRun}</span></strong></section>
         <section class="stat-card table-wager" aria-label="On the table"><span class="eyebrow">On the table</span><strong id="draft-total" class="stat-value"><span id="draft-gold" class="stat-number">0</span> <span class="gold-unit">G</span></strong></section>
-        <div class="sidebar-bottom"><div class="header-actions"><button id="leaderboard-open" class="utility-button" aria-label="Open leaderboard" aria-expanded="false">${icon("trophy")}<span>Leaderboard</span></button><button id="guide-open" class="utility-button" aria-label="How to play">${icon("help")}<span>How to play</span></button><button id="settings-open" class="utility-button" aria-label="Settings">${icon("settings")}<span>Settings</span></button></div></div>
+        <div class="sidebar-bottom"><div class="header-actions"><button id="leaderboard-open" class="utility-button" aria-label="Open leaderboard" aria-expanded="false">${icon("trophy")}<span>Leaderboard</span></button><button id="guide-open" class="utility-button" aria-label="How to play">${icon("help")}<span>How to play</span></button><button id="settings-open" class="utility-button" aria-label="Settings">${icon("settings")}<span>Settings</span></button></div><a class="site-information" href="/about.html">Rules, privacy &amp; credits</a></div>
       </aside>
       <div class="playfield">
         <section class="table-area" aria-label="Betting table">
@@ -116,7 +135,7 @@ app.innerHTML = `
           <div class="chip-controls"><label class="control-label" for="bet-amount">Bet amount</label><div class="amount-row"><div class="amount-selector"><button id="decrease" aria-label="Decrease bet by 5 Gold" aria-keyshortcuts="w" title="Decrease bet by 5 Gold (W)">−</button><input id="bet-amount" type="text" role="spinbutton" inputmode="numeric" pattern="[0-9]*" value="${CONFIG.selectedWager}" aria-valuemin="1" aria-valuenow="${CONFIG.selectedWager}" aria-label="Bet amount in Gold" autocomplete="off" /><span>G</span><button id="increase" aria-label="Increase bet by 5 Gold" aria-keyshortcuts="e" title="Increase bet by 5 Gold (E)">+</button></div><div id="recent-amounts" class="recent-amounts" role="group" aria-label="Recently used bet amounts"></div></div></div>
           <div class="actions"><button id="roll" class="roll-button" aria-keyshortcuts="r">${icon("dice")}<span>Roll dice</span><kbd>R</kbd></button><button id="shake" class="shake-button" aria-keyshortcuts="Space" aria-describedby="shake-hint" disabled>${icon("shake")}<span>Shake</span><kbd>Space</kbd></button></div>
           <p id="shake-hint" class="shake-hint">Shake unlocks after a roll changes your bankroll.</p>
-          <div class="messages"><p id="run-status" class="notice" role="status" hidden></p><p id="roll-announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p><p id="notice" class="notice" role="status" aria-live="polite"></p><button id="retry" class="text-button" hidden>Retry saved action</button></div>
+          <div class="messages"><p id="run-status" class="notice" role="status" hidden></p><p id="roll-announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p><p id="notice" class="notice" role="status" aria-live="polite"></p><button id="retry" class="text-button" hidden>Retry saved action</button><button id="reconnect" class="text-button" hidden>Reconnect</button></div>
         </section>
       </div>
       <aside id="leaderboard-rail" class="leaderboard-rail" aria-label="Leaderboard tower"></aside>
@@ -127,7 +146,7 @@ app.innerHTML = `
   <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title"><div class="dialog-top"><div><h2 id="settings-title">Settings</h2></div><button class="icon-button" data-close="settings-dialog" aria-label="Close settings">${icon("close")}</button></div>
     <form id="nickname-form"><label for="nickname">Your leaderboard name</label><div class="nickname-row"><input id="nickname" maxlength="48" required autocomplete="nickname"/><button type="submit" id="save-nickname">Save</button></div><p id="nickname-status" role="status"></p></form>
     <label class="sound-control"><span>Sound effects</span><input id="sound" type="checkbox" role="switch" ${sound ? "checked" : ""}/></label>
-    <label class="sound-control"><span>Reduce motion</span><input id="motion" type="checkbox" role="switch" ${shouldReduceMotion() ? "checked" : ""}/></label>
+    <label class="sound-control"><span>Reduce motion</span><input id="motion" type="checkbox" role="switch" ${prefersReducedMotion() ? "checked" : ""}/></label>
     <label class="sound-control"><span>Show probabilities (developer)</span><input id="show-probabilities" type="checkbox" role="switch" ${showProbabilities ? "checked" : ""}/></label>
     <div class="settings-restart"><button id="settings-restart" class="danger-button" aria-haspopup="dialog" aria-controls="restart-dialog" disabled>Restart run</button></div>
   </dialog>
@@ -216,6 +235,7 @@ setDie(1);
 
 // All motion is decorative. The server settles the roll before presentation begins.
 const activeAnimations = new Set<Animation>();
+const activeCounts = new Set<() => void>();
 function motion(element: HTMLElement, frames: Keyframe[], options: KeyframeAnimationOptions) {
   if (shouldReduceMotion()) return Promise.resolve();
   const animation = element.animate(frames, options);
@@ -227,6 +247,7 @@ function motion(element: HTMLElement, frames: Keyframe[], options: KeyframeAnima
 }
 function stopMotion() {
   activeAnimations.forEach(animation => animation.cancel());
+  activeCounts.forEach(finish => finish());
   $("effects").replaceChildren();
 }
 async function rollDie(outcome: number) {
@@ -424,13 +445,25 @@ function countBalance(from: bigint, to: bigint) {
   if (shouldReduceMotion()) { showGold(to); return Promise.resolve(); }
   return new Promise<void>(resolve => {
     const start = performance.now();
+    let completed = false;
+    let frameId: number;
+    const finish = () => {
+      if (completed) return;
+      completed = true;
+      cancelAnimationFrame(frameId);
+      activeCounts.delete(finish);
+      showGold(to);
+      resolve();
+    };
+    activeCounts.add(finish);
     function frame(now: number) {
+      if (completed) return;
       const progress = shouldReduceMotion() ? 1 : Math.min(1, (now - start) / 720);
       const eased = BigInt(Math.round((1 - (1 - progress) ** 3) * 1000));
       showGold(from + (to - from) * eased / 1000n);
-      if (progress < 1) requestAnimationFrame(frame); else resolve();
+      if (progress < 1) frameId = requestAnimationFrame(frame); else finish();
     }
-    requestAnimationFrame(frame);
+    frameId = requestAnimationFrame(frame);
   });
 }
 async function presentNewRun(next: PlayerState) {
@@ -663,10 +696,12 @@ function render() {
   $("roll").querySelector("span")!.textContent = busy ? actionPhase || "Saving…" : "Roll dice";
   for (const id of ["settings-restart", "restart-confirm"])
     $<HTMLButtonElement>(id).disabled = busy || !!pending;
-  $<HTMLButtonElement>("run-confirm").disabled = busy || (!!pending && pending.action.kind !== "restart");
+  $<HTMLButtonElement>("run-confirm").disabled = busy || (!!pending && (pending.action.kind !== "restart" || Date.now() < actionRetryAt));
   $<HTMLInputElement>("run-nickname").disabled = busy || !!pending;
   $("run-confirm").textContent = busy ? "Starting new run…" : pending?.action.kind === "restart" ? "Retry & play again" : "Confirm & play again";
   $("retry").hidden = !pending || busy;
+  $<HTMLButtonElement>("retry").disabled = Date.now() < actionRetryAt;
+  $("reconnect").hidden = !networkError || (!!pending && !!state);
   centerBoardNumbers();
   updateHighlight();
   renderRecentAmounts();
@@ -722,7 +757,7 @@ function stopSound() {
   audioSources.clear();
 }
 function playTone(kind: "chip" | "roll" | "win" | "jackpot") {
-  if (!sound) return;
+  if (!sound || document.hidden) return;
   try {
     audioContext ||= new AudioContext();
     void audioContext.resume();
@@ -782,45 +817,111 @@ function announceRoll(result: Settlement) {
   $("roll-announcement").textContent =
     `Rolled ${result.outcome}. ${result.jackpot ? "Jackpot. " : ""}Return ${formatGold(result.totalReturn)} Gold. Net ${signed(result.net)} Gold.`;
 }
-async function getState() {
-  const response = await fetch("/api/state", { cache: "no-store" });
-  if (!response.ok) throw new Error("Could not load your game.");
-  return (await response.json()) as PlayerState;
+let stateTag: string | undefined;
+let cachedState: PlayerState | undefined;
+let stateRead: Promise<PlayerState> | undefined;
+let sessionCreated = false;
+let readRetryAt = 0;
+class ReadError extends Error {
+  constructor(message: string, public retryAfter = 0) { super(message); }
 }
-async function refreshLeaderboard() {
-  try {
-    const response = await fetch("/api/leaderboard", { cache: "no-store" });
-    if (!response.ok) throw new Error();
-    const leaders: Leader[] = await response.json();
-    const ownRank = leaders.find(leader => leader.id === state?.id)?.rank;
-    $("leaders").innerHTML = leaders.map((leader, index) => {
-      const own = leader.id === state?.id;
-      const gap = index > 0 && leader.rank > leaders[index - 1].rank + 1
-        ? '<li class="leader-gap" role="presentation" aria-hidden="true">···</li>' : "";
-      const score = formatGold(leader.bestGold);
-      return `${gap}<li value="${leader.rank}" class="${own ? "you" : ""}" ${own ? 'aria-current="true"' : ""}><span class="rank">${String(leader.rank).padStart(2, "0")}</span><span class="leader-name" title="${escape(leader.nickname)}">${escape(leader.nickname)}${own ? '<small class="leader-you">Your best</small>' : ""}</span><strong title="${score} G" aria-label="${score} Gold">${compactGold(leader.bestGold)}<small> G</small></strong></li>`;
-    }).join("");
-    if (!leaders.length) $("leaders").innerHTML = '<li class="empty-floor">No scores yet.</li>';
-    $("leaderboard-unranked").hidden = ownRank !== undefined;
-    const ownFloor = $("leaders").querySelector<HTMLElement>(".you");
-    if (ownFloor && ownRank && previousRank && ownRank < previousRank) {
-      void motion(ownFloor, [{transform: "translateY(28px) scale(.94)", filter: "brightness(1.8)"}, {transform: "translateY(0) scale(1)", filter: "brightness(1)"}], {duration: 900, easing: "cubic-bezier(.2,.8,.2,1)"});
+function retryAfter(response: Response) {
+  const seconds = Number(response.headers.get("Retry-After"));
+  return Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds * 1000, 120000) : 0;
+}
+function getState(): Promise<PlayerState> {
+  if (stateRead) return stateRead;
+  stateRead = (async () => {
+    const response = await fetch("/api/state", {
+      cache: "no-store", credentials: "same-origin", signal: AbortSignal.timeout(8000),
+      headers: stateTag ? { "If-None-Match": stateTag } : {},
+    });
+    if (response.status === 304 && cachedState) return cachedState;
+    if (!response.ok) throw new ReadError("Could not load your game.", retryAfter(response));
+    stateTag = response.headers.get("ETag") || undefined;
+    sessionCreated = response.headers.get("X-Sixfold-Session-Created") === "1";
+    cachedState = await response.json() as PlayerState;
+    return cachedState;
+  })().finally(() => { stateRead = undefined; });
+  return stateRead;
+}
+let leaderboardRead: Promise<void> | undefined;
+let leaderboardTag: string | undefined;
+let leaderboardPlayer: string | undefined;
+let nextLeaderboardAt = 0;
+let leaderboardVersion = 0;
+let leaderboardFailures = 0;
+const leaderboardVisible = () => wideLeaderboard.matches || $<HTMLDialogElement>("leaderboard-dialog").open;
+function invalidateLeaderboard() { leaderboardVersion++; leaderboardTag = undefined; nextLeaderboardAt = 0; }
+function refreshLeaderboard(force = false): Promise<void> {
+  if (leaderboardRead) return leaderboardRead;
+  if (!state || document.hidden || !leaderboardVisible() || leaderboardFailures >= 6 || Date.now() < readRetryAt || (!force && Date.now() < nextLeaderboardAt)) return Promise.resolve();
+  if (leaderboardPlayer !== state.id) { leaderboardPlayer = state.id; invalidateLeaderboard(); }
+  const player = state.id;
+  const version = leaderboardVersion;
+  nextLeaderboardAt = Date.now() + 30000;
+  leaderboardRead = (async () => {
+    try {
+      const response = await fetch("/api/leaderboard", {
+        cache: "no-store", credentials: "same-origin", signal: AbortSignal.timeout(8000),
+        headers: leaderboardTag ? { "If-None-Match": leaderboardTag } : {},
+      });
+      if (version !== leaderboardVersion || player !== state?.id) return;
+      if (response.status === 304) { leaderboardFailures = 0; return; }
+      if (!response.ok) {
+        readRetryAt = Math.max(readRetryAt, Date.now() + retryAfter(response));
+        throw new Error();
+      }
+      leaderboardTag = response.headers.get("ETag") || undefined;
+      leaderboardFailures = 0;
+      const leaders: Leader[] = await response.json();
+      const ownRank = leaders.find(leader => leader.id === state?.id)?.rank;
+      $("leaders").innerHTML = leaders.map((leader, index) => {
+        const own = leader.id === state?.id;
+        const gap = index > 0 && leader.rank > leaders[index - 1].rank + 1
+          ? '<li class="leader-gap" role="presentation" aria-hidden="true">···</li>' : "";
+        const score = formatGold(leader.bestGold);
+        return `${gap}<li value="${leader.rank}" class="${own ? "you" : ""}" ${own ? 'aria-current="true"' : ""}><span class="rank">${String(leader.rank).padStart(2, "0")}</span><span class="leader-name" title="${escape(leader.nickname)}">${escape(leader.nickname)}${own ? '<small class="leader-you">Your best</small>' : ""}</span><strong title="${score} G" aria-label="${score} Gold">${compactGold(leader.bestGold)}<small> G</small></strong></li>`;
+      }).join("");
+      if (!leaders.length) $("leaders").innerHTML = '<li class="empty-floor">No scores yet.</li>';
+      $("leaderboard-unranked").hidden = ownRank !== undefined;
+      const ownFloor = $("leaders").querySelector<HTMLElement>(".you");
+      if (ownFloor && ownRank && previousRank && ownRank < previousRank)
+        void motion(ownFloor, [{transform: "translateY(28px) scale(.94)", filter: "brightness(1.8)"}, {transform: "translateY(0) scale(1)", filter: "brightness(1)"}], {duration: 900, easing: "cubic-bezier(.2,.8,.2,1)"});
+      previousRank = ownRank;
+    } catch {
+      leaderboardTag = undefined;
+      leaderboardFailures++;
+      nextLeaderboardAt = Date.now() + Math.min(120000, 30000 * 2 ** (leaderboardFailures - 1));
+      $("leaders").innerHTML = leaderboardFailures >= 6
+        ? '<li class="empty-floor">Leaderboard unavailable. <button class="text-button" data-leaderboard-retry>Retry leaderboard</button></li>'
+        : '<li class="empty-floor">Leaderboard unavailable. Retrying shortly.</li>';
+      $("leaderboard-unranked").hidden = true;
     }
-    previousRank = ownRank;
-  } catch {
-    $("leaders").innerHTML =
-      '<li class="empty-floor">Leaderboard unavailable. Retrying shortly.</li>';
-    $("leaderboard-unranked").hidden = true;
-  }
+  })().finally(() => {
+    leaderboardRead = undefined;
+    if (version !== leaderboardVersion) void refreshLeaderboard();
+  });
+  return leaderboardRead;
 }
 function savePending(value: ActionRequest | null) {
   pending = value;
-  if (value)
-    sessionStorage.setItem("sixfold-100-rolls-pending", JSON.stringify(value));
-  else sessionStorage.removeItem("sixfold-100-rolls-pending");
+  pendingPlayerId = value ? state?.id : undefined;
+  try {
+    if (value) sessionStorage.setItem("sixfold-100-rolls-pending", JSON.stringify({ playerId: pendingPlayerId, request: value, retryAt: actionRetryAt }));
+    else sessionStorage.removeItem("sixfold-100-rolls-pending");
+    pendingDurable = true;
+  } catch { pendingDurable = false; }
 }
 async function perform(action?: Action) {
   if (!state || busy) return;
+  if (Date.now() < actionRetryAt) return;
+  if (pendingPlayerId && pendingPlayerId !== state.id) {
+    savePending(null);
+    announce("The player session changed. The saved action was not sent to the new player.", true);
+    render();
+    return;
+  }
   if (action && pending) return;
   if (action?.kind === "shake" && !state.canShake) return;
   if (action)
@@ -830,10 +931,13 @@ async function perform(action?: Action) {
         byte.toString(16).padStart(2, "0"),
       ).join(""),
       revision: state.revision,
+      playerId: state.id,
       action,
     });
   if (!pending) return;
   const request = pending;
+  const recovering = !action;
+  const before = state;
   busy = true;
   actionPhase = request.action.kind === "roll" ? "Rolling…" : request.action.kind === "shake" ? "New die…" : request.action.kind === "restart" ? "New run…" : "Saving…";
   if (request.action.kind !== "nickname") clearResult();
@@ -846,13 +950,19 @@ async function perform(action?: Action) {
   try {
     const response = await fetch("/api/action", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "X-Sixfold-Response": "compact-v1" },
       body: JSON.stringify(request),
       signal: AbortSignal.timeout(12000),
     });
     const payload = await response.json();
     if (!response.ok) {
-      if (response.status < 500) {
+      const transient = [408, 425, 429].includes(response.status) || response.status >= 500;
+      if (transient) {
+        actionRetryAt = Date.now() + (retryAfter(response) || 1000);
+        savePending(request);
+        clearTimeout(retryTimer);
+        retryTimer = setTimeout(() => render(), actionRetryAt - Date.now());
+      } else {
         savePending(null);
         if (payload.state) {
           state = payload.state;
@@ -864,7 +974,8 @@ async function perform(action?: Action) {
         payload.error || "The server could not confirm this action.",
       );
     }
-    const data = payload as ActionResponse;
+    const wire = payload as ActionWireResponse;
+    const data: ActionResponse = { state: wire.state, result: wire.result === "lastRoll" ? wire.state.lastRoll : wire.result };
     // Settlement is already committed. This animation only presents its stored outcome.
     if (data.result) {
       playTone("roll");
@@ -895,9 +1006,13 @@ async function perform(action?: Action) {
     if (request.action.kind === "restart") $("table-status").textContent = "Place your bets";
     if (request.action.kind !== "nickname") draft = {};
     savePending(null);
+    actionRetryAt = 0;
     networkError = false;
+    cachedState = state;
+    stateTag = undefined;
     // A replay can describe an older revision when another tab has since acted.
-    const current = await getState().catch(() => null);
+    const current = recovering || crossTabChanged ? await getState().catch(() => null) : null;
+    crossTabChanged = false;
     if (
       current &&
       (current.id !== state.id ||
@@ -911,14 +1026,18 @@ async function perform(action?: Action) {
         "Another tab has updated the game. The latest saved board is shown.",
       );
     }
-    void refreshLeaderboard();
+    channel?.postMessage({ playerId: state.id, revision: state.revision });
+    if (state.nickname !== before.nickname || state.bestGold !== before.bestGold || state.hasCompletedRun !== before.hasCompletedRun) {
+      invalidateLeaderboard();
+      void refreshLeaderboard();
+    }
   } catch (error) {
     $("table-status").textContent = pending ? "Waiting to reconnect" : "Place your bets";
     const message =
       error instanceof Error ? error.message : "Connection interrupted.";
     announce(
       pending
-        ? `${message} Your action is saved. Retry to recover the same result.`
+        ? `${message} Your action is saved${pendingDurable ? "" : " in this tab"}. Retry to recover the same result.`
         : message,
       true,
     );
@@ -944,6 +1063,11 @@ app.addEventListener("contextmenu", (event) => {
 
 app.addEventListener("click", (event) => {
   const element = event.target as HTMLElement;
+  if (element.closest("[data-leaderboard-retry]")) {
+    leaderboardFailures = 0;
+    nextLeaderboardAt = 0;
+    void refreshLeaderboard();
+  }
   const target = element.closest<HTMLElement>("[data-target]");
   if (target) addBet(target.dataset.target!);
   const close = element.closest<HTMLElement>("[data-close]");
@@ -1011,6 +1135,7 @@ $("bet-amount").addEventListener("change", () => {
 function openLeaderboard() {
   $<HTMLDialogElement>("leaderboard-dialog").showModal();
   $("leaderboard-open").setAttribute("aria-expanded", "true");
+  if (leaderboardFailures >= 6) { leaderboardFailures = 0; nextLeaderboardAt = 0; }
   void refreshLeaderboard();
 }
 const wideLeaderboard = matchMedia("(min-width: 1101px)");
@@ -1022,6 +1147,7 @@ function placeLeaderboard() {
   } else {
     dialog.append($("leaderboard-content"));
   }
+  if (state) void refreshLeaderboard();
 }
 wideLeaderboard.addEventListener("change", placeLeaderboard);
 placeLeaderboard();
@@ -1076,13 +1202,13 @@ $("nickname-form").addEventListener("submit", (e) => {
 });
 $("sound").addEventListener("change", () => {
   sound = $<HTMLInputElement>("sound").checked;
-  localStorage.setItem("one-of-six-sound", sound ? "on" : "off");
+  preferences.set("one-of-six-sound", sound ? "on" : "off");
   if (sound) playTone("chip");
   else stopSound();
 });
 $("show-probabilities").addEventListener("change", () => {
   showProbabilities = $<HTMLInputElement>("show-probabilities").checked;
-  localStorage.setItem("sixfold-show-probabilities", showProbabilities ? "on" : "off");
+  preferences.set("sixfold-show-probabilities", showProbabilities ? "on" : "off");
   render();
 });
 function renderGuide() {
@@ -1117,20 +1243,20 @@ function openGuide(trigger: HTMLElement, showTilt = false) {
 $("guide-open").addEventListener("click", () => openGuide($("guide-open")));
 $("tilt-info").addEventListener("click", () => openGuide($("tilt-info"), true));
 $("welcome-dialog").addEventListener("close", () => {
-  if (state) localStorage.setItem(`sixfold-guide-seen:${state.id}`, "yes");
+  if (state) preferences.set(`sixfold-guide-seen:${state.id}`, "yes");
   guideReturnFocus.focus({ preventScroll: true });
 });
 function showFirstGameGuide() {
   if (!state || pending || runEnded()) return;
   const key = `sixfold-guide-seen:${state.id}`;
-  if (state.lastRoll) localStorage.setItem(key, "yes");
-  if (!state.lastRoll && localStorage.getItem(key) !== "yes") {
+  if (state.lastRoll) preferences.set(key, "yes");
+  if (!state.lastRoll && preferences.get(key) !== "yes") {
     $<HTMLDialogElement>("welcome-dialog").showModal();
   }
 }
 $("motion").addEventListener("change", () => {
   manualReducedMotion = $<HTMLInputElement>("motion").checked;
-  localStorage.setItem(
+  preferences.set(
     "one-of-six-motion",
     manualReducedMotion ? "reduce" : "normal",
   );
@@ -1139,11 +1265,11 @@ $("motion").addEventListener("change", () => {
     manualReducedMotion,
   );
   if (shouldReduceMotion()) stopMotion();
-  $<HTMLInputElement>("motion").checked = shouldReduceMotion();
+  $<HTMLInputElement>("motion").checked = prefersReducedMotion();
 });
 reducedMotion.addEventListener("change", () => {
   if (shouldReduceMotion()) stopMotion();
-  $<HTMLInputElement>("motion").checked = shouldReduceMotion();
+  $<HTMLInputElement>("motion").checked = prefersReducedMotion();
 });
 document.addEventListener("keydown", (event) => {
   const target = event.target;
@@ -1191,65 +1317,110 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-async function sync() {
-  if (!state) {
-    await initialize();
-    return;
-  }
-  if (busy || pending || document.visibilityState === "hidden") return;
-  try {
-    const latest = await getState();
-    // A response initiated before a local action must never overwrite that action.
-    if (busy || pending) return;
-    if (
-      !state ||
-      latest.id !== state.id ||
-      BigInt(latest.revision) > BigInt(state.revision)
-    ) {
-      const existed = !!state;
-      state = latest;
-      draft = {};
-      clearResult();
-      setDie(1);
-      render();
-      if (existed)
-        announce(
-          "This game changed in another tab. Draft cleared; review the new board.",
-        );
+let crossTabChanged = false;
+const channel = typeof BroadcastChannel === "undefined" ? undefined : new BroadcastChannel("sixfold-state-changes");
+channel?.addEventListener("message", event => {
+  if (!state || event.data?.playerId !== state.id || typeof event.data?.revision !== "string" || event.data.revision.length > 128 || !/^(0|[1-9]\d*)$/.test(event.data.revision)) return;
+  if (BigInt(event.data.revision) <= BigInt(state!.revision)) return;
+  crossTabChanged = true;
+  if (!busy && !pending) void sync();
+});
+let syncRead: Promise<void> | undefined;
+let readFailures = 0;
+let pollTimer: ReturnType<typeof setTimeout> | undefined;
+function sync(): Promise<void> {
+  if (syncRead) return syncRead;
+  if (!state) return initialize();
+  if (busy || pending || document.hidden || Date.now() < readRetryAt) return Promise.resolve();
+  syncRead = (async () => {
+    try {
+      const latest = await getState();
+      // A response initiated before a local action cannot overwrite that action.
+      if (busy || pending) return;
+      if (!state || latest.id !== state.id || BigInt(latest.revision) > BigInt(state.revision)) {
+        const existed = !!state;
+        const scoreChanged = !state || latest.nickname !== state.nickname || latest.bestGold !== state.bestGold || latest.hasCompletedRun !== state.hasCompletedRun;
+        state = latest;
+        draft = {};
+        clearResult();
+        setDie(1);
+        render();
+        if (scoreChanged) invalidateLeaderboard();
+        if (existed) announce("This game changed in another tab. Draft cleared; review the new board.");
+        else showFirstGameGuide();
+      }
+      crossTabChanged = false;
+      readFailures = 0;
+      if (networkError) { networkError = false; announce("Connected. Your saved game is ready."); }
+      $("reconnect").hidden = true;
+      void refreshLeaderboard();
+    } catch (error) {
+      readFailures++;
+      readRetryAt = Math.max(readRetryAt, Date.now() + (error instanceof ReadError ? error.retryAfter : 0));
+      networkError = true;
+      announce(readFailures >= 6 ? "Connection unavailable. Use Reconnect to try again." : "Connection unavailable. Reconnecting to your saved game…", true);
+      $("reconnect").hidden = !!pending;
     }
-    if (networkError) {
-      networkError = false;
-      announce("Connected. Your saved game is ready.");
-    }
-  } catch {
-    networkError = true;
-    if (!announcement)
-      announce(
-        "Connection unavailable. Reconnecting to your saved game…",
-        true,
-      );
-  }
-  void refreshLeaderboard();
+  })().finally(() => { syncRead = undefined; });
+  return syncRead;
 }
-async function initialize() {
+function schedulePoll() {
+  clearTimeout(pollTimer);
+  if (document.hidden || readFailures >= 6) return;
+  const delay = Math.max(CONFIG.syncIntervalMs * 2 ** Math.min(readFailures, 4), readRetryAt - Date.now());
+  pollTimer = setTimeout(async () => { await sync(); schedulePoll(); }, delay);
+}
+let initializing: Promise<void> | undefined;
+function initialize(): Promise<void> {
+  if (initializing) return initializing;
+  initializing = initializeOnce().finally(() => { initializing = undefined; });
+  return initializing;
+}
+async function initializeOnce() {
+  if (document.hidden || Date.now() < readRetryAt) { schedulePoll(); return; }
   try {
     state = await getState();
+    readFailures = 0;
+    if (networkError) announce("Connected. Your saved game is ready.");
+    networkError = false;
     setDie(1);
+    // Old-format pending actions are safe only if this resumes an existing cookie.
+    if (pending && (sessionCreated || (pendingPlayerId && pendingPlayerId !== state.id))) {
+      savePending(null);
+      announce("The player session changed. The saved action was not sent to the new player.", true);
+    }
     render();
     void refreshLeaderboard();
-    if (pending) {
-      announce("Recovering your last saved action…");
-      await perform();
-    }
+    if (pending) { announce("Recovering your last saved action…"); await perform(); }
     showFirstGameGuide();
-  } catch {
+  } catch (error) {
+    readFailures++;
+    readRetryAt = Math.max(readRetryAt, Date.now() + (error instanceof ReadError ? error.retryAfter : 0));
     networkError = true;
-    announce(
-      "Could not connect. Start the local server; this page will retry automatically.",
-      true,
-    );
+    announce(readFailures >= 6 ? "Could not connect. Use Reconnect to try again." : "Could not connect. Your saved game will retry automatically.", true);
+    $("reconnect").hidden = false;
+  } finally {
+    if (pending && actionRetryAt > Date.now()) {
+      clearTimeout(retryTimer);
+      retryTimer = setTimeout(() => render(), actionRetryAt - Date.now());
+    }
+    schedulePoll();
   }
 }
+function reconnect() {
+  readFailures = 0;
+  if (leaderboardFailures >= 6) { leaderboardFailures = 0; nextLeaderboardAt = 0; }
+  void (state ? sync() : initialize()).finally(schedulePoll);
+}
+$("reconnect").addEventListener("click", reconnect);
+window.addEventListener("online", reconnect);
+window.addEventListener("focus", () => { if (!document.hidden) reconnect(); });
+document.addEventListener("visibilitychange", () => {
+  document.documentElement.classList.toggle("page-hidden", document.hidden);
+  if (document.hidden) {
+    clearTimeout(pollTimer);
+    stopMotion(); stopSound();
+    void audioContext?.suspend();
+  } else reconnect();
+});
 void initialize();
-setInterval(() => void sync(), CONFIG.syncIntervalMs);
-window.addEventListener("focus", () => void sync());

@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { once } from "node:events";
 import { Store } from "../server/store.ts";
+import { DatabaseSync } from "node:sqlite";
 import { createGameServer } from "../server/http.ts";
 import { tiltLevel } from "../server/rules.ts";
 import type {
@@ -293,7 +294,7 @@ test("the results migration preserves competition players, scores and receipts",
     assert.deepEqual(store.session(token), migrated);
     assert.deepEqual(store.act(state.id, rename), receipt);
     assert.equal(store.leaderboard()[0].bestGold, "400");
-    assert.equal(store.db.prepare("PRAGMA user_version").get()!.user_version, 2);
+    assert.equal(store.db.prepare("PRAGMA user_version").get()!.user_version, 3);
     store.close();
     store = new Store(path);
     assert.deepEqual(store.session(token), migrated);
@@ -425,7 +426,7 @@ test("HTTP: independent sessions, concurrent duplicates, stale tab, lost respons
   const post = (cookie: string, req: ActionRequest) =>
     fetch(url + "/api/action", {
       method: "POST",
-      headers: { "Content-Type": "application/json", cookie },
+      headers: { "Content-Type": "application/json", cookie, Origin: url },
       body: JSON.stringify(req),
     });
   try {
@@ -576,30 +577,22 @@ test("Jackpot's automatic reset consumes the bankroll change and locks the new b
   }
 });
 
-test("the competition migration clears old saves and receipts exactly once", () => {
-  const dir = mkdtempSync(join(tmpdir(), "sixfold-migration-"));
+test("legacy endless-game data is rejected without deleting saves or receipts", () => {
+  const dir = mkdtempSync(join(tmpdir(), "sixfold-legacy-"));
   const path = join(dir, "game.sqlite");
-  let store = new Store(path, () => 0.1);
+  const store = new Store(path, () => 0.1);
+  const { state, token } = store.create();
+  store.act(state.id, request("0", { kind: "nickname", nickname: "Legacy player" }));
+  store.db.exec("PRAGMA user_version=0");
+  store.close();
   try {
-    const { state, token } = store.create();
-    fixture(store, state.id, "101", "900");
-    store.act(state.id, request("0", { kind: "nickname", nickname: "Old record" }));
-    store.db.exec("ALTER TABLE players DROP COLUMN can_shake; ALTER TABLE players DROP COLUMN rolls_used; ALTER TABLE players DROP COLUMN has_completed_run; PRAGMA user_version = 0");
-    store.close();
-    store = new Store(path);
-    assert.equal(store.session(token), null);
-    assert.deepEqual(store.leaderboard(), []);
-    assert.equal(store.db.prepare("SELECT count(*) AS n FROM receipts").get()!.n, 0);
-    const fresh = store.create();
-    assert.equal(fresh.state.gold, "100");
-    assert.equal(fresh.state.bestGold, "0");
-    assert.equal(fresh.state.rollsUsed, 0);
-    assert.equal(fresh.state.hasCompletedRun, false);
-    store.close();
-    store = new Store(path);
-    assert.deepEqual(store.session(fresh.token), fresh.state);
-  } finally {
-    store.close();
-    rmSync(dir, { recursive: true, force: true });
-  }
+    assert.throws(() => new Store(path), /cannot be reset automatically/);
+    const database = new DatabaseSync(path, { readOnly: true });
+    try {
+      assert.equal(database.prepare("SELECT count(*) AS n FROM players").get()!.n, 1);
+      assert.equal(database.prepare("SELECT count(*) AS n FROM receipts").get()!.n, 1);
+      assert.equal(database.prepare("SELECT nickname FROM players WHERE id=?").get(state.id)!.nickname, "Legacy player");
+      assert.equal(database.prepare("PRAGMA user_version").get()!.user_version, 0);
+    } finally { database.close(); }
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

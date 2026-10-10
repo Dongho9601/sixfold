@@ -1,12 +1,12 @@
 # Sixfold — Current Implementation Specification
 
-**Version:** 0.5
+**Version:** 0.6
 
 **Updated:** October 10, 2026
 
 **Platform:** Web browser
 
-**Status:** Implemented local prototype. The values below describe the current build; balance can be tuned after playtesting.
+**Status:** Release preparation implemented; public contact, publication rights, and host verification remain launch requirements. The values below describe the current build; balance can be tuned after playtesting.
 
 ## 1. Purpose and play loop
 
@@ -16,7 +16,7 @@ Each board has hidden, unequal probabilities. Players choose a wager amount, pla
 
 The intended tension comes from an opportunity that lasts long enough to explore but changes as it pays. Stronger concentration produces faster probability transfers. Neither high Tilt nor a short run of repeated outcomes proves that a particular wager is favorable. A hidden Jackpot offers a larger return for an exclusive wager on the least likely face on every board, regardless of its probability.
 
-This file is the current specification, not the earlier design proposal. Rule constants and coverage are defined in [`src/config.ts`](src/config.ts); settlement is in [`server/rules.ts`](server/rules.ts). The probability model and pacing experiment are explained in [`docs/PROBABILITY_MODEL.md`](docs/PROBABILITY_MODEL.md).
+This file is the current specification, not the earlier design proposal. Rule constants and coverage are defined in [`src/config.ts`](../src/config.ts); settlement is in [`server/rules.ts`](../server/rules.ts). The probability model and pacing experiment are explained in [`PROBABILITY_MODEL.md`](PROBABILITY_MODEL.md).
 
 ## 2. Board, targets, and payouts
 
@@ -85,7 +85,7 @@ p[i] = 0.02 + 0.88 × w[i]
 
 All six probabilities vary. There is no fixed template or favored face. Each fresh probability is at least 2% and can approach 90%; their sum is 1, subject to floating-point roundoff. The generator clamps only RNG endpoints to avoid degenerate exponential weights. The playable server uses cryptographic randomness.
 
-The transition to 100-roll competition resets existing endless-game saves and scores once. New saved boards persist across server restarts. The transfer function defensively supports probabilities below the floor by preventing those faces from donating probability.
+Nonempty pre-competition databases are now rejected without changing their data; use their prior release or a separate new database for competition games. New saved boards persist across server restarts. The transfer function defensively supports probabilities below the floor by preventing those faces from donating probability.
 
 ### 4.2 Hidden odds and visible Tilt
 
@@ -192,17 +192,19 @@ The server transaction checks request identity and revision, validates wagers, s
 
 Gold, wagers, returns, records, and revisions use **BigInt** internally and canonical decimal **strings** in JSON and SQLite. Probability values remain unrounded doubles. The sampler multiplies a uniform draw by the stored probability sum to absorb rounding drift; it does not smooth the board. Developer labels show up to two decimals and never feed settlement. Large displayed chip amounts may be abbreviated; tooltips and accessible names retain exact wagers.
 
-Player state, roll counts, completion flags, and receipts are durable in SQLite. Schema version 1 performs the requested one-time deletion of old players and receipts before adding competition fields. Schema version 2 adds nullable `previous_best_gold` without deleting players or receipts. Roll 100 captures the prior completed best (null for the first completion) in the same transaction as settlement. Restart clears that comparison field. Migrated existing completed runs use their saved best because an earlier best cannot be reconstructed. Subsequent opens preserve new saves; stale cookies create a new player. Pending browser actions use a new storage key so pre-competition actions cannot replay into a new run. The default database is `data/one-of-six.sqlite`, using WAL, FULL synchronous mode, and `BEGIN IMMEDIATE` action transactions. An anonymous 256-bit session cookie identifies a player; only its hash is stored. Clearing the cookie creates a new player and does not delete the old score.
+Player state, roll counts, completion flags, and receipts are durable in SQLite. Earlier schema version 1 introduced competition fields with a reset; this build refuses nonempty version-0 databases without deleting anything. Schema version 2 adds nullable `previous_best_gold` without deleting players or receipts. Schema version 3 adds `leaderboard_hidden` and a partial score-order index, preserving competition players, scores, cookies, and receipts. Newer unsupported schemas also fail closed. Roll 100 captures the prior completed best (null for the first completion) in the same transaction as settlement. Restart clears that comparison field. Migrated existing completed runs use their saved best because an earlier best cannot be reconstructed. Subsequent opens preserve new saves; stale cookies create a new player. Pending browser actions use a new storage key so pre-competition actions cannot replay into a new run. The default database is `data/one-of-six.sqlite`, using WAL, FULL synchronous mode, and `BEGIN IMMEDIATE` action transactions. An anonymous 256-bit session cookie identifies a player; only its hash is stored. Clearing the cookie creates a new player and does not delete the old score.
 
-Every action includes a unique request ID and expected revision. Replaying the same ID with the same revision/action returns the original receipt without resettling. Reusing an ID for different data is rejected. A stale revision returns the latest state without settling; the client clears the stale draft. Receipts are retained indefinitely.
+Every new action includes a unique request ID, expected revision, and a player ID that must match the cookie session. Older saved requests without the player field remain compatible; the binding does not change their receipt fingerprint. Replaying the same ID with the same revision/action returns the original receipt without resettling. Reusing an ID for different data is rejected. A stale revision returns the latest state without settling; the client clears the stale draft. Complete receipts and their replay fingerprints are retained indefinitely. The local administrative script may losslessly compress responses in batches; replay still reconstructs the complete original response. It does not delete or expire records.
 
-Uncommitted drafts belong to the current tab and clear on refresh, settlement, Shake, or a detected cross-tab update. The client stores pending actions in session storage before sending them. An uncertain network result can be retried with the same request after interruption or reload. State and leaderboard synchronize every five seconds and on window focus, with synchronization deferred while an action is busy or pending.
+Uncommitted drafts belong to the current tab and clear on refresh, settlement, Shake, or a detected cross-tab update. The client stores pending actions in session storage before sending them. An uncertain network result can be retried with the same request after interruption or reload. State synchronizes five seconds after the prior read finishes and on focus, visibility recovery, or a same-player cross-tab hint. Reads are bounded to one in-flight request and use private ETag revalidation. The visible leaderboard has a 30-second freshness interval and refreshes after a nickname or completed record changes; a closed mobile drawer does not fetch it. Ordinary successful actions use their committed response, while recovery replays additionally fetch current state. Read failures back off and automatic attempts stop after six consecutive failures. Mutations retain their exact request and player binding across uncertainty and 429/503 delays; retries are manual or a single saved-action recovery on reload. Hidden tabs cancel polling, audio, and decorative motion, then finish presentation of committed results without changing game state. Storage failures use in-memory preferences and in-tab recovery; pending actions then cannot survive closing the tab.
 
 ## 8. Leaderboard and identity
 
 A player’s score is their highest final balance from a completed 100-roll run. New players have no leaderboard entry and see a prompt to complete 100 rolls for their first record. The saved `hasCompletedRun` flag distinguishes this from a valid completed score of zero. Intermediate gains never update the score. Roll 100 settles and submits atomically; repeated receipts cannot submit twice. Lower completed scores, early bankruptcy, and new runs preserve a previous best.
 
-The shared leaderboard lists the top 10 players by best Gold descending, plus the current player’s best completed record and up to two players immediately above it in the full ranking. The session cookie identifies the current player; the API returns the union, sorted by global rank, without duplicates. A gap marks skipped ranks. Exact decimal strings sort by length, then lexical value; ties use stable ascending player ID. There is no score cap or cutoff for personal context. Players without a completed run see a prompt to finish 100 rolls. Rows normally measure 40 px, with a slightly taller highlighted personal row. Large scores use compact display values while retaining exact values in tooltips and accessible labels.
+The shared leaderboard lists the top 10 visible players by best Gold descending, plus the current player’s best completed record and up to two players immediately above it in the full ranking. The session cookie identifies the current player; the API returns the union, sorted by global rank, without duplicates. A gap marks skipped ranks. Exact decimal strings sort by length, then lexical value; ties use stable ascending player ID. There is no score cap or cutoff for personal context. Players without a completed run see a prompt to finish 100 rolls. Rows normally measure 40 px, with a slightly taller highlighted personal row. Large scores use compact display values while retaining exact values in tooltips and accessible labels.
+
+A locally hidden player is excluded from ranking and personal context, while its game, score, and receipts remain saved. Hiding survives restarts and nickname changes, and a local show action reverses it. Indexed top-ten and bounded neighboring-score queries preserve the original ranks and ties without materializing the complete ranking.
 
 Nicknames are trimmed and normalized to NFC, must contain 1–24 visible Unicode code points, and reject control/format characters. Names need not be unique. A nickname change uses the same revision and receipt mechanism as other actions.
 
@@ -240,15 +242,16 @@ Sound defaults to on after a user interaction; a saved mute stays muted, and dis
 
 The application uses TypeScript, HTML/CSS/SVG, Vite, a Node HTTP server, SQLite, and procedural Web Audio. It requires Node.js 22.16 or later. After installation, `npm run dev` serves the client and API together, normally at port 5173. With no explicit port, development startup tries up to 20 subsequent ports if needed and prints the actual local and network URLs. `npm run build` checks TypeScript and builds the client; `npm start` serves that build.
 
-`HOST`, `PORT`, and `DB_PATH` override defaults. Development binds all IPv4 interfaces for same-Wi-Fi access; production binds loopback unless overridden. Explicit ports and production startup are strict on conflicts.
+`HOST`, `PORT`, and `DB_PATH` override defaults. Production requires `PUBLIC_ORIGIN`, normally HTTPS; `ALLOW_INSECURE_HTTP=true` permits isolated HTTP checks. `TRUST_PROXY_IPS` optionally names exact immediate-proxy IPs; the proxy must overwrite a single validated `X-Forwarded-For` address. Forwarded host/protocol headers do not control origin or cookie security. `STATIC_COMPRESSION` selects application or proxy responsibility for static compression. [README.md](../README.md) specifies every variable, limit, and operation. Development binds all IPv4 interfaces for same-Wi-Fi access; production binds loopback unless overridden. Explicit ports and production startup are strict on conflicts.
 
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/state` | Resume a session or create a new anonymous player; return current state and last roll. |
-| `GET /api/leaderboard` | Return top-50 rank, nickname, player ID, and best Gold. |
-| `POST /api/action` | Apply `roll`, `shake`, `restart`, or `nickname` using request ID and revision. |
+| `GET /api/leaderboard` | Return top 10 plus personal best and up to two immediately higher visible ranks, nickname, player ID, and best Gold. |
+| `POST /api/action` | Apply `roll`, `shake`, `restart`, or `nickname` using request ID, revision, and player binding. |
+| `GET /healthz` | Lightweight database readiness check without a session cookie. |
 
-The API does not accept authoritative balances, scores, probability vectors, or random seeds from the client. Actions require JSON and a valid session; explicit cross-origin actions are rejected. The playable server contains no fixture or test-seed endpoint.
+The API does not accept authoritative balances, scores, probability vectors, or random seeds from the client. Actions require bounded valid UTF-8 JSON, known fields/targets, a valid session, and an exact same-origin Origin header. New player bindings protect cookie replacement during a pending action. Session cookies are HttpOnly, SameSite=Lax, and Secure for an HTTPS public origin. Public API throttles, storage bounds, body/header/time limits, production static allowlists, private API revalidation, and graceful shutdown are specified in [README.md](../README.md). New clients opt into `X-Sixfold-Response: compact-v1`: a non-null settlement is represented by `result: "lastRoll"` and reconstructed from `state.lastRoll`, avoiding duplicate transmission. The server retains full receipts and the default response format for existing open clients. The playable server contains no fixture or test-seed endpoint.
 
 ## 11. Acceptance examples and checks
 
@@ -265,14 +268,14 @@ Unless otherwise stated, examples start with 100 G and `[40, 20, 15, 10, 10, 5]%
 9. **Earned Shake:** A nonzero settlement unlocks Shake; using it preserves Gold and best, resets odds, clears the draft, and locks it again. A second immediate Shake is rejected.
 10. **Restart:** Zero Gold or 100 rolls permits a new 100 G run with zero rolls used and fresh odds; a completed best remains.
 11. **Precision and retry:** Huge integer balances survive storage and ranking; a retried action cannot sample or pay twice; stale-tab actions cannot settle.
-12. **Keyboard regression:** Click or keyboard-activate a target, then press R without moving focus → exactly one Roll. S works from the same kind of focus after unlocking. Text editing, dialogs, and modifier combinations cannot trigger gameplay.
+12. **Keyboard regression:** Click or keyboard-activate a target, then press R without moving focus → exactly one Roll. Space works from the same kind of focus after unlocking. Text editing, dialogs, and modifier combinations cannot trigger gameplay.
 13. **Final score:** An early 330 G peak stays unranked. Finishing roll 100 with 280 G posts 280 G. Roll 101 and Shake are rejected, including via shortcuts. Reload retains completion and its personal-best comparison; confirming the results saves the chosen name and restores 100 G and zero rolls used while keeping the 280 G record.
 14. **Guide location:** Settings contains controls; How to Play contains the complete explanations, including current transfer rates. The guide and expanded example fit desktop and mobile, and Tilt navigation retains a reachable close control.
 
-`npm test` covers rules, pacing, persistence, concurrency, HTTP validation, and startup. `npm run test:ui` runs isolated Chromium browser regressions; `npm run test:balance` runs the pacing comparison. Browser setup and exact verification results are documented in [`README.md`](README.md) and [`docs/VERIFICATION.md`](docs/VERIFICATION.md). Tests use in-memory or temporary databases, never normal player data.
+`npm test` covers rules, pacing, persistence, concurrency, HTTP validation, and startup. `npm run test:ui` runs isolated Chromium browser regressions; `npm run test:balance` runs the pacing comparison. Browser setup and exact verification results are documented in [`README.md`](../README.md) and [`VERIFICATION.md`](VERIFICATION.md). Tests use in-memory or temporary databases, never normal player data.
 
 ## 12. Prototype boundary
 
 The implemented loop is the fixed six-number board, hidden weighted outcomes with visible Tilt, probability transfers, earned free Shake, always-available exclusive Jackpot, persistent 100-roll runs, and a leaderboard of completed scores. Progression trees, items, missions, extra board sizes, and additional modes are outside the current build.
 
-This is a local prototype without account recovery, moderation, rate limiting, public deployment configuration, or receipt-retention cleanup. Existing verification uses Chromium; physical phones, Safari, and Firefox are not claimed. Probability tuning is supported by repeatable simulation and regression checks, with player enjoyment and broader strategic balance still subject to playtesting.
+The application retains anonymous identity without account recovery. This release adds local moderation, proportionate throttling, deployment-neutral production configuration, consistent backup operations, and bounded lossless receipt compaction. No hosting provider is selected. A public contact, confirmed publication rights, and selected-host HTTPS/storage/proxy checks remain release blockers. The public [rules/privacy/credits page](../public/about.html) describes the actual data collected and indefinite retention; hosting log policy remains to be finalized. Existing verification uses Chromium; physical phones, Safari, and Firefox are not claimed. Probability tuning is supported by repeatable simulation and regression checks, with player enjoyment and broader strategic balance still subject to playtesting.

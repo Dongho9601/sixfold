@@ -60,6 +60,10 @@ export function validateWagers(
   let total = 0n;
   for (const [id, raw] of Object.entries(input)) {
     if (!TARGET_BY_ID.has(id)) throw new GameError("Unknown bet target.");
+    // A decimal with more digits than the available bankroll cannot be affordable.
+    // Reject before BigInt conversion, without imposing a gameplay score cap.
+    if (typeof raw === "string" && raw.length > gold.toString().length)
+      throw new GameError("Your wagers exceed your available Gold.");
     const amount = parseGold(raw);
     if (amount === 0n) continue;
     if (amount < BigInt(CONFIG.minimumWager))

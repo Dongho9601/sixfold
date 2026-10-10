@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Sixfold — Rules, privacy, and credits</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <style>
+    body{margin:0;background:#fff;color:#242424;font:18px/1.65 Georgia,serif}
+    main{max-width:44rem;margin:3rem auto;padding:0 1.5rem 4rem}
+    nav{font:15px/1.5 Arial,sans-serif;margin-bottom:2rem}a{color:inherit;text-underline-offset:3px}
+    h1{font-size:2rem;line-height:1.2}h2{font-size:1.4rem;margin-top:2.2rem}p{margin:1rem 0}
+  </style>
+</head>
+<body><main>
+  <nav><a href="/">Return to Sixfold</a></nav>
+  <h1>Rules, privacy, and credits</h1>
+  <h2>A free game</h2>
+  <p>Sixfold is free and non-commercial. Gold is a game score with no monetary or material value. There are no advertisements, payments, donations, cash-out, or monetary or material prizes.</p>
+  <p>Each run starts with 100 Gold and lasts up to 100 rolls. The server draws outcomes and settles wagers. Only the final balance after roll 100 can enter the leaderboard; an earlier bankruptcy posts no score. Each anonymous player keeps their best completed score. The in-game How to play guide explains all targets, payouts, Tilt, Shake, Jackpot, and controls. The odds are hidden in the ordinary interface, but they are available through the developer display and browser inspection.</p>
+  <h2>Saved games and public names</h2>
+  <p>A first-party session cookie identifies your anonymous player. Its maximum age is one year from creation. The server stores a hash of that cookie, a random player ID, your nickname, game balance, board probabilities, roll count, completed score, revision, last result, and receipts for accepted actions. The server retains player records and retry receipts indefinitely so saved games can continue and a repeated request cannot settle again. Clearing or losing the cookie does not delete that data, and there is no account recovery.</p>
+  <p>Your player ID, nickname, completed best score, and rank can appear publicly on the leaderboard. Choose a nickname that does not reveal private information. The operator can hide an abusive entry without deleting its game or score.</p>
+  <h2>Browser storage and network data</h2>
+  <p>Local browser storage holds sound, motion, probability-display, and language preferences, guide dismissal, and three recent bet amounts. Tab session storage holds a pending action and its retry ID until the server confirms or rejects it. Draft wagers remain in the current tab and clear when the page reloads.</p>
+  <p>The application uses your IP address in memory to limit requests, without saving it to the game database. Limiter storage is bounded. Entries idle for 30 minutes become eligible for incremental cleanup as later requests arrive; remaining entries clear when the server process restarts. The application does not include analytics or third-party runtime requests, and does not log cookies, action bodies, or session identifiers. A hosting provider or reverse proxy may process IP addresses and request logs; its logging and retention settings must be reviewed by the operator before public hosting.</p>
+  <h2>Credits and contact</h2>
+  <p>The bundled die, board, icons, and favicon are CSS or SVG. Sound is generated locally with Web Audio. Fonts come from your operating system. No external artwork, fonts, recordings, or reference screenshots are fetched by the game.</p>
+  <p>The repository credits the roulette table layout at <a href="https://www.casino.org/blog/the-roulette-table-explained/" rel="noreferrer">Casino.org</a> and <a href="https://www.playstation.com/en-us/games/balatro/" rel="noreferrer">Balatro screenshots on PlayStation</a> as design references; their assets are not bundled. The development tools include Vite (MIT), tsx (MIT), TypeScript (Apache-2.0), and Playwright (Apache-2.0), alongside Node.js and its bundled SQLite.</p>
+  <p>An operator contact for privacy requests and abusive-name reports has not yet been published.</p>
+</main></body>
+</html>

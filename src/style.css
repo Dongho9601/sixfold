@@ -536,3 +536,6 @@ dialog::backdrop {
   .welcome-dialog .dialog-top { position: static; padding: 0; margin: 0; }
   .welcome-dialog h3 { break-after: avoid; }
 }
+:root.page-hidden * { animation-play-state: paused !important; }
+.site-information { display: block; margin-top: 12px; font-size: 11px; line-height: 1.4; color: var(--muted); text-align: left; text-decoration: none; }
+.site-information:hover, .site-information:focus-visible { text-decoration: underline; }
