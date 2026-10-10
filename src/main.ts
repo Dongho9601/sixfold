@@ -1,16 +1,10 @@
 import "./style.css";
 import { BOARD, CONFIG, TARGET_BY_ID } from "./config";
 import { guideBody, guideLanguages, guides, resolveGuideLanguage, type GuideLanguage } from "./guide";
-import type {
-  Action,
-  ActionRequest,
-  ActionResponse,
-  ActionWireResponse,
-  Leader,
-  PlayerState,
-  Settlement,
-  Wagers,
-} from "./types";
+import type { Action, PlayerState, Settlement, Wagers } from "./types";
+import { LocalGame, SAVE_KEY, StaleRunError } from "./save";
+
+const game = new LocalGame();
 
 const app = document.querySelector<HTMLDivElement>("#app")!;
 const icon = (name: string) => {
@@ -46,76 +40,53 @@ const percent = (p: number) =>
     : `${(p * 100).toFixed(2).replace(/\.?0+$/, "")}%`;
 const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
   document.getElementById(id) as T;
-const preferences = {
-  get(key: string) { try { return localStorage.getItem(key); } catch { return null; } },
-  set(key: string, value: string) { try { localStorage.setItem(key, value); } catch { /* Preferences are optional. */ } },
-};
 let state: PlayerState | undefined;
 let draft: Wagers = {};
 let amount = CONFIG.selectedWager as string;
-const recentAmountsKey = "sixfold-recent-bet-amounts";
-let recentAmounts: string[] = [];
-try {
-  const stored: unknown = JSON.parse(localStorage.getItem(recentAmountsKey) || "[]");
-  if (Array.isArray(stored))
-    recentAmounts = [...new Set(stored.filter((value): value is string =>
-      typeof value === "string" && /^[1-9]\d*$/.test(value)))].slice(0, 3);
-} catch { /* An unavailable or invalid preference does not prevent play. */ }
+let recentAmounts = game.data.settings.recentAmounts;
 let busy = false;
 let actionPhase = "";
-let pending: ActionRequest | null = null;
-let pendingPlayerId: string | undefined;
-let pendingDurable = true;
-let actionRetryAt = 0;
-let retryTimer: ReturnType<typeof setTimeout> | undefined;
+let activeAction: Action | undefined;
 let hoverTarget: string | null = null;
-let sound = preferences.get("one-of-six-sound") !== "off";
+let sound = game.data.settings.sound;
 type ChipPose = { x: number; y: number; rotation: number; tone: number };
 const chipPoses = new Map<string, ChipPose[]>();
 let audioContext: AudioContext | undefined;
 const audioSources = new Set<AudioScheduledSourceNode>();
 let previousRank: number | undefined;
 let announcement = "";
-let networkError = false;
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
-let manualReducedMotion =
-  preferences.get("one-of-six-motion") === "reduce";
+let manualReducedMotion = game.data.settings.reducedMotion;
 const prefersReducedMotion = () => reducedMotion.matches || manualReducedMotion;
 const shouldReduceMotion = () => document.hidden || prefersReducedMotion();
 document.documentElement.classList.toggle("reduce-motion", manualReducedMotion);
-try {
-  const saved = JSON.parse(sessionStorage.getItem("sixfold-100-rolls-pending") || "null");
-  // Accept the previous request-only format for existing tabs; new writes bind
-  // recovery to a player so a lost/replaced cookie cannot act on another session.
-  pending = saved?.request ?? saved;
-  pendingPlayerId = saved?.playerId;
-  if (Number.isFinite(saved?.retryAt)) actionRetryAt = Math.min(saved.retryAt, Date.now() + 120000);
-  if (pending && (typeof pending.requestId !== "string" || typeof pending.revision !== "string" || !pending.action || !["roll", "shake", "restart", "nickname", "probabilities"].includes(pending.action.kind)))
-    throw new Error("Invalid saved action.");
-} catch {
-  pending = null;
-  pendingPlayerId = undefined;
-  try { sessionStorage.removeItem("sixfold-100-rolls-pending"); } catch { /* Continue with in-memory recovery. */ }
-}
+let guideLanguage = (game.data.settings.guideLanguage as GuideLanguage | null) ?? resolveGuideLanguage(navigator.languages);
 
-const guideLanguageKey = "sixfold-guide-language";
-let guideLanguage = resolveGuideLanguage(navigator.languages);
-try {
-  const saved = localStorage.getItem(guideLanguageKey);
-  if (guideLanguages.some(([code]) => code === saved)) guideLanguage = saved as GuideLanguage;
-} catch { /* Use the browser language if preferences are unavailable. */ }
+let settingsWrites = 0;
+function saveSettings(patch: Parameters<LocalGame["updateSettings"]>[0]) {
+  settingsWrites++;
+  void game.updateSettings(patch).then(() => {
+    settingsWrites--;
+    if (!busy && !settingsWrites) syncSavedGame();
+    showSaveWarning();
+  });
+}
+function showSaveWarning() {
+  $("save-notice").textContent = game.warning;
+  $("save-notice").hidden = !game.warning;
+}
 
 app.innerHTML = `
   <div class="workspace">
     <main id="game" aria-label="${CONFIG.title} game">
       <aside class="sidebar" aria-label="Your game">
-        <header class="header"><a class="wordmark" href="/" aria-label="${CONFIG.title} home">${icon("dice")}${CONFIG.title}<span>PLAY THE ODDS</span></a></header>
+        <header class="header"><a class="wordmark" href="${import.meta.env.BASE_URL}" aria-label="${CONFIG.title} home">${icon("dice")}${CONFIG.title}<span>PLAY THE ODDS</span></a></header>
         <section class="stat-card bankroll" aria-label="Your Gold">
           <span class="eyebrow">Bankroll</span><strong class="stat-value"><span id="gold" class="stat-number">—</span> <span class="gold-unit">G</span></strong>
         </section>
         <section class="stat-card remaining-rolls" aria-labelledby="rolls-label"><span id="rolls-label" class="eyebrow">Rolls remaining</span><strong class="stat-value"><span id="rolls-remaining" class="stat-number" aria-live="polite">${CONFIG.rollsPerRun}</span></strong></section>
         <section class="stat-card table-wager" aria-label="On the table"><span class="eyebrow">On the table</span><strong id="draft-total" class="stat-value"><span id="draft-gold" class="stat-number">0</span> <span class="gold-unit">G</span></strong></section>
-        <div class="sidebar-bottom"><div class="header-actions"><button id="leaderboard-open" class="utility-button" aria-label="Open leaderboard" aria-expanded="false">${icon("trophy")}<span>Leaderboard</span></button><button id="guide-open" class="utility-button" aria-label="How to play">${icon("help")}<span>How to play</span></button><button id="settings-open" class="utility-button" aria-label="Settings">${icon("settings")}<span>Settings</span></button></div><a class="site-information" href="/about.html">Rules, privacy &amp; credits</a></div>
+        <div class="sidebar-bottom"><div class="header-actions"><button id="leaderboard-open" class="utility-button" aria-label="Open leaderboard" aria-expanded="false">${icon("trophy")}<span>Leaderboard</span></button><button id="guide-open" class="utility-button" aria-label="How to play">${icon("help")}<span>How to play</span></button><button id="settings-open" class="utility-button" aria-label="Settings">${icon("settings")}<span>Settings</span></button></div><a class="site-information" href="${import.meta.env.BASE_URL}about.html">Rules, privacy &amp; credits</a></div>
       </aside>
       <div class="playfield">
         <section class="table-area" aria-label="Betting table">
@@ -134,16 +105,16 @@ app.innerHTML = `
           <div class="chip-controls"><label class="control-label" for="bet-amount">Bet amount</label><div class="amount-row"><div class="amount-selector"><button id="decrease" aria-label="Decrease bet by 5 Gold" aria-keyshortcuts="w" title="Decrease bet by 5 Gold (W)">−</button><input id="bet-amount" type="text" role="spinbutton" inputmode="numeric" pattern="[0-9]*" value="${CONFIG.selectedWager}" aria-valuemin="1" aria-valuenow="${CONFIG.selectedWager}" aria-label="Bet amount in Gold" autocomplete="off" /><span>G</span><button id="increase" aria-label="Increase bet by 5 Gold" aria-keyshortcuts="e" title="Increase bet by 5 Gold (E)">+</button></div><div id="recent-amounts" class="recent-amounts" role="group" aria-label="Recently used bet amounts"></div></div></div>
           <div class="actions"><button id="roll" class="roll-button" aria-keyshortcuts="r">${icon("dice")}<span>Roll dice</span><kbd>R</kbd></button><button id="shake" class="shake-button" aria-keyshortcuts="Space" aria-describedby="shake-hint" disabled>${icon("shake")}<span>Shake</span><kbd>Space</kbd></button></div>
           <p id="shake-hint" class="shake-hint">Shake unlocks after a roll changes your bankroll.</p>
-          <div class="messages"><p id="run-status" class="notice" role="status" hidden></p><p id="roll-announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p><p id="notice" class="notice" role="status" aria-live="polite"></p><button id="retry" class="text-button" hidden>Retry saved action</button><button id="reconnect" class="text-button" hidden>Reconnect</button></div>
+          <div class="messages"><p id="run-status" class="notice" role="status" hidden></p><p id="roll-announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p><p id="notice" class="notice" role="status" aria-live="polite"></p><p id="save-notice" class="notice" role="status" hidden></p></div>
         </section>
       </div>
       <aside id="leaderboard-rail" class="leaderboard-rail" aria-label="Leaderboard tower"></aside>
     </main>
   </div>
   <div id="effects" class="effects" aria-hidden="true"></div>
-  <dialog id="leaderboard-dialog" class="leaderboard-dialog" aria-labelledby="leaderboard-title"><div id="leaderboard-content"><div class="tower-heading"><h2 id="leaderboard-title">Leaderboard</h2><button class="icon-button" data-close="leaderboard-dialog" aria-label="Close leaderboard">${icon("close")}</button></div><div class="tower-floors"><ol id="leaders" aria-label="Top 10 and your best score with the two players above you"></ol><div id="leaderboard-unranked" class="leaderboard-unranked" hidden>Complete 100 rolls to set your first record.</div></div></div></dialog>
+  <dialog id="leaderboard-dialog" class="leaderboard-dialog" aria-labelledby="leaderboard-title"><div id="leaderboard-content"><div class="tower-heading"><h2 id="leaderboard-title">Personal records</h2><button class="icon-button" data-close="leaderboard-dialog" aria-label="Close leaderboard">${icon("close")}</button></div><p class="personal-records-note">Best 10 runs · stored in this browser</p><div class="tower-floors"><ol id="leaders" aria-label="Your best 10 completed runs stored in this browser"></ol><div id="leaderboard-unranked" class="leaderboard-unranked" hidden>Complete 100 rolls to set your first record.</div></div></div></dialog>
   <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title"><div class="dialog-top"><div><h2 id="settings-title">Settings</h2></div><button class="icon-button" data-close="settings-dialog" aria-label="Close settings">${icon("close")}</button></div>
-    <form id="nickname-form"><label for="nickname">Your leaderboard name</label><div class="nickname-row"><input id="nickname" maxlength="48" required autocomplete="nickname"/><button type="submit" id="save-nickname">Save</button></div><p id="nickname-status" role="status"></p></form>
+    <form id="nickname-form"><label for="nickname">Your record name</label><div class="nickname-row"><input id="nickname" maxlength="48" required autocomplete="nickname"/><button type="submit" id="save-nickname">Save</button></div><p id="nickname-status" role="status"></p></form>
     <label class="sound-control"><span>Sound effects</span><input id="sound" type="checkbox" role="switch" ${sound ? "checked" : ""}/></label>
     <label class="sound-control"><span>Reduce motion</span><input id="motion" type="checkbox" role="switch" ${prefersReducedMotion() ? "checked" : ""}/></label>
     <label class="sound-control"><span>Show probabilities</span><input id="show-probabilities" type="checkbox" role="switch" aria-describedby="probabilities-status" disabled/></label>
@@ -152,12 +123,12 @@ app.innerHTML = `
   </dialog>
   <dialog id="restart-dialog" class="restart-dialog" aria-labelledby="restart-title" aria-describedby="restart-description">
     <div class="dialog-top"><h2 id="restart-title">Restart this run?</h2></div>
-    <p id="restart-description" class="dialog-intro">Your current progress and bets will be discarded. Start fresh with ${formatGold(CONFIG.startingGold)} G and ${CONFIG.rollsPerRun} rolls. Your completed leaderboard score stays.</p>
+    <p id="restart-description" class="dialog-intro">Your current progress and bets will be discarded. Start fresh with ${formatGold(CONFIG.startingGold)} G and ${CONFIG.rollsPerRun} rolls. Your personal records and settings stay.</p>
     <div class="confirm-actions"><button id="restart-cancel" class="cancel-button" data-close="restart-dialog" autofocus>Cancel</button><button id="restart-confirm" class="danger-button" disabled>Restart run</button></div>
   </dialog>
   <dialog id="probabilities-dialog" class="probabilities-dialog" aria-labelledby="probabilities-title" aria-describedby="probabilities-description">
     <div class="dialog-top"><h2 id="probabilities-title">Show probabilities?</h2></div>
-    <p id="probabilities-description" class="dialog-intro">This reveals the odds for every bet. This run’s score will not enter the leaderboard, even if you turn probabilities off later. Your existing leaderboard record stays. Each new run starts with probabilities off.</p>
+    <p id="probabilities-description" class="dialog-intro">This reveals the odds for every bet. This run’s score will not enter personal records, even if you turn probabilities off later. Your existing personal records stay. Each new run starts with probabilities off.</p>
     <div class="confirm-actions"><button id="probabilities-cancel" class="cancel-button" data-close="probabilities-dialog" autofocus>Cancel</button><button id="probabilities-confirm" class="danger-button" disabled>Show probabilities</button></div>
   </dialog>
   <dialog id="run-dialog" class="run-dialog" aria-labelledby="run-title" aria-describedby="run-comparison">
@@ -167,7 +138,7 @@ app.innerHTML = `
     <p id="run-comparison" class="run-comparison"></p>
     <div id="run-best-row" class="run-best"><span>Personal best</span><strong id="run-best"></strong></div>
     <form id="run-form">
-      <label for="run-nickname">Your leaderboard name</label>
+      <label for="run-nickname">Your record name</label>
       <input id="run-nickname" maxlength="48" required autocomplete="nickname" aria-describedby="run-error" autofocus />
       <p id="run-error" class="notice error" role="alert"></p>
       <button id="run-confirm" class="roll-button" type="submit">Confirm &amp; play again</button>
@@ -599,7 +570,7 @@ function renderRecentAmounts() {
     }).join("");
   }
   holder.querySelectorAll<HTMLButtonElement>("button").forEach(button => {
-    button.disabled = !state || busy || !!pending || runEnded() || !button.dataset.amount;
+    button.disabled = !state || busy || runEnded() || !button.dataset.amount;
     button.setAttribute("aria-pressed", String(button.dataset.amount === amount));
   });
 }
@@ -610,7 +581,7 @@ function renderRunDialog() {
     if (dialog.open) dialog.close();
     return;
   }
-  if (busy || (pending && pending.action.kind !== "restart")) return;
+  if (busy) return;
   const completed = state.rollsUsed === CONFIG.rollsPerRun;
   const previous = state.previousBestGold;
   $("run-title").textContent = completed ? "Run complete" : "Out of Gold";
@@ -622,7 +593,7 @@ function renderRunDialog() {
   $("run-comparison").textContent = !completed
     ? "This run ended before 100 rolls. No score was posted."
     : state.leaderboardEligible === false
-    ? "Probabilities were enabled in this run. This score is excluded from the leaderboard. Your existing record stays."
+    ? "Probabilities were enabled in this run. This score is excluded from personal records. Your existing records stay."
     : previous === null
     ? "Your first completed run. Personal best set!"
     : BigInt(state.gold) > BigInt(previous ?? state.bestGold)
@@ -631,9 +602,8 @@ function renderRunDialog() {
     ? "You matched your personal best."
     : `${formatGold(BigInt(state.bestGold) - BigInt(state.gold))} G below your personal best.`;
   if (!dialog.open) {
-    $<HTMLInputElement>("run-nickname").value = pending?.action.kind === "restart"
-      ? pending.action.nickname ?? state.nickname : state.nickname;
-    $("run-error").textContent = pending ? announcement : "";
+    $<HTMLInputElement>("run-nickname").value = state.nickname;
+    $("run-error").textContent = "";
     document.querySelectorAll<HTMLDialogElement>("dialog[open]").forEach(open => open.close());
     dialog.showModal();
   }
@@ -646,15 +616,15 @@ function render() {
   $("run-status").hidden = !runEnded() && state.leaderboardEligible !== false;
   $("run-status").textContent = state.leaderboardEligible === false
     ? runEnded()
-      ? "Probabilities were enabled. No leaderboard score was posted."
-      : "Probabilities were enabled. This run’s score will not enter the leaderboard."
+      ? "Probabilities were enabled. No personal record was saved."
+      : "Probabilities were enabled. This run’s score will not enter personal records."
     : state.rollsUsed === CONFIG.rollsPerRun
     ? `Final score: ${formatGold(state.gold)} G.`
     : "Out of Gold. This run ended before 100 rolls; no score was posted.";
   if (runEnded() && !busy) {
     $("table-status").textContent = "Run complete";
     $("result-display").className = "result-display";
-    $("result-display").innerHTML = `<span class="result-label">${state.rollsUsed === CONFIG.rollsPerRun ? "FINAL SCORE" : "OUT OF GOLD"}</span><strong class="result-value">${compactGold(state.gold)} G</strong><span class="result-detail">${state.leaderboardEligible === false ? "No leaderboard score posted" : state.rollsUsed === CONFIG.rollsPerRun ? "100 rolls complete" : "No score posted"}</span>`;
+    $("result-display").innerHTML = `<span class="result-label">${state.rollsUsed === CONFIG.rollsPerRun ? "FINAL SCORE" : "OUT OF GOLD"}</span><strong class="result-value">${compactGold(state.gold)} G</strong><span class="result-detail">${state.leaderboardEligible === false ? "No personal record saved" : state.rollsUsed === CONFIG.rollsPerRun ? "100 rolls complete" : "No score posted"}</span>`;
   }
   $("tilt-level").textContent = String(state.tiltLevel);
   $("tilt-info").setAttribute("aria-label", `Board Tilt, level ${state.tiltLevel} of 6. Open Tilt guide.`);
@@ -672,7 +642,7 @@ function render() {
         (sum, n) => sum + state!.probabilities[n - 1],
         0,
       );
-      button.disabled = busy || !!pending || runEnded();
+      button.disabled = busy || runEnded();
       button.classList.toggle("wagered", placed !== "0");
       if (placed !== "0") button.title = `${target.label} · ${formatGold(placed)} Gold wagered · Hold or right-click to remove`;
       else button.removeAttribute("title");
@@ -690,34 +660,32 @@ function render() {
       }
     });
   for (const id of ["increase", "decrease"])
-    $<HTMLButtonElement>(id).disabled = busy || !!pending || runEnded();
-  $<HTMLButtonElement>("shake").disabled = busy || !!pending || runEnded() || !state.canShake;
-  $("shake-hint").textContent = busy && pending?.action.kind === "shake"
+    $<HTMLButtonElement>(id).disabled = busy || runEnded();
+  $<HTMLButtonElement>("shake").disabled = busy || runEnded() || !state.canShake;
+  $("shake-hint").textContent = busy && activeAction?.kind === "shake"
     ? "Replacing the die and drawing fresh odds…"
     : runEnded()
     ? "Start a new run to play again."
     : state.canShake
     ? "Shake is ready. Fresh odds, same bankroll."
     : "Shake unlocks after a roll changes your bankroll.";
-  $<HTMLInputElement>("bet-amount").disabled = busy || !!pending || runEnded();
+  $<HTMLInputElement>("bet-amount").disabled = busy || runEnded();
   $<HTMLButtonElement>("roll").disabled =
-    busy || !!pending || runEnded() || totalDraft() === 0n;
-  $<HTMLButtonElement>("save-nickname").disabled = busy || !!pending;
+    busy || runEnded() || totalDraft() === 0n;
+  $<HTMLButtonElement>("save-nickname").disabled = busy;
   $<HTMLInputElement>("show-probabilities").checked = showProbabilities;
-  $<HTMLInputElement>("show-probabilities").disabled = busy || !!pending || runEnded();
-  $<HTMLButtonElement>("probabilities-confirm").disabled = busy || !!pending || runEnded();
+  $<HTMLInputElement>("show-probabilities").disabled = busy || runEnded();
+  $<HTMLButtonElement>("probabilities-confirm").disabled = busy || runEnded();
   $("probabilities-status").textContent = state.leaderboardEligible === false
-    ? "This run is excluded from the leaderboard. Start a new run to enter a score."
-    : "Off at the start of each run. Turning this on excludes this run’s score from the leaderboard.";
+    ? "This run is excluded from personal records. Start a new run to enter a score."
+    : "Off at the start of each run. Turning this on excludes this run’s score from personal records.";
   $("roll").querySelector("span")!.textContent = busy ? actionPhase || "Saving…" : "Roll dice";
   for (const id of ["settings-restart", "restart-confirm"])
-    $<HTMLButtonElement>(id).disabled = busy || !!pending;
-  $<HTMLButtonElement>("run-confirm").disabled = busy || (!!pending && (pending.action.kind !== "restart" || Date.now() < actionRetryAt));
-  $<HTMLInputElement>("run-nickname").disabled = busy || !!pending;
-  $("run-confirm").textContent = busy ? "Starting new run…" : pending?.action.kind === "restart" ? "Retry & play again" : "Confirm & play again";
-  $("retry").hidden = !pending || busy;
-  $<HTMLButtonElement>("retry").disabled = Date.now() < actionRetryAt;
-  $("reconnect").hidden = !networkError || (!!pending && !!state);
+    $<HTMLButtonElement>(id).disabled = busy;
+  $<HTMLButtonElement>("run-confirm").disabled = busy;
+  $<HTMLInputElement>("run-nickname").disabled = busy;
+  $("run-confirm").textContent = busy ? "Starting new run…" : "Confirm & play again";
+  showSaveWarning();
   centerBoardNumbers();
   updateHighlight();
   renderRecentAmounts();
@@ -739,7 +707,7 @@ function readAmount(): bigint | null {
   return BigInt(amount);
 }
 function addBet(id: string) {
-  if (!state || busy || pending || runEnded()) return;
+  if (!state || busy || runEnded()) return;
   const value = readAmount();
   if (value === null) return;
   if (value + totalDraft() > BigInt(state.gold)) {
@@ -752,7 +720,7 @@ function addBet(id: string) {
   clearResult();
   draft[id] = ((draft[id] ? BigInt(draft[id]) : 0n) + value).toString();
   recentAmounts = [amount, ...recentAmounts.filter(recent => recent !== amount)].slice(0, 3);
-  try { localStorage.setItem(recentAmountsKey, JSON.stringify(recentAmounts)); } catch { /* Keep the in-memory history. */ }
+  saveSettings({ recentAmounts });
   tossChip(id);
   announce("");
   playTone("chip");
@@ -762,7 +730,7 @@ function addBet(id: string) {
 }
 
 function cancelBet(id: string) {
-  if (!state || busy || pending || !draft[id]) return;
+  if (!state || busy || !draft[id]) return;
   delete draft[id];
   announce("");
   render();
@@ -833,244 +801,95 @@ function announceRoll(result: Settlement) {
   $("roll-announcement").textContent =
     `Rolled ${result.outcome}. ${result.jackpot ? "Jackpot. " : ""}Return ${formatGold(result.totalReturn)} Gold. Net ${signed(result.net)} Gold.`;
 }
-let stateTag: string | undefined;
-let cachedState: PlayerState | undefined;
-let stateRead: Promise<PlayerState> | undefined;
-let sessionCreated = false;
-let readRetryAt = 0;
-class ReadError extends Error {
-  constructor(message: string, public retryAfter = 0) { super(message); }
+function refreshLeaderboard() {
+  const leaders = game.data.records;
+  const best = leaders[0];
+  const ownRank = leaders.findIndex(record => record.id === state?.id) + 1;
+  $("leaders").innerHTML = leaders.map((record, index) => {
+    const own = record.id === state?.id;
+    const score = formatGold(record.score);
+    return `<li value="${index + 1}" class="${own ? "you" : ""}" ${own ? 'aria-current="true"' : ""}><span class="rank">${String(index + 1).padStart(2, "0")}</span><span class="leader-name" title="${escape(record.nickname)}">${escape(record.nickname)}${index === 0 ? '<small class="leader-you">Personal best</small>' : own ? '<small class="leader-you">This run</small>' : ""}</span><strong title="${score} G" aria-label="${score} Gold">${compactGold(record.score)}<small> G</small></strong></li>`;
+  }).join("");
+  if (!leaders.length) $("leaders").innerHTML = '<li class="empty-floor">No personal records yet.</li>';
+  $("leaderboard-unranked").hidden = !!best;
+  const ownFloor = $("leaders").querySelector<HTMLElement>(".you");
+  if (ownFloor && ownRank && previousRank && ownRank < previousRank)
+    void motion(ownFloor, [{transform: "translateY(28px) scale(.94)", filter: "brightness(1.8)"}, {transform: "translateY(0) scale(1)", filter: "brightness(1)"}], {duration: 900, easing: "cubic-bezier(.2,.8,.2,1)"});
+  previousRank = ownRank || undefined;
 }
-function retryAfter(response: Response) {
-  const seconds = Number(response.headers.get("Retry-After"));
-  return Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds * 1000, 120000) : 0;
-}
-function getState(): Promise<PlayerState> {
-  if (stateRead) return stateRead;
-  stateRead = (async () => {
-    const response = await fetch("/api/state", {
-      cache: "no-store", credentials: "same-origin", signal: AbortSignal.timeout(8000),
-      headers: stateTag ? { "If-None-Match": stateTag } : {},
-    });
-    if (response.status === 304 && cachedState) return cachedState;
-    if (!response.ok) throw new ReadError("Could not load your game.", retryAfter(response));
-    stateTag = response.headers.get("ETag") || undefined;
-    sessionCreated = response.headers.get("X-Sixfold-Session-Created") === "1";
-    cachedState = await response.json() as PlayerState;
-    return cachedState;
-  })().finally(() => { stateRead = undefined; });
-  return stateRead;
-}
-let leaderboardRead: Promise<void> | undefined;
-let leaderboardTag: string | undefined;
-let leaderboardPlayer: string | undefined;
-let nextLeaderboardAt = 0;
-let leaderboardVersion = 0;
-let leaderboardFailures = 0;
-const leaderboardVisible = () => wideLeaderboard.matches || $<HTMLDialogElement>("leaderboard-dialog").open;
-function invalidateLeaderboard() { leaderboardVersion++; leaderboardTag = undefined; nextLeaderboardAt = 0; }
-function refreshLeaderboard(force = false): Promise<void> {
-  if (leaderboardRead) return leaderboardRead;
-  if (!state || document.hidden || !leaderboardVisible() || leaderboardFailures >= 6 || Date.now() < readRetryAt || (!force && Date.now() < nextLeaderboardAt)) return Promise.resolve();
-  if (leaderboardPlayer !== state.id) { leaderboardPlayer = state.id; invalidateLeaderboard(); }
-  const player = state.id;
-  const version = leaderboardVersion;
-  nextLeaderboardAt = Date.now() + 30000;
-  leaderboardRead = (async () => {
-    try {
-      const response = await fetch("/api/leaderboard", {
-        cache: "no-store", credentials: "same-origin", signal: AbortSignal.timeout(8000),
-        headers: leaderboardTag ? { "If-None-Match": leaderboardTag } : {},
-      });
-      if (version !== leaderboardVersion || player !== state?.id) return;
-      if (response.status === 304) { leaderboardFailures = 0; return; }
-      if (!response.ok) {
-        readRetryAt = Math.max(readRetryAt, Date.now() + retryAfter(response));
-        throw new Error();
-      }
-      leaderboardTag = response.headers.get("ETag") || undefined;
-      leaderboardFailures = 0;
-      const leaders: Leader[] = await response.json();
-      const ownRank = leaders.find(leader => leader.id === state?.id)?.rank;
-      $("leaders").innerHTML = leaders.map((leader, index) => {
-        const own = leader.id === state?.id;
-        const gap = index > 0 && leader.rank > leaders[index - 1].rank + 1
-          ? '<li class="leader-gap" role="presentation" aria-hidden="true">···</li>' : "";
-        const score = formatGold(leader.bestGold);
-        return `${gap}<li value="${leader.rank}" class="${own ? "you" : ""}" ${own ? 'aria-current="true"' : ""}><span class="rank">${String(leader.rank).padStart(2, "0")}</span><span class="leader-name" title="${escape(leader.nickname)}">${escape(leader.nickname)}${own ? '<small class="leader-you">Your best</small>' : ""}</span><strong title="${score} G" aria-label="${score} Gold">${compactGold(leader.bestGold)}<small> G</small></strong></li>`;
-      }).join("");
-      if (!leaders.length) $("leaders").innerHTML = '<li class="empty-floor">No scores yet.</li>';
-      $("leaderboard-unranked").hidden = ownRank !== undefined;
-      const ownFloor = $("leaders").querySelector<HTMLElement>(".you");
-      if (ownFloor && ownRank && previousRank && ownRank < previousRank)
-        void motion(ownFloor, [{transform: "translateY(28px) scale(.94)", filter: "brightness(1.8)"}, {transform: "translateY(0) scale(1)", filter: "brightness(1)"}], {duration: 900, easing: "cubic-bezier(.2,.8,.2,1)"});
-      previousRank = ownRank;
-    } catch {
-      leaderboardTag = undefined;
-      leaderboardFailures++;
-      nextLeaderboardAt = Date.now() + Math.min(120000, 30000 * 2 ** (leaderboardFailures - 1));
-      $("leaders").innerHTML = leaderboardFailures >= 6
-        ? '<li class="empty-floor">Leaderboard unavailable. <button class="text-button" data-leaderboard-retry>Retry leaderboard</button></li>'
-        : '<li class="empty-floor">Leaderboard unavailable. Retrying shortly.</li>';
-      $("leaderboard-unranked").hidden = true;
-    }
-  })().finally(() => {
-    leaderboardRead = undefined;
-    if (version !== leaderboardVersion) void refreshLeaderboard();
-  });
-  return leaderboardRead;
-}
-function savePending(value: ActionRequest | null) {
-  pending = value;
-  pendingPlayerId = value ? state?.id : undefined;
-  try {
-    if (value) sessionStorage.setItem("sixfold-100-rolls-pending", JSON.stringify({ playerId: pendingPlayerId, request: value, retryAt: actionRetryAt }));
-    else sessionStorage.removeItem("sixfold-100-rolls-pending");
-    pendingDurable = true;
-  } catch { pendingDurable = false; }
-}
-async function perform(action?: Action) {
+
+async function perform(action: Action) {
   if (!state || busy) return;
-  if (Date.now() < actionRetryAt) return;
-  if (pendingPlayerId && pendingPlayerId !== state.id) {
-    savePending(null);
-    announce("The player session changed. The saved action was not sent to the new player.", true);
-    render();
-    return;
-  }
-  if (action && pending) return;
-  if (action?.kind === "shake" && !state.canShake) return;
-  if (action)
-    savePending({
-      // getRandomValues also works over plain HTTP on a local Wi-Fi network.
-      requestId: Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) =>
-        byte.toString(16).padStart(2, "0"),
-      ).join(""),
-      revision: state.revision,
-      playerId: state.id,
-      action,
-    });
-  if (!pending) return;
-  const request = pending;
-  const recovering = !action;
+  if (action.kind === "shake" && !state.canShake) return;
   const before = state;
+  let committed = false;
   busy = true;
-  actionPhase = request.action.kind === "roll" ? "Rolling…" : request.action.kind === "shake" ? "New die…" : request.action.kind === "restart" ? "New run…" : "Saving…";
-  const changesBoard = ["roll", "shake", "restart"].includes(request.action.kind);
+  activeAction = action;
+  actionPhase = action.kind === "roll" ? "Rolling…" : action.kind === "shake" ? "New die…" : action.kind === "restart" ? "New run…" : "Saving…";
+  const changesBoard = ["roll", "shake", "restart"].includes(action.kind);
   if (changesBoard) clearResult();
-  if (request.action.kind === "roll" || request.action.kind === "shake") {
-    $("table-status").textContent = request.action.kind === "roll" ? "No more bets" : "Fresh odds coming";
-  }
+  if (action.kind === "roll" || action.kind === "shake")
+    $("table-status").textContent = action.kind === "roll" ? "No more bets" : "Fresh odds coming";
   announce("");
   $("run-error").textContent = "";
   render();
   try {
-    const response = await fetch("/api/action", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Sixfold-Response": "compact-v1" },
-      body: JSON.stringify(request),
-      signal: AbortSignal.timeout(12000),
-    });
-    const payload = await response.json();
-    if (!response.ok) {
-      const transient = [408, 425, 429].includes(response.status) || response.status >= 500;
-      if (transient) {
-        actionRetryAt = Date.now() + (retryAfter(response) || 1000);
-        savePending(request);
-        clearTimeout(retryTimer);
-        retryTimer = setTimeout(() => render(), actionRetryAt - Date.now());
-      } else {
-        savePending(null);
-        if (payload.state) {
-          state = payload.state;
-          draft = {};
-          setDie(1);
-        }
-      }
-      throw new Error(
-        payload.error || "The server could not confirm this action.",
-      );
-    }
-    const wire = payload as ActionWireResponse;
-    const data: ActionResponse = { state: wire.state, result: wire.result === "lastRoll" ? wire.state.lastRoll : wire.result };
-    // Settlement is already committed. This animation only presents its stored outcome.
+    const data = await game.act(before, action);
+    committed = true;
+    showSaveWarning();
+    // The durable save is settled already; state remains the pre-roll presentation.
     if (data.result) {
       playTone("roll");
       await rollDie(data.result.outcome);
       actionPhase = "Settling…";
       $("roll").querySelector("span")!.textContent = actionPhase;
-      await revealResult(data.result, request.action.kind === "roll" ? request.action.wagers : {}, data.state.gold);
+      await revealResult(data.result, action.kind === "roll" ? action.wagers : {}, data.state.gold);
       if (data.result.jackpot) {
         $("table-status").textContent = "A fresh die";
         await replaceDie();
         $("table-status").textContent = "Fresh odds. Your call.";
         announce("Jackpot! A fresh die and new odds are on the table.");
       }
-    } else if (request.action.kind === "shake") {
+    } else if (action.kind === "shake") {
       $("table-status").textContent = "Replacing the die";
       await replaceDie();
       $("table-status").textContent = "Fresh odds. Your call.";
       announce("A fresh die. New odds are on the table.");
-    } else if (request.action.kind === "restart") {
+    } else if (action.kind === "restart") {
       $<HTMLDialogElement>("run-dialog").close();
       setAmount(CONFIG.selectedWager);
       await presentNewRun(data.state);
+      $("table-status").textContent = "Place your bets";
       announce("New run. 100 Gold and 100 rolls remaining.");
-    } else if (request.action.kind === "nickname") {
+    } else if (action.kind === "nickname") {
       $("nickname-status").textContent = "Name saved.";
-    } else if (request.action.kind === "probabilities") {
-      announce(request.action.enabled
-        ? "Probabilities shown. This run’s score will not enter the leaderboard."
-        : "Probabilities hidden. This run’s score remains excluded from the leaderboard.");
+    } else if (action.kind === "probabilities") {
+      announce(action.enabled
+        ? "Probabilities shown. This run’s score will not enter personal records."
+        : "Probabilities hidden. This run’s score remains excluded from personal records.");
     }
-    state = data.state;
-    if (request.action.kind === "restart") $("table-status").textContent = "Place your bets";
-    if (changesBoard) draft = {};
-    savePending(null);
-    actionRetryAt = 0;
-    networkError = false;
-    cachedState = state;
-    stateTag = undefined;
-    // A replay can describe an older revision when another tab has since acted.
-    const current = recovering || crossTabChanged ? await getState().catch(() => null) : null;
-    crossTabChanged = false;
-    if (
-      current &&
-      (current.id !== state.id ||
-        BigInt(current.revision) > BigInt(state.revision))
-    ) {
-      state = current;
+  } catch (error) {
+    if (error instanceof StaleRunError) {
       draft = {};
       clearResult();
       setDie(1);
-      announce(
-        "Another tab has updated the game. The latest saved board is shown.",
-      );
     }
-    channel?.postMessage({ playerId: state.id, revision: state.revision });
-    if (state.nickname !== before.nickname || state.bestGold !== before.bestGold || state.hasCompletedRun !== before.hasCompletedRun) {
-      invalidateLeaderboard();
-      void refreshLeaderboard();
-    }
-  } catch (error) {
-    $("table-status").textContent = pending ? "Waiting to reconnect" : "Place your bets";
-    const message =
-      error instanceof Error ? error.message : "Connection interrupted.";
-    announce(
-      pending
-        ? `${message} Your action is saved${pendingDurable ? "" : " in this tab"}. Retry to recover the same result.`
-        : message,
-      true,
-    );
-    if (request.action.kind === "nickname")
-      $("nickname-status").textContent = message;
-    if ($<HTMLDialogElement>("run-dialog").open)
-      $("run-error").textContent = announcement;
+    const message = error instanceof Error ? error.message : "Could not complete this action.";
+    announce(message, true);
+    if (action.kind === "nickname") $("nickname-status").textContent = message;
+    if ($<HTMLDialogElement>("run-dialog").open) $("run-error").textContent = message;
   } finally {
+    // Presentation failure, hidden tabs and other-tab updates cannot roll back a save.
+    if (committed && changesBoard) draft = {};
     busy = false;
+    activeAction = undefined;
     actionPhase = "";
+    game.refresh();
+    state = game.data.state;
+    applySavedSettings();
+    refreshLeaderboard();
     render();
-    if (request.action.kind === "restart" && !pending && !runEnded())
+    if (action.kind === "restart" && committed && !runEnded())
       $("bet-amount").focus({ preventScroll: true });
   }
 }
@@ -1138,11 +957,6 @@ app.addEventListener("contextmenu", (event) => {
 
 app.addEventListener("click", (event) => {
   const element = event.target as HTMLElement;
-  if (element.closest("[data-leaderboard-retry]")) {
-    leaderboardFailures = 0;
-    nextLeaderboardAt = 0;
-    void refreshLeaderboard();
-  }
   const target = element.closest<HTMLElement>("[data-target]");
   if (target) {
     // A hold removes the wager before release. Consume its generated click so
@@ -1180,7 +994,6 @@ $("roll").addEventListener("click", () => {
   if (totalDraft() > 0n) void perform({ kind: "roll", wagers: { ...draft } });
 });
 $("shake").addEventListener("click", () => void perform({ kind: "shake" }));
-$("retry").addEventListener("click", () => void perform());
 function setAmount(value: string) {
   amount = value;
   $<HTMLInputElement>("bet-amount").value = amount;
@@ -1189,12 +1002,12 @@ function setAmount(value: string) {
 }
 $("recent-amounts").addEventListener("click", event => {
   const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-amount]");
-  if (!button || button.disabled || busy || pending || runEnded()) return;
+  if (!button || button.disabled || busy || runEnded()) return;
   setAmount(button.dataset.amount!);
   announce("");
 });
 function adjustAmount(step: bigint) {
-  if (!state || busy || pending || runEnded()) return;
+  if (!state || busy || runEnded()) return;
   const value = readAmount();
   if (value === null) return;
   const next = value + step < 1n ? 1n : value + step;
@@ -1219,7 +1032,6 @@ $("bet-amount").addEventListener("change", () => {
 function openLeaderboard() {
   $<HTMLDialogElement>("leaderboard-dialog").showModal();
   $("leaderboard-open").setAttribute("aria-expanded", "true");
-  if (leaderboardFailures >= 6) { leaderboardFailures = 0; nextLeaderboardAt = 0; }
   void refreshLeaderboard();
 }
 const wideLeaderboard = matchMedia("(min-width: 1101px)");
@@ -1245,11 +1057,11 @@ $("settings-open").addEventListener("click", () => {
   $<HTMLDialogElement>("settings-dialog").showModal();
 });
 $("settings-restart").addEventListener("click", () => {
-  if (!state || busy || pending) return;
+  if (!state || busy) return;
   $<HTMLDialogElement>("restart-dialog").showModal();
 });
 $("restart-confirm").addEventListener("click", () => {
-  if (!state || busy || pending) return;
+  if (!state || busy) return;
   $<HTMLDialogElement>("restart-dialog").close();
   $<HTMLDialogElement>("settings-dialog").close();
   void perform({ kind: "restart" });
@@ -1273,8 +1085,6 @@ $("run-dialog").addEventListener("cancel", event => event.preventDefault());
 $("run-form").addEventListener("submit", event => {
   event.preventDefault();
   if (busy || !runEnded()) return;
-  if (pending?.action.kind === "restart") { void perform(); return; }
-  if (pending) return;
   void perform({ kind: "restart", nickname: $<HTMLInputElement>("run-nickname").value });
 });
 $("nickname-form").addEventListener("submit", (e) => {
@@ -1286,19 +1096,19 @@ $("nickname-form").addEventListener("submit", (e) => {
 });
 $("sound").addEventListener("change", () => {
   sound = $<HTMLInputElement>("sound").checked;
-  preferences.set("one-of-six-sound", sound ? "on" : "off");
+  saveSettings({ sound });
   if (sound) playTone("chip");
   else stopSound();
 });
 $("show-probabilities").addEventListener("change", () => {
   const enabled = $<HTMLInputElement>("show-probabilities").checked;
   $<HTMLInputElement>("show-probabilities").checked = state?.showProbabilities === true;
-  if (!state || busy || pending || runEnded()) return;
+  if (!state || busy || runEnded()) return;
   if (enabled) $<HTMLDialogElement>("probabilities-dialog").showModal();
   else void perform({ kind: "probabilities", enabled: false });
 });
 $("probabilities-confirm").addEventListener("click", () => {
-  if (!state || busy || pending || runEnded()) return;
+  if (!state || busy || runEnded()) return;
   $<HTMLDialogElement>("probabilities-dialog").close();
   void perform({ kind: "probabilities", enabled: true });
 });
@@ -1315,7 +1125,7 @@ function renderGuide() {
 renderGuide();
 $("guide-language").addEventListener("change", () => {
   guideLanguage = $<HTMLSelectElement>("guide-language").value as GuideLanguage;
-  try { localStorage.setItem(guideLanguageKey, guideLanguage); } catch { /* Keep this session's selection. */ }
+  saveSettings({ guideLanguage });
   renderGuide();
   $("welcome-dialog").scrollTop = 0;
 });
@@ -1334,23 +1144,18 @@ function openGuide(trigger: HTMLElement, showTilt = false) {
 $("guide-open").addEventListener("click", () => openGuide($("guide-open")));
 $("tilt-info").addEventListener("click", () => openGuide($("tilt-info"), true));
 $("welcome-dialog").addEventListener("close", () => {
-  if (state) preferences.set(`sixfold-guide-seen:${state.id}`, "yes");
+  saveSettings({ guideSeen: true });
   guideReturnFocus.focus({ preventScroll: true });
 });
 function showFirstGameGuide() {
-  if (!state || pending || runEnded()) return;
-  const key = `sixfold-guide-seen:${state.id}`;
-  if (state.lastRoll) preferences.set(key, "yes");
-  if (!state.lastRoll && preferences.get(key) !== "yes") {
+  if (!state || runEnded()) return;
+  if (state.lastRoll) saveSettings({ guideSeen: true });
+  if (!state.lastRoll && !game.data.settings.guideSeen)
     $<HTMLDialogElement>("welcome-dialog").showModal();
-  }
 }
 $("motion").addEventListener("change", () => {
   manualReducedMotion = $<HTMLInputElement>("motion").checked;
-  preferences.set(
-    "one-of-six-motion",
-    manualReducedMotion ? "reduce" : "normal",
-  );
+  saveSettings({ reducedMotion: manualReducedMotion });
   document.documentElement.classList.toggle(
     "reduce-motion",
     manualReducedMotion,
@@ -1391,7 +1196,7 @@ document.addEventListener("keydown", (event) => {
   if (!["r", " ", "1", "2", "3", "w", "e", "q", "escape"].includes(key)) return;
   // Space must never also click a focused bet, scroll, or repeat a native action.
   event.preventDefault();
-  if (!state || busy || pending || runEnded()) return;
+  if (!state || busy || runEnded()) return;
   if (key === "q" || key === "escape") {
     draft = {};
     chipPoses.clear();
@@ -1408,110 +1213,47 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-let crossTabChanged = false;
-const channel = typeof BroadcastChannel === "undefined" ? undefined : new BroadcastChannel("sixfold-state-changes");
-channel?.addEventListener("message", event => {
-  if (!state || event.data?.playerId !== state.id || typeof event.data?.revision !== "string" || event.data.revision.length > 128 || !/^(0|[1-9]\d*)$/.test(event.data.revision)) return;
-  if (BigInt(event.data.revision) <= BigInt(state!.revision)) return;
-  crossTabChanged = true;
-  if (!busy && !pending) void sync();
-});
-let syncRead: Promise<void> | undefined;
-let readFailures = 0;
-let pollTimer: ReturnType<typeof setTimeout> | undefined;
-function sync(): Promise<void> {
-  if (syncRead) return syncRead;
-  if (!state) return initialize();
-  if (busy || pending || document.hidden || Date.now() < readRetryAt) return Promise.resolve();
-  syncRead = (async () => {
-    try {
-      const latest = await getState();
-      // A response initiated before a local action cannot overwrite that action.
-      if (busy || pending) return;
-      if (!state || latest.id !== state.id || BigInt(latest.revision) > BigInt(state.revision)) {
-        const existed = !!state;
-        const scoreChanged = !state || latest.nickname !== state.nickname || latest.bestGold !== state.bestGold || latest.hasCompletedRun !== state.hasCompletedRun;
-        state = latest;
-        draft = {};
-        clearResult();
-        setDie(1);
-        render();
-        if (scoreChanged) invalidateLeaderboard();
-        if (existed) announce("This game changed in another tab. Draft cleared; review the new board.");
-        else showFirstGameGuide();
-      }
-      crossTabChanged = false;
-      readFailures = 0;
-      if (networkError) { networkError = false; announce("Connected. Your saved game is ready."); }
-      $("reconnect").hidden = true;
-      void refreshLeaderboard();
-    } catch (error) {
-      readFailures++;
-      readRetryAt = Math.max(readRetryAt, Date.now() + (error instanceof ReadError ? error.retryAfter : 0));
-      networkError = true;
-      announce(readFailures >= 6 ? "Connection unavailable. Use Reconnect to try again." : "Connection unavailable. Reconnecting to your saved game…", true);
-      $("reconnect").hidden = !!pending;
-    }
-  })().finally(() => { syncRead = undefined; });
-  return syncRead;
+function applySavedSettings() {
+  const settings = game.data.settings;
+  sound = settings.sound;
+  manualReducedMotion = settings.reducedMotion;
+  recentAmounts = settings.recentAmounts;
+  guideLanguage = (settings.guideLanguage as GuideLanguage | null) ?? resolveGuideLanguage(navigator.languages);
+  $<HTMLInputElement>("sound").checked = sound;
+  $<HTMLInputElement>("motion").checked = prefersReducedMotion();
+  document.documentElement.classList.toggle("reduce-motion", manualReducedMotion);
+  if (!sound) stopSound();
+  if (shouldReduceMotion()) stopMotion();
+  renderGuide();
 }
-function schedulePoll() {
-  clearTimeout(pollTimer);
-  if (document.hidden || readFailures >= 6) return;
-  const delay = Math.max(CONFIG.syncIntervalMs * 2 ** Math.min(readFailures, 4), readRetryAt - Date.now());
-  pollTimer = setTimeout(async () => { await sync(); schedulePoll(); }, delay);
-}
-let initializing: Promise<void> | undefined;
-function initialize(): Promise<void> {
-  if (initializing) return initializing;
-  initializing = initializeOnce().finally(() => { initializing = undefined; });
-  return initializing;
-}
-async function initializeOnce() {
-  if (document.hidden || Date.now() < readRetryAt) { schedulePoll(); return; }
-  try {
-    state = await getState();
-    readFailures = 0;
-    if (networkError) announce("Connected. Your saved game is ready.");
-    networkError = false;
-    setDie(1);
-    // Old-format pending actions are safe only if this resumes an existing cookie.
-    if (pending && (sessionCreated || (pendingPlayerId && pendingPlayerId !== state.id))) {
-      savePending(null);
-      announce("The player session changed. The saved action was not sent to the new player.", true);
-    }
-    render();
-    void refreshLeaderboard();
-    if (pending) { announce("Recovering your last saved action…"); await perform(); }
-    showFirstGameGuide();
-  } catch (error) {
-    readFailures++;
-    readRetryAt = Math.max(readRetryAt, Date.now() + (error instanceof ReadError ? error.retryAfter : 0));
-    networkError = true;
-    announce(readFailures >= 6 ? "Could not connect. Use Reconnect to try again." : "Could not connect. Your saved game will retry automatically.", true);
-    $("reconnect").hidden = false;
-  } finally {
-    if (pending && actionRetryAt > Date.now()) {
-      clearTimeout(retryTimer);
-      retryTimer = setTimeout(() => render(), actionRetryAt - Date.now());
-    }
-    schedulePoll();
+function syncSavedGame() {
+  if (busy || settingsWrites) return;
+  game.refresh();
+  const latest = game.data.state;
+  if (state && (latest.id !== state.id || latest.revision !== state.revision)) {
+    draft = {};
+    clearResult();
+    setDie(latest.lastRoll?.outcome ?? 1);
+    announce("This game changed in another tab. Draft cleared; review the saved board.");
   }
+  state = latest;
+  applySavedSettings();
+  render();
+  refreshLeaderboard();
 }
-function reconnect() {
-  readFailures = 0;
-  if (leaderboardFailures >= 6) { leaderboardFailures = 0; nextLeaderboardAt = 0; }
-  void (state ? sync() : initialize()).finally(schedulePoll);
-}
-$("reconnect").addEventListener("click", reconnect);
-window.addEventListener("online", reconnect);
-window.addEventListener("focus", () => { if (!document.hidden) reconnect(); });
+window.addEventListener("storage", event => { if (event.key === SAVE_KEY) syncSavedGame(); });
+window.addEventListener("pagehide", () => game.stageSettings());
+window.addEventListener("focus", () => { if (!document.hidden) syncSavedGame(); });
 document.addEventListener("visibilitychange", () => {
   document.documentElement.classList.toggle("page-hidden", document.hidden);
   if (document.hidden) {
-    clearTimeout(pollTimer);
     stopMotion(); stopSound();
     void audioContext?.suspend();
-  } else reconnect();
+  } else syncSavedGame();
 });
-void initialize();
+state = game.data.state;
+setDie(state.lastRoll?.outcome ?? 1);
+applySavedSettings();
+render();
+refreshLeaderboard();
+showFirstGameGuide();

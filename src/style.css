@@ -625,3 +625,9 @@ dialog::backdrop {
 :root.page-hidden * { animation-play-state: paused !important; }
 .site-information { display: block; margin-top: 12px; font-size: 11px; line-height: 1.4; color: var(--muted); text-align: left; text-decoration: none; }
 .site-information:hover, .site-information:focus-visible { text-decoration: underline; }
+.personal-records-note {
+  margin: 0 0 12px;
+  color: #a9ada8;
+  font-size: 12px;
+  line-height: 1.4;
+}

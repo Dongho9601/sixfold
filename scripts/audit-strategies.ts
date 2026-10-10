@@ -1,7 +1,7 @@
 /** Offline balance audit. Uses production settlement; never opens a database. */
 import assert from "node:assert/strict";
 import { CONFIG, TARGETS } from "../src/config.ts";
-import { freshProbabilities, marker, settle } from "../server/rules.ts";
+import { freshProbabilities, marker, settle } from "../src/game/rules.ts";
 import type { Wagers } from "../src/types.ts";
 
 const trials = 5000;

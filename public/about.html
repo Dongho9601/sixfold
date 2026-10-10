@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Sixfold — Rules, privacy, and credits</title>
-  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg">
   <style>
     body{margin:0;background:#fff;color:#242424;font:18px/1.65 Georgia,serif}
     main{max-width:44rem;margin:3rem auto;padding:0 1.5rem 4rem}
@@ -13,20 +13,19 @@
   </style>
 </head>
 <body><main>
-  <nav><a href="/">Return to Sixfold</a></nav>
+  <nav><a href="./">Return to Sixfold</a></nav>
   <h1>Rules, privacy, and credits</h1>
   <h2>A free game</h2>
   <p>Sixfold is free and non-commercial. Gold is a game score with no monetary or material value. There are no advertisements, payments, donations, cash-out, or monetary or material prizes.</p>
-  <p>Each run starts with 100 Gold and lasts up to 100 rolls. The server draws outcomes and settles wagers. Only the final balance after roll 100 can enter the leaderboard; an earlier bankruptcy posts no score. Each anonymous player keeps their best completed score. The in-game How to play guide explains all targets, payouts, Tilt, Shake, Jackpot, and controls. Show probabilities is off at the start of every run. Turning it on requires confirmation and excludes that run’s score from the leaderboard, even if it is turned off later. Previous leaderboard records stay. The server saves the setting and exclusion with the run. Odds remain available through browser inspection.</p>
-  <h2>Saved games and public names</h2>
-  <p>A first-party session cookie identifies your anonymous player. Its maximum age is one year from creation. The server stores a hash of that cookie, a random player ID, your nickname, game balance, board probabilities, roll count, probability-display setting, run leaderboard eligibility, completed score, revision, last result, and receipts for accepted actions. The server retains player records and retry receipts indefinitely so saved games can continue and a repeated request cannot settle again. Clearing or losing the cookie does not delete that data, and there is no account recovery.</p>
-  <p>Your player ID, nickname, completed best score, and rank can appear publicly on the leaderboard. Choose a nickname that does not reveal private information. The operator can hide an abusive entry without deleting its game or score.</p>
-  <h2>Browser storage and network data</h2>
-  <p>Local browser storage holds sound, motion, and language preferences, guide dismissal, and three recent bet amounts. Tab session storage holds a pending action and its retry ID until the server confirms or rejects it. Draft wagers remain in the current tab and clear when the page reloads.</p>
-  <p>The application uses your IP address in memory to limit requests, without saving it to the game database. Limiter storage is bounded. Entries idle for 30 minutes become eligible for incremental cleanup as later requests arrive; remaining entries clear when the server process restarts. The application does not include analytics or third-party runtime requests, and does not log cookies, action bodies, or session identifiers. A hosting provider or reverse proxy may process IP addresses and request logs; its logging and retention settings must be reviewed by the operator before public hosting.</p>
-  <h2>Credits and contact</h2>
+  <p>Each run starts with 100 Gold and lasts up to 100 rolls. Your browser draws outcomes and settles wagers. Only the final balance after roll 100 can enter your personal leaderboard; an earlier bankruptcy records no score. The leaderboard keeps your best 10 completed runs in this browser. The in-game How to play guide explains all targets, payouts, Tilt, Shake, Jackpot, and controls. Show probabilities is off at the start of every run. Turning it on requires confirmation and excludes that run’s score from personal records, even if it is turned off later. Previous records stay. Odds and game rules can be inspected in the browser.</p>
+  <h2>Personal saves in this browser</h2>
+  <p>Sixfold automatically saves the settled run, board probabilities, roll count, last result, record eligibility, nickname, sound and motion preferences, guide language and dismissal, recent bet amounts, and best 10 completed runs in localStorage under <code>sixfold:save:v1</code>. Settlement is saved before animation, so refreshing or reopening can continue an unfinished run. Last-second setting changes can use a temporary <code>sixfold:settings:pending:v1</code> journal during navigation. Unrolled draft wagers clear on refresh. Restarting discards only the current run and draft, preserving personal records and settings.</p>
+  <p>Names and scores remain in this browser. There are no accounts, session cookies, shared rankings, cloud synchronization, or game servers. Clearing Sixfold’s stored data or the browser’s site data removes saved progress. Saves do not transfer between browsers, devices, or origins. If storage is blocked or full, the game remains playable and explains that progress cannot be saved. An unreadable or incompatible save starts a fresh run, retaining the first unreadable save under <code>sixfold:save:recovery</code> when storage permits.</p>
+  <h2>Static hosting and network data</h2>
+  <p>The game loads static HTML, JavaScript, CSS, and its favicon. Gameplay makes no backend requests. There are no analytics or third-party runtime requests. The hosting provider may process ordinary page and asset requests; see <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement" rel="noreferrer">GitHub’s privacy statement</a> for hosting information.</p>
+  <h2>Credits</h2>
   <p>The bundled die, board, icons, and favicon are CSS or SVG. Sound is generated locally with Web Audio. Fonts come from your operating system. No external artwork, fonts, recordings, or reference screenshots are fetched by the game.</p>
-  <p>The repository credits the roulette table layout at <a href="https://www.casino.org/blog/the-roulette-table-explained/" rel="noreferrer">Casino.org</a> and <a href="https://www.playstation.com/en-us/games/balatro/" rel="noreferrer">Balatro screenshots on PlayStation</a> as design references; their assets are not bundled. The development tools include Vite (MIT), tsx (MIT), TypeScript (Apache-2.0), and Playwright (Apache-2.0), alongside Node.js and its bundled SQLite.</p>
-  <p>An operator contact for privacy requests and abusive-name reports has not yet been published.</p>
+  <p>The repository credits the roulette table layout at <a href="https://www.casino.org/blog/the-roulette-table-explained/" rel="noreferrer">Casino.org</a> and <a href="https://www.playstation.com/en-us/games/balatro/" rel="noreferrer">Balatro screenshots on PlayStation</a> as design references; their assets are not bundled. The development tools include Vite (MIT), tsx (MIT), TypeScript (Apache-2.0), and Playwright (Apache-2.0). Node.js is used only for development and tests. The bundled Vite helper’s <a href="./third-party-notices.txt">MIT notice</a> is included in the static output.</p>
+  <p>Project source: <a href="https://github.com/Dongho9601/sixfold" rel="noreferrer">Dongho9601/sixfold</a>. No project license has been selected; dependency licenses and design references remain credited in the repository.</p>
 </main></body>
 </html>

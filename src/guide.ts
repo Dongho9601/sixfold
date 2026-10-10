@@ -39,7 +39,7 @@ export function resolveGuideLanguage(languages: readonly string[]): GuideLanguag
 export const guides: Record<GuideLanguage, GuideCopy> = {
   en: {
     title: "How to play", close: "Close gameplay guide", language: "Language", start: "Let’s play",
-    intro: "Start with 100 G. Play 100 rolls. Your final Gold is your score; the leaderboard keeps your best completed run.",
+    intro: "Start with 100 G. Play 100 rolls. Your final Gold is your score; the personal leaderboard keeps your best 10 completed runs in this browser.",
     steps: [
       ["Place your bets", "Choose a whole-number amount, then click a number, row, column, or color. Click again to add more, up to your bankroll. The three chips recall recent bet amounts, newest first."],
       ["Roll and collect", "Press <kbd>R</kbd> or click <b>Roll dice</b>. All matching bets pay, including overlapping groups. Each roll clears your bets and uses one of your 100 rolls."],
@@ -57,12 +57,12 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
       ["How the odds change", "Fresh boards use random odds; Red and Black need not be equally likely. After a non-Jackpot payout, the rolled number transfers part of its probability above 2% to the other five, in random shares. The transfer rate is 4%–8% at Tilt 1, rising to 5%–10% at Tilt 6. One transfer occurs per paying roll, regardless of stake or net gain. Tilt may rise or fall."],
       ["One example", "At Tilt 2, the rate is 4.2%–8.4%. A number at 40% has 38 percentage points above the floor. Moving 6.3% of that surplus lowers it to 37.61%; the other five share the difference. Jackpot ties go to the lowest number. Once earned, Shake stays unlocked until used or the board resets."],
       ["Finishing and saving", "Losses and break-even rolls count too. Gold at roll 100 is your score, even if it is zero. Reaching zero earlier ends the run without a score. Earlier peaks do not count. The results compare your personal best; enter a name and choose Confirm & play again. Settings → Restart run discards the current run after confirmation. Both preserve your best completed score."],
-      ["Your preferences", "Gold, odds, and roll count save automatically. Refreshing clears unrolled bets; keep your browser’s game cookie to keep your player identity. In Settings, edit your name (1–24 visible characters), Sound effects, or Reduce motion. System reduced motion is also respected. Sound and motion preferences stay in this browser. Show probabilities starts off in every run. Enabling it requires confirmation and excludes that run’s score from the leaderboard, even if you turn it off later. Your existing record stays. The setting and exclusion save with the current run."],
+      ["Your preferences", "Gold, odds, and roll count save automatically. Refreshing clears unrolled bets; your run, settings, and best 10 completed records stay in this browser’s local storage. Clearing Sixfold’s saved data removes them; they are never sent to a server. In Settings, edit your name (1–24 visible characters), Sound effects, or Reduce motion. System reduced motion is also respected. Sound and motion preferences stay in this browser. Show probabilities starts off in every run. Enabling it requires confirmation and excludes that run’s score from the leaderboard, even if you turn it off later. Your existing record stays. The setting and exclusion save with the current run."],
     ],
   },
   ko: {
     title: "게임 방법", close: "게임 안내 닫기", language: "언어", start: "시작하기",
-    intro: "100 G로 시작해 주사위를 100번 굴립니다. 마지막에 남은 Gold가 점수이며, 순위표에는 완주한 게임 중 최고 기록이 남습니다.",
+    intro: "100 G로 시작해 주사위를 100번 굴립니다. 마지막에 남은 Gold가 점수이며, 개인 순위표에는 이 브라우저에서 완주한 게임의 상위 10개 기록이 남습니다.",
     steps: [
       ["베팅하기", "정수 금액을 정한 뒤 숫자, 가로줄, 세로줄 또는 색상을 누르세요. 다시 누르면 보유 Gold 한도 내에서 금액이 추가됩니다. 옆의 칩 세 개로 최근 베팅 금액을 불러올 수 있습니다. 가장 최근 금액이 첫 번째입니다."],
       ["굴리고 받기", "<kbd>R</kbd> 또는 <b>Roll dice</b>를 누르세요. 나온 숫자에 해당하는 모든 베팅이 적중하며, 서로 겹치는 베팅도 각각 지급됩니다. 한 번 굴릴 때마다 남은 횟수가 1 줄고 베팅판이 비워집니다."],
@@ -80,12 +80,12 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
       ["확률이 바뀌는 방식", "새 판의 확률은 무작위이며 빨강과 검정의 확률이 같을 필요는 없습니다. Jackpot 외의 적중이 있으면 나온 숫자가 최소 확률 2%를 넘는 부분 중 일부를 나머지 다섯 숫자에 무작위 비율로 나눠 줍니다. 최소 확률을 초과한 부분에서 옮기는 비율은 Tilt 1에서 4%–8%, Tilt 6에서 5%–10%입니다. 베팅액이나 전체 손익과 무관하게 적중한 굴림마다 한 번만 변합니다. Tilt는 오를 수도 내릴 수도 있습니다."],
       ["계산 예시", "Tilt 2의 이동 비율은 4.2%–8.4%입니다. 확률 40%에서 최소 2%를 빼면 38%포인트가 남습니다. 그중 6.3%를 옮기면 확률은 약 37.61%가 되고, 나머지 다섯 숫자가 차이를 나눠 받습니다. 최저 확률이 같으면 더 작은 숫자가 Jackpot 대상입니다. 열린 Shake는 사용하거나 판이 초기화될 때까지 유지됩니다."],
       ["종료와 기록", "손실이나 본전인 굴림도 횟수에 포함됩니다. 100번째 굴림 후 Gold가 점수이며 0 G도 유효합니다. 그 전에 0 G가 되면 기록 없이 끝납니다. 중간 최고 잔액은 기록되지 않습니다. 결과 창에서 최고 기록과 비교한 뒤 이름을 입력하고 Confirm & play again으로 다시 시작하세요. Settings → Restart run은 확인 후 현재 게임을 포기합니다. 어느 쪽이든 완주한 최고 기록은 남습니다."],
-      ["설정과 저장", "Gold, 확률, 굴린 횟수는 자동 저장됩니다. 새로고침하면 아직 굴리지 않은 베팅은 지워집니다. 같은 플레이어로 돌아오려면 게임 쿠키를 유지하세요. Settings에서 이름(표시 문자 1–24개), Sound effects(효과음), Reduce motion(움직임 줄이기)을 바꿀 수 있습니다. 시스템의 움직임 줄이기 설정도 따릅니다. 소리와 움직임 설정은 이 브라우저에 저장됩니다. Show probabilities(확률 표시)는 새 게임을 시작할 때마다 꺼져 있습니다. 확인 후 켜면 나중에 다시 꺼도 해당 게임의 점수는 순위표에 등록되지 않습니다. 기존 기록은 유지됩니다. 확률 표시 상태와 점수 등록 제외 여부는 현재 게임과 함께 저장됩니다."],
+      ["설정과 저장", "Gold, 확률, 굴린 횟수는 자동 저장됩니다. 새로고침하면 아직 굴리지 않은 베팅은 지워집니다. 게임, 설정, 완주한 상위 10개 기록은 이 브라우저의 로컬 저장소에만 남습니다. Sixfold 저장 데이터를 지우면 사라지며 서버로 전송되지 않습니다. Settings에서 이름(표시 문자 1–24개), Sound effects(효과음), Reduce motion(움직임 줄이기)을 바꿀 수 있습니다. 시스템의 움직임 줄이기 설정도 따릅니다. 소리와 움직임 설정은 이 브라우저에 저장됩니다. Show probabilities(확률 표시)는 새 게임을 시작할 때마다 꺼져 있습니다. 확인 후 켜면 나중에 다시 꺼도 해당 게임의 점수는 순위표에 등록되지 않습니다. 기존 기록은 유지됩니다. 확률 표시 상태와 점수 등록 제외 여부는 현재 게임과 함께 저장됩니다."],
     ],
   },
   ja: {
     title: "遊び方", close: "遊び方を閉じる", language: "言語", start: "始める",
-    intro: "100 Gでスタートし、サイコロを100回振ります。最後に残ったGoldがスコアです。ランキングには完走したゲームの自己ベストが残ります。",
+    intro: "100 Gでスタートし、サイコロを100回振ります。最後に残ったGoldがスコアです。個人ランキングには、このブラウザーで完走したゲームの上位10件が残ります。",
     steps: [
       ["ベットする", "整数の金額を決め、数字・横列・縦列・色をクリックします。もう一度押すと、所持Goldの範囲で追加できます。隣の3枚のチップで最近使った金額を呼び出せます。左から新しい順です。"],
       ["振って受け取る", "<kbd>R</kbd>または<b>Roll dice</b>を押します。出た数字に当たるベットは、範囲が重なっていてもすべて払い戻されます。振るたびに残り回数が1減り、ベットが消えます。"],
@@ -103,12 +103,12 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
       ["確率の変化", "新しい盤面の確率はランダムで、赤と黒も同確率とは限りません。Jackpot以外の払い戻しがあると、出た数字の確率のうち最低2%を超える部分から一部を取り、他の5数字へランダムな比率で配分します。移動率はTilt 1で4%–8%、Tilt 6で5%–10%です。賭け金や合計の損益に関係なく、当たった回ごとに1度だけ変化します。Tiltは上がることも下がることもあります。"],
       ["計算例", "Tilt 2の移動率は4.2%–8.4%です。確率40%から最低2%を引くと38ポイントです。その6.3%を移すと約37.61%になり、差分を他の5数字が分け合います。最低確率が同じ場合、数字が小さい方がJackpotです。解除されたShakeは、使うか盤面がリセットされるまで有効です。"],
       ["終了と記録", "負けや収支ゼロの回も数えます。100回目の後のGoldがスコアで、0 Gも有効です。それより前に0 Gになると記録なしで終了します。途中の最高残高は対象外です。結果画面で自己ベストと比較し、名前を入れてConfirm & play againで再開します。Settings → Restart runでは確認後に現在のゲームを破棄します。どちらも完走済みの自己ベストは残ります。"],
-      ["設定と保存", "Gold・確率・回数は自動保存されます。再読み込みすると未確定のベットは消えます。同じプレイヤーで続けるにはゲームのCookieを保持してください。Settingsで名前（表示文字1–24字）、Sound effects（効果音）、Reduce motion（動きを減らす）を変更できます。システムの視差効果を減らす設定にも従います。音と動きの設定はこのブラウザーに保存されます。Show probabilities（確率表示）は毎回の開始時にオフです。確認してオンにすると、後でオフに戻してもその回のスコアはランキングに登録されません。既存の記録は残ります。表示設定とランキング対象外の状態は現在のゲームとともに保存されます。"],
+      ["設定と保存", "Gold・確率・回数は自動保存されます。再読み込みすると未確定のベットは消えます。ゲーム・設定・完走した上位10件の記録は、このブラウザーのローカルストレージに保存されます。Sixfoldの保存データを削除すると失われ、サーバーには送信されません。Settingsで名前（表示文字1–24字）、Sound effects（効果音）、Reduce motion（動きを減らす）を変更できます。システムの視差効果を減らす設定にも従います。音と動きの設定はこのブラウザーに保存されます。Show probabilities（確率表示）は毎回の開始時にオフです。確認してオンにすると、後でオフに戻してもその回のスコアはランキングに登録されません。既存の記録は残ります。表示設定とランキング対象外の状態は現在のゲームとともに保存されます。"],
     ],
   },
   zh: {
     title: "玩法说明", close: "关闭玩法说明", language: "语言", start: "开始游戏",
-    intro: "以100 G开局，掷骰子100次。最后剩余的Gold就是得分；排行榜保留你完成整局后的最高纪录。",
+    intro: "从100 G开始，掷骰100次。最后的Gold就是分数；个人排行榜保留当前浏览器中已完成游戏的最佳10局纪录。",
     steps: [
       ["下注", "输入整数金额，再点击数字、横行、竖列或颜色。再次点击可追加下注，但总额不能超过持有的Gold。旁边的三个筹码可调用最近使用的金额，从左到右按由新到旧排列。"],
       ["掷骰并领取返还", "按<kbd>R</kbd>或点击<b>Roll dice</b>。所有覆盖结果数字的下注都会获得返还，重叠的下注也分别计算。每次掷骰消耗一次机会，并清空本次下注。"],
@@ -126,12 +126,12 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
       ["概率如何变化", "新局面的概率随机生成，红色和黑色不一定各占一半。除Jackpot外，只要有下注命中，结果数字就会将其概率超过2%的部分按一定比例转移给其他五个数字，分配比例随机。转移比例从Tilt 1的4%–8%逐渐增加到Tilt 6的5%–10%。每次有返还的掷骰只转移一次，与下注金额及净盈亏无关。Tilt可能上升，也可能下降。"],
       ["计算示例", "Tilt 2的转移比例为4.2%–8.4%。概率40%减去最低2%，剩下38个百分点。如果转移这部分的6.3%，该数字的概率变为约37.61%，其余五个数字分享差额。最低概率并列时，数值最小的数字是Jackpot目标。Shake解锁后会一直可用，直到使用或重置局面。"],
       ["结束与纪录", "亏损或持平的掷骰也计入次数。第100次后的Gold即为得分，0 G也有效。更早归零则结束本局，不提交分数。途中的最高余额不计入纪录。结果窗口会对比个人最佳；输入名字后选择Confirm & play again重新开始。Settings → Restart run经确认后放弃当前一局。两种方式都会保留已完成局的最高纪录。"],
-      ["设置与保存", "Gold、概率和已用次数会自动保存。刷新会清除尚未掷骰的下注；请保留游戏Cookie以继续使用同一玩家身份。Settings中可修改名字（1–24个可见字符）、Sound effects（音效）和Reduce motion（减少动态效果），也会遵循系统的减少动态效果设置。声音和动态效果设置保存在当前浏览器中。Show probabilities（显示概率）在每局开始时默认关闭。确认开启后，即使稍后关闭，该局分数也不会进入排行榜。已有纪录会保留。显示设置和不参与排名的状态随当前游戏保存。"],
+      ["设置与保存", "Gold、概率和已用次数会自动保存。刷新会清除尚未掷骰的下注；游戏、设置和已完成的最佳10局纪录仅保存在当前浏览器的本地存储中。删除Sixfold保存数据会清除这些内容，数据不会发送到服务器。Settings中可修改名字（1–24个可见字符）、Sound effects（音效）和Reduce motion（减少动态效果），也会遵循系统的减少动态效果设置。声音和动态效果设置保存在当前浏览器中。Show probabilities（显示概率）在每局开始时默认关闭。确认开启后，即使稍后关闭，该局分数也不会进入排行榜。已有纪录会保留。显示设置和不参与排名的状态随当前游戏保存。"],
     ],
   },
   es: {
     title: "Cómo jugar", close: "Cerrar la guía", language: "Idioma", start: "Jugar",
-    intro: "Empiezas con 100 G y tienes 100 tiradas. El Gold que te quede al final es tu puntuación. La clasificación guarda tu mejor partida completada.",
+    intro: "Empiezas con 100 G y juegas 100 tiradas. El Gold final es tu puntuación; la clasificación personal guarda tus 10 mejores partidas completadas en este navegador.",
     steps: [
       ["Haz tus apuestas", "Elige una cantidad entera y pulsa un número, fila, columna o color. Pulsa de nuevo para añadir más, sin superar tu saldo. Las tres fichas recuperan importes recientes, del más nuevo al más antiguo."],
       ["Tira y cobra", "Pulsa <kbd>R</kbd> o <b>Roll dice</b>. Todas las apuestas que cubran el resultado pagan, aunque se solapen. Cada tirada borra las apuestas y consume una de tus 100 tiradas."],
@@ -149,12 +149,12 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
       ["Cómo cambian las probabilidades", "Cada tablero nuevo tiene probabilidades aleatorias; rojo y negro no tienen por qué ser igual de probables. Tras un pago que no sea Jackpot, el número obtenido cede parte de su probabilidad por encima del 2% a los otros cinco, en proporciones aleatorias. La tasa va del 4%–8% en Tilt 1 al 5%–10% en Tilt 6. Hay una transferencia por tirada con pago, sin importar el importe ni el beneficio neto. Tilt puede subir o bajar."],
       ["Un ejemplo", "En Tilt 2, la tasa es del 4,2%–8,4%. Un número con un 40% tiene 38 puntos porcentuales sobre el mínimo. Transferir el 6,3% de ese excedente lo deja en un 37,61%; los otros cinco se reparten la diferencia. Si hay empate en la probabilidad mínima, el Jackpot corresponde al número menor. Una vez desbloqueado, Shake sigue disponible hasta usarlo o renovar el tablero."],
       ["Terminar y guardar", "Las pérdidas y las tiradas sin beneficio también cuentan. El Gold tras la tirada 100 es la puntuación, incluso si es cero. Llegar a cero antes termina la partida sin puntuación. Los máximos intermedios no cuentan. El resultado se compara con tu récord; escribe un nombre y elige Confirm & play again. Settings → Restart run descarta la partida actual tras confirmarlo. Ambas opciones conservan tu mejor partida completada."],
-      ["Tus preferencias", "El Gold, las probabilidades y las tiradas se guardan automáticamente. Recargar borra las apuestas pendientes; conserva la cookie del juego para mantener tu identidad. En Settings puedes cambiar el nombre (1–24 caracteres visibles), Sound effects (sonido) y Reduce motion (reducir movimiento). También se respeta la preferencia del sistema. Las preferencias de sonido y movimiento se guardan en este navegador. Show probabilities empieza desactivado en cada partida. Activarlo requiere confirmación y excluye la puntuación de esa partida del ranking, aunque luego lo desactives. Tu récord anterior se conserva. El ajuste y la exclusión se guardan con la partida actual."],
+      ["Tus preferencias", "El Gold, las probabilidades y las tiradas se guardan automáticamente. Recargar borra las apuestas pendientes; la partida, los ajustes y tus 10 mejores partidas completadas se conservan en el almacenamiento local de este navegador. Borrar los datos de Sixfold los elimina; no se envían a ningún servidor. En Settings puedes cambiar el nombre (1–24 caracteres visibles), Sound effects (sonido) y Reduce motion (reducir movimiento). También se respeta la preferencia del sistema. Las preferencias de sonido y movimiento se guardan en este navegador. Show probabilities empieza desactivado en cada partida. Activarlo requiere confirmación y excluye la puntuación de esa partida del ranking, aunque luego lo desactives. Tu récord anterior se conserva. El ajuste y la exclusión se guardan con la partida actual."],
     ],
   },
   fr: {
     title: "Comment jouer", close: "Fermer le guide", language: "Langue", start: "Jouer",
-    intro: "Vous commencez avec 100 G pour 100 lancers. Le Gold restant à la fin est votre score. Le classement conserve votre meilleure partie terminée.",
+    intro: "Commencez avec 100 G et jouez 100 lancers. Le Gold final est votre score ; le classement personnel conserve vos 10 meilleures parties terminées dans ce navigateur.",
     steps: [
       ["Placez vos mises", "Choisissez un montant entier, puis cliquez sur un nombre, une ligne, une colonne ou une couleur. Cliquez à nouveau pour ajouter une mise, dans la limite de votre solde. Les trois jetons rappellent les montants récents, du plus récent au plus ancien."],
       ["Lancez et encaissez", "Appuyez sur <kbd>R</kbd> ou cliquez sur <b>Roll dice</b>. Toutes les mises couvrant le résultat sont payées, même si elles se chevauchent. Chaque lancer efface les mises et consomme un de vos 100 lancers."],
@@ -172,12 +172,12 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
       ["Évolution des probabilités", "Chaque nouveau plateau reçoit des probabilités aléatoires ; rouge et noir ne sont pas forcément équiprobables. Après un paiement hors Jackpot, le nombre obtenu cède une fraction de sa probabilité au-delà de 2% aux cinq autres, en parts aléatoires. Le taux va de 4%–8% au Tilt 1 à 5%–10% au Tilt 6. Il y a un transfert par lancer payant, quels que soient la mise et le gain net. Le Tilt peut monter ou descendre."],
       ["Un exemple", "Au Tilt 2, le taux est de 4,2%–8,4%. Un nombre à 40% dépasse le minimum de 38 points. Transférer 6,3% de cet excédent le ramène à 37,61% ; les cinq autres se partagent la différence. En cas d’égalité au minimum, le plus petit nombre est le Jackpot. Une fois débloqué, Shake reste disponible jusqu’à son utilisation ou au renouvellement du plateau."],
       ["Fin de partie et records", "Les pertes et les bilans nuls comptent aussi. Le Gold après le 100e lancer est le score, même à zéro. Atteindre zéro avant termine la partie sans score. Les pics intermédiaires ne comptent pas. Le résultat est comparé à votre record ; saisissez un nom puis choisissez Confirm & play again. Settings → Restart run abandonne la partie après confirmation. Les deux options conservent votre meilleur score de partie terminée."],
-      ["Vos préférences", "Le Gold, les probabilités et le nombre de lancers sont sauvegardés automatiquement. Recharger efface les mises non jouées ; gardez le cookie du jeu pour conserver votre identité. Dans Settings, réglez le nom (1–24 caractères visibles), Sound effects (sons) et Reduce motion (réduire les animations). La préférence système est aussi respectée. Les préférences de son et de mouvement restent dans ce navigateur. Show probabilities est désactivé au début de chaque partie. Son activation demande confirmation et exclut le score de cette partie du classement, même si vous le désactivez ensuite. Votre record existant est conservé. Le réglage et l’exclusion sont sauvegardés avec la partie en cours."],
+      ["Vos préférences", "Le Gold, les probabilités et le nombre de lancers sont sauvegardés automatiquement. Recharger efface les mises non jouées ; la partie, les réglages et vos 10 meilleures parties terminées restent dans le stockage local de ce navigateur. Effacer les données de Sixfold les supprime ; elles ne sont jamais envoyées à un serveur. Dans Settings, réglez le nom (1–24 caractères visibles), Sound effects (sons) et Reduce motion (réduire les animations). La préférence système est aussi respectée. Les préférences de son et de mouvement restent dans ce navigateur. Show probabilities est désactivé au début de chaque partie. Son activation demande confirmation et exclut le score de cette partie du classement, même si vous le désactivez ensuite. Votre record existant est conservé. Le réglage et l’exclusion sont sauvegardés avec la partie en cours."],
     ],
   },
   de: {
     title: "Spielanleitung", close: "Spielanleitung schließen", language: "Sprache", start: "Losspielen",
-    intro: "Du startest mit 100 G und hast 100 Würfe. Dein Gold am Ende ist dein Ergebnis. Die Rangliste speichert deinen besten abgeschlossenen Durchlauf.",
+    intro: "Starte mit 100 G und spiele 100 Würfe. Dein letzter Goldstand ist dein Ergebnis; die persönliche Rangliste speichert deine 10 besten abgeschlossenen Durchläufe in diesem Browser.",
     steps: [
       ["Setze deinen Einsatz", "Wähle einen ganzzahligen Betrag und klicke auf eine Zahl, Reihe, Spalte oder Farbe. Erneutes Klicken erhöht den Einsatz bis zur Höhe deines Guthabens. Die drei Chips rufen zuletzt gesetzte Beträge ab, den neuesten zuerst."],
       ["Würfle und kassiere", "Drücke <kbd>R</kbd> oder klicke auf <b>Roll dice</b>. Alle zum Ergebnis passenden Einsätze zahlen aus, auch überlappende Gruppen. Jeder Wurf entfernt die Einsätze und verbraucht einen deiner 100 Würfe."],
@@ -195,7 +195,7 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
       ["Wie sich die Chancen ändern", "Neue Spielfelder haben zufällige Wahrscheinlichkeiten; Rot und Schwarz müssen nicht gleich wahrscheinlich sein. Nach einer Auszahlung ohne Jackpot gibt die gewürfelte Zahl einen Anteil ihrer Wahrscheinlichkeit oberhalb von 2% an die anderen fünf ab, zufällig aufgeteilt. Die Transferrate steigt von 4%–8% bei Tilt 1 auf 5%–10% bei Tilt 6. Pro Wurf mit Auszahlung gibt es genau einen Transfer, unabhängig vom Einsatz und Nettogewinn. Tilt kann steigen oder fallen."],
       ["Ein Beispiel", "Bei Tilt 2 beträgt die Rate 4,2%–8,4%. Eine Zahl mit 40% liegt 38 Prozentpunkte über dem Minimum. Werden 6,3% dieses Überschusses übertragen, bleiben etwa 37,61%; die anderen fünf teilen sich die Differenz. Bei gleicher niedrigster Wahrscheinlichkeit ist die kleinere Zahl der Jackpot. Ein freigeschaltetes Shake bleibt verfügbar, bis du es nutzt oder das Spielfeld erneuert wird."],
       ["Abschluss und Rekorde", "Verluste und ausgeglichene Würfe zählen ebenfalls. Gold nach Wurf 100 ist dein Ergebnis, auch bei null. Erreichst du vorher null, endet der Durchlauf ohne Ergebnis. Zwischenzeitliche Höchststände zählen nicht. Das Ergebnis wird mit deinem Rekord verglichen; gib einen Namen ein und wähle Confirm & play again. Settings → Restart run verwirft den aktuellen Durchlauf nach Bestätigung. Beide Wege erhalten deinen besten abgeschlossenen Durchlauf."],
-      ["Deine Einstellungen", "Gold, Wahrscheinlichkeiten und Wurfzahl werden automatisch gespeichert. Neuladen entfernt noch nicht gespielte Einsätze; behalte das Spiel-Cookie, um deine Spieleridentität zu erhalten. Unter Settings änderst du den Namen (1–24 sichtbare Zeichen), Sound effects (Ton) und Reduce motion (weniger Bewegung). Die Systemeinstellung für reduzierte Bewegung gilt ebenfalls. Ton und Bewegungseinstellungen bleiben in diesem Browser gespeichert. Show probabilities ist zu Beginn jedes Durchlaufs ausgeschaltet. Das Einschalten erfordert eine Bestätigung und schließt das Ergebnis dieses Durchlaufs von der Rangliste aus, auch wenn du die Anzeige später ausschaltest. Dein bisheriger Rekord bleibt erhalten. Die Anzeige und der Ranglistenausschluss werden mit dem aktuellen Durchlauf gespeichert."],
+      ["Deine Einstellungen", "Gold, Wahrscheinlichkeiten und Wurfzahl werden automatisch gespeichert. Neuladen entfernt noch nicht gespielte Einsätze; der Durchlauf, die Einstellungen und deine 10 besten abgeschlossenen Durchläufe bleiben im lokalen Speicher dieses Browsers. Wenn du die Sixfold-Daten löschst, gehen sie verloren; sie werden nie an einen Server gesendet. Unter Settings änderst du den Namen (1–24 sichtbare Zeichen), Sound effects (Ton) und Reduce motion (weniger Bewegung). Die Systemeinstellung für reduzierte Bewegung gilt ebenfalls. Ton und Bewegungseinstellungen bleiben in diesem Browser gespeichert. Show probabilities ist zu Beginn jedes Durchlaufs ausgeschaltet. Das Einschalten erfordert eine Bestätigung und schließt das Ergebnis dieses Durchlaufs von der Rangliste aus, auch wenn du die Anzeige später ausschaltest. Dein bisheriger Rekord bleibt erhalten. Die Anzeige und der Ranglistenausschluss werden mit dem aktuellen Durchlauf gespeichert."],
     ],
   },
 };

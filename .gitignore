@@ -4,3 +4,25 @@ dist
 data/
 test-results/
 playwright-report/
+
+# Local data, generated output, credentials and machine-specific files
+*.log
+logs/
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+backups/
+*.bak
+*.backup
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+coverage/
+*.tsbuildinfo
+.vscode/
+.idea/
+Thumbs.db

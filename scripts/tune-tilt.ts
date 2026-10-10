@@ -1,6 +1,6 @@
 /** Offline pacing experiment. Uses the real rules, never a database or live player. */
 import { CONFIG, TARGETS } from "../src/config.ts";
-import { freshProbabilities, sample, tiltLevel, transfer } from "../server/rules.ts";
+import { freshProbabilities, sample, tiltLevel, transfer } from "../src/game/rules.ts";
 
 const trials = 10000;
 const horizon = 80;

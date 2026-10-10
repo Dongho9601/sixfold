@@ -23,8 +23,6 @@ export const CONFIG = {
   animationMs: 1100,
   replacementMs: 800,
   leaderboardLimit: 10,
-  syncIntervalMs: 5000,
-  port: 5173,
 } as const;
 
 /** All coverage is derived from this explicit board; order within a row is visual order. */

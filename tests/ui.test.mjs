@@ -1,64 +1,67 @@
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 import { chromium } from "playwright";
-import { createServer } from "vite";
-import { Store } from "../server/store.ts";
-import { createGameServer } from "../server/http.ts";
+import { preview } from "vite";
+import { newRun } from "../src/game/run.ts";
+import { SAVE_KEY } from "../src/save.ts";
 
-let browser, vite, server, store, origin;
+let browser, vite, origin;
 before(async () => {
-  let draws = 0;
-  class FixtureStore extends Store {
-    create() {
-      const { token, state } = super.create();
-      this.db.prepare("UPDATE players SET probabilities = ? WHERE id = ?")
-        .run(JSON.stringify([0.4, 0.2, 0.15, 0.1, 0.1, 0.05]), state.id);
-      draws = 0;
-      return { token, state: this.get(state.id) };
-    }
-  }
-  store = new FixtureStore(":memory:", () => draws++ === 0 ? 0.99 : 0.1);
-  vite = await createServer({ server: { middlewareMode: true, hmr: false }, appType: "spa" });
-  server = createGameServer(store, (req, res) => vite.middlewares(req, res), {
-    // Only this in-memory fixture advances whole runs without human pacing.
-    limits: { actions: { capacity: 1000, perSecond: 1000 } },
-  });
-  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
-  origin = `http://127.0.0.1:${server.address().port}`;
-  browser = await chromium.launch({
-    headless: true,
-    ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
-      ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}),
+  vite = await preview({ preview: { port: 0, host: "127.0.0.1" } });
+  origin = `http://127.0.0.1:${vite.httpServer.address().port}/sixfold/`;
+  browser = await chromium.launch({ headless: true,
+    ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE ? { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE } : {}),
   });
 });
 after(async () => {
   await browser?.close();
-  await vite?.close();
-  if (server) await new Promise(resolve => server.close(resolve));
-  store?.close();
+  if (vite) await new Promise(resolve => vite.httpServer.close(resolve));
 });
 
+function fixture() {
+  const state = newRun("a".repeat(32), "Player", () => .1);
+  state.probabilities = [.4, .2, .15, .1, .1, .05];
+  return { version: 1, revision: "0", state,
+    settings: { sound: false, reducedMotion: true, guideLanguage: null, guideSeen: false, recentAmounts: [] }, records: [] };
+}
 async function game(t, width = 1280, options = {}) {
   const context = await browser.newContext({ viewport: { width, height: 900 }, ...options });
   const page = await context.newPage();
-  const errors = [];
+  const errors = [], api = [];
   page.on("pageerror", error => errors.push(error.message));
-  t.after(async () => { await context.close(); assert.deepEqual(errors, []); });
-  await page.addInitScript(() => {
-    localStorage.setItem("one-of-six-sound", "off");
-    localStorage.setItem("one-of-six-motion", "reduce");
-  });
+  page.on("request", request => { if (new URL(request.url()).pathname.includes("/api/")) api.push(request.url()); });
+  t.after(async () => { await context.close(); assert.deepEqual(errors, []); assert.deepEqual(api, []); });
+  await page.addInitScript(({ key, save }) => {
+    if (localStorage.getItem(key) === null) localStorage.setItem(key, JSON.stringify(save));
+    let draws = 0;
+    const original = crypto.getRandomValues.bind(crypto);
+    crypto.getRandomValues = array => {
+      if (array.length !== 6) return original(array);
+      let value = Math.floor((draws++ === 0 ? .99 : .1) * 2 ** 48);
+      for (let i = 5; i >= 0; i--) { array[i] = value % 256; value = Math.floor(value / 256); }
+      return array;
+    };
+  }, { key: SAVE_KEY, save: fixture() });
   await page.goto(origin);
   await page.locator("#welcome-start").click();
-  // dialog.close queues its close event and focus restoration separately.
   await page.waitForFunction(() => !document.querySelector("#welcome-dialog").open && document.activeElement.id === "bet-amount");
   return page;
 }
-// Fixture SQL edits intentionally bypass action revisions; inspect them uncached.
-const saved = page => page.evaluate(async () => (await fetch("/api/state", { cache: "no-store" })).json());
+const save = page => page.evaluate(key => JSON.parse(localStorage.getItem(key)), SAVE_KEY);
+const saved = async page => (await save(page)).state;
+async function patchSave(page, state = {}, rest = {}) {
+  await page.evaluate(({ key, state, rest }) => {
+    const save = JSON.parse(localStorage.getItem(key));
+    Object.assign(save.state, state);
+    Object.assign(save, rest);
+    save.revision = (BigInt(save.revision) + 1n).toString();
+    localStorage.setItem(key, JSON.stringify(save));
+  }, { key: SAVE_KEY, state, rest });
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector("#gold").textContent !== "—");
+}
 async function settled(page, gold) {
-  await page.waitForFunction(value =>
-    document.querySelector("#gold").textContent === value &&
+  await page.waitForFunction(value => document.querySelector("#gold").textContent === value &&
     !document.querySelector('[data-target="n1"]').disabled, gold);
 }
 
@@ -79,102 +82,6 @@ test("columns show ordinal pairs and rows show Odds/Evens at desktop and mobile 
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await page.screenshot({ path: `test-results/board-labels-${width}.png`, fullPage: true });
   }
-});
-
-test("probabilities need confirmation, preserve draft bets, exclude the run through reload and hiding, then reset", async t => {
-  const page = await game(t);
-  const id = (await saved(page)).id;
-  store.db.prepare("UPDATE players SET best_gold='80',has_completed_run=1 WHERE id=?").run(id);
-  await page.evaluate(() => localStorage.setItem("sixfold-show-probabilities", "on"));
-  await page.reload();
-  await page.waitForFunction(() => !document.querySelector('[data-target="n1"]').disabled);
-  assert.equal(await page.locator(".probability, .group-odds").count(), 0);
-  assert.equal((await saved(page)).showProbabilities, false);
-  await page.locator('[data-target="n1"]').click();
-  const chips = await page.locator('[data-target="n1"] .chip-pile').innerHTML();
-  await page.locator("#settings-open").click();
-  assert.equal(await page.locator('label:has(#show-probabilities) span').innerText(), "Show probabilities");
-  for (const width of [1280, 390, 320]) {
-    await page.setViewportSize({ width, height: 900 });
-    await page.locator("#show-probabilities").click();
-    assert.equal(await page.locator("#probabilities-dialog").isVisible(), true);
-    assert.equal(await page.evaluate(() => document.activeElement.id), "probabilities-cancel");
-    assert.match(await page.locator("#probabilities-description").innerText(), /will not enter the leaderboard, even if you turn probabilities off later/);
-    assert.equal(await page.locator("#show-probabilities").isChecked(), false);
-    assert.equal(await page.locator(".probability, .group-odds").count(), 0);
-    assert.equal((await saved(page)).revision, "0");
-    assert.equal(await page.locator("#probabilities-dialog").evaluate(element => element.scrollWidth > element.clientWidth), false);
-    await page.screenshot({ path: `test-results/probabilities-confirm-${width}.png`, fullPage: true });
-    if (width === 1280) await page.locator("#probabilities-cancel").click();
-    else await page.keyboard.press("Escape");
-    assert.equal((await saved(page)).leaderboardEligible, true);
-    assert.equal(await page.locator("#show-probabilities").isChecked(), false);
-    assert.equal(await page.evaluate(() => document.activeElement.id), "show-probabilities");
-  }
-  await page.locator("#show-probabilities").click();
-  await page.locator("#probabilities-confirm").click();
-  await page.waitForFunction(() => document.querySelectorAll(".probability, .group-odds").length === 13 && !document.querySelector("#show-probabilities").disabled);
-  assert.equal(await page.locator("#draft-total").textContent(), "10 G");
-  assert.equal(await page.locator('[data-target="n1"] .chip-pile').innerHTML(), chips);
-  const shown = await saved(page);
-  assert.equal(shown.showProbabilities, true);
-  assert.equal(shown.leaderboardEligible, false);
-  assert.equal(shown.rollsUsed, 0);
-  await page.reload();
-  await page.waitForFunction(() => document.querySelectorAll(".probability, .group-odds").length === 13);
-  await page.locator("#settings-open").click();
-  assert.equal(await page.locator("#show-probabilities").isChecked(), true);
-  await page.locator("#show-probabilities").click();
-  await page.waitForFunction(() => document.querySelectorAll(".probability, .group-odds").length === 0 && !document.querySelector("#show-probabilities").disabled);
-  assert.equal((await saved(page)).leaderboardEligible, false);
-  assert.match(await page.locator("#probabilities-status").innerText(), /excluded from the leaderboard/);
-  await page.keyboard.press("Escape");
-  store.db.prepare("UPDATE players SET rolls_used=99 WHERE id=?").run(id);
-  await page.reload();
-  await page.waitForFunction(() => document.querySelector("#rolls-remaining").textContent === "1");
-  await page.locator("#bet-amount").fill("1");
-  await page.locator('[data-target="red"]').click();
-  await page.locator('[data-target="black"]').click();
-  await page.locator("#roll").click();
-  await page.waitForFunction(() => document.querySelector("#run-dialog").open);
-  assert.equal(await page.locator("#run-score").innerText(), "100 G");
-  assert.match(await page.locator("#run-comparison").innerText(), /excluded from the leaderboard/);
-  assert.equal(await page.locator("#run-best").innerText(), "80 G");
-  assert.equal(store.leaderboard(id).find(player => player.id === id).bestGold, "80");
-  await page.reload();
-  await page.waitForFunction(() => document.querySelector("#run-dialog").open);
-  assert.match(await page.locator("#run-comparison").innerText(), /excluded from the leaderboard/);
-  await page.locator("#run-confirm").click();
-  await settled(page, "100");
-  const restarted = await saved(page);
-  assert.equal(restarted.showProbabilities, false);
-  assert.equal(restarted.leaderboardEligible, true);
-  assert.equal(restarted.bestGold, "80");
-  assert.equal(await page.locator(".probability, .group-odds").count(), 0);
-  assert.equal(await page.locator("#run-status").isVisible(), false);
-});
-
-test("a lost probability confirmation response recovers the committed setting after reload", async t => {
-  const page = await game(t);
-  await page.route("**/api/action", async route => {
-    const request = route.request().postDataJSON();
-    if (request.action.kind === "probabilities") {
-      await route.fetch();
-      await route.abort("failed");
-    } else await route.continue();
-  });
-  await page.locator("#settings-open").click();
-  await page.locator("#show-probabilities").click();
-  await page.locator("#probabilities-confirm").click();
-  await page.waitForFunction(() => !!sessionStorage.getItem("sixfold-100-rolls-pending") && !document.querySelector("#retry").hidden);
-  assert.equal((await saved(page)).leaderboardEligible, false);
-  await page.unroute("**/api/action");
-  await page.reload();
-  await page.waitForFunction(() => !sessionStorage.getItem("sixfold-100-rolls-pending") && document.querySelectorAll(".probability, .group-odds").length === 13);
-  const recovered = await saved(page);
-  assert.equal(recovered.revision, "1");
-  assert.equal(recovered.showProbabilities, true);
-  assert.equal(recovered.leaderboardEligible, false);
 });
 
 test("click a bet then R settles exactly once; uppercase R works too", async t => {
@@ -265,35 +172,6 @@ test("shortcuts ignore text fields, dialogs, modifiers, repeats, composition and
   await settled(page, "330");
 });
 
-test("busy Roll cannot be resubmitted by a second keypress", async t => {
-  const page = await game(t);
-  let release;
-  const gate = new Promise(resolve => release = resolve);
-  let requests = 0;
-  await page.route("**/api/action", async route => {
-    requests++;
-    await gate;
-    await route.continue();
-  });
-  await page.locator('[data-target="n6"]').click();
-  await page.keyboard.press("r");
-  await page.keyboard.press("r");
-  await page.keyboard.press("Space");
-  await page.keyboard.press("q");
-  await page.keyboard.press("e");
-  await page.keyboard.press("1");
-  assert.equal(await page.locator("#draft-total").textContent(), "10 G");
-  assert.equal(await page.locator("#bet-amount").inputValue(), "10");
-  assert.equal(await page.locator("#roll").isDisabled(), true);
-  await page.locator("#settings-open").click();
-  assert.equal(await page.locator("#settings-restart").isDisabled(), true);
-  await page.keyboard.press("Escape");
-  release();
-  await settled(page, "330");
-  assert.equal(requests, 1);
-  assert.equal((await saved(page)).revision, "1");
-});
-
 test("Settings stays compact and the complete guide works on desktop and mobile", async t => {
   const page = await game(t);
   for (const width of [1280, 390, 320]) {
@@ -340,73 +218,6 @@ test("Settings stays compact and the complete guide works on desktop and mobile"
   }
 });
 
-test("the final roll posts the final balance, freezes controls, and survives reload and restart", async t => {
-  const page = await game(t);
-  const id = (await saved(page)).id;
-  assert.equal(await page.locator("#rolls-remaining").innerText(), "100");
-  assert.equal(await page.locator("#best-gold, #available").count(), 0);
-  assert.equal(await page.locator("#jackpot-status").count(), 0);
-  await page.locator('[data-target="n6"]').click();
-  await page.keyboard.press("r");
-  await settled(page, "330");
-  assert.equal(await page.locator("#jackpot-status").count(), 0);
-  assert.equal(await page.locator("#best-gold, #available").count(), 0);
-  // Advance using the same HTTP API. Every safe hedge must consume a roll.
-  await page.evaluate(async () => {
-    let state = await (await fetch("/api/state")).json();
-    for (let i = 0; i < 98; i++) {
-      const response = await fetch("/api/action", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ requestId: crypto.randomUUID(), revision: state.revision,
-          action: { kind: "roll", wagers: { red: "1", black: "1" } } }),
-      });
-      if (!response.ok) throw new Error("Could not advance fixture run");
-      state = (await response.json()).state;
-    }
-  });
-  assert.ok(!store.leaderboard().some(player => player.id === id));
-  await page.reload();
-  await page.waitForFunction(() => document.querySelector("#rolls-remaining").textContent === "1");
-  await page.locator("#bet-amount").fill("50");
-  await page.locator('[data-target="n6"]').click();
-  await page.keyboard.press("r");
-  await page.waitForFunction(() => document.querySelector("#run-dialog").open);
-  assert.equal(await page.locator("#gold").innerText(), "280");
-  assert.equal(await page.locator("#run-score").innerText(), "280 G");
-  assert.match(await page.locator("#run-comparison").innerText(), /first completed run/);
-  assert.equal(await page.locator("#run-best").innerText(), "280 G");
-  assert.equal(await page.locator("#rolls-remaining").innerText(), "0");
-  assert.match(await page.locator("#run-status").innerText(), /Final score: 280 G/);
-  for (const selector of ['[data-target="n1"]', "#roll", "#shake", "#bet-amount"])
-    assert.equal(await page.locator(selector).isDisabled(), true);
-  const completed = await saved(page);
-  await page.keyboard.press("r");
-  await page.keyboard.press("s");
-  assert.equal((await saved(page)).revision, completed.revision);
-  assert.equal(store.leaderboard().find(player => player.id === id).bestGold, "280");
-  await page.reload();
-  await page.waitForFunction(() => document.querySelector("#run-dialog").open);
-  for (const width of [1280, 390, 320]) {
-    await page.setViewportSize({ width, height: 900 });
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-    await page.screenshot({ path: `test-results/run-complete-${width}.png` });
-  }
-  assert.match(await page.locator("#run-comparison").innerText(), /first completed run/);
-  await page.keyboard.press("Escape");
-  assert.equal(await page.locator("#run-dialog").isVisible(), true);
-  await page.locator("#run-nickname").fill("Finisher");
-  await page.locator("#run-confirm").click();
-  await settled(page, "100");
-  assert.equal(await page.locator("#rolls-remaining").innerText(), "100");
-  assert.equal((await saved(page)).bestGold, "280");
-  assert.equal((await saved(page)).nickname, "Finisher");
-  assert.equal(store.leaderboard().find(player => player.id === id).nickname, "Finisher");
-  assert.equal(await page.locator("#run-status").isVisible(), false);
-  assert.equal(await page.locator("#restart").count(), 0);
-  assert.equal(await page.locator("#run-dialog").isVisible(), false);
-  await page.screenshot({ path: "test-results/new-run-320.png", fullPage: true });
-});
-
 test("three sidebar cards highlight remaining rolls and keep the leaderboard compact", async t => {
   const page = await game(t);
   for (const width of [1280, 768, 390, 320]) {
@@ -426,8 +237,8 @@ test("three sidebar cards highlight remaining rolls and keep the leaderboard com
   await settled(page, "330");
   assert.equal(await page.locator("#rolls-remaining").innerText(), "99");
   await page.locator("#leaderboard-open").click();
-  assert.equal(await page.locator("#leaderboard-dialog h2").innerText(), "Leaderboard");
-  assert.equal(await page.locator("#leaderboard-dialog p, #leaderboard-dialog [role=progressbar]").count(), 0);
+  assert.equal(await page.locator("#leaderboard-dialog h2").innerText(), "Personal records");
+  assert.equal(await page.locator("#leaderboard-dialog .personal-records-note").count(), 1);
 });
 
 test("left clicks and taps on chips add bets; right-click and keyboard remove wagers", async t => {
@@ -605,7 +416,7 @@ test("the table and guide display all six Tilt levels", async t => {
   const id = (await saved(page)).id;
   for (const [index, peak] of [1 / 6, .4, .475, .5, .55, .7].entries()) {
     const probabilities = [peak, ...Array(5).fill((1 - peak) / 5)];
-    store.db.prepare("UPDATE players SET probabilities = ? WHERE id = ?").run(JSON.stringify(probabilities), id);
+    await patchSave(page, { probabilities });
     await page.reload();
     await page.waitForFunction(level => document.querySelector("#tilt-level").textContent === level, String(index + 1));
     assert.match(await page.locator("#tilt-info").getAttribute("aria-label"), new RegExp(`level ${index + 1} of 6`));
@@ -653,7 +464,7 @@ test("Settings restart requires confirmation, cancels safely, and animates a fre
   await settled(page, "330");
   await page.locator('[data-target="n2"]').click();
   const before = await saved(page);
-  const leaders = store.leaderboard();
+  const leaders = (await save(page)).records;
   await page.locator("#settings-open").click();
   await page.locator("#motion").uncheck();
   for (const width of [1280, 320]) {
@@ -690,7 +501,7 @@ test("Settings restart requires confirmation, cancels safely, and animates a fre
   assert.equal(restarted.lastRoll, null);
   assert.equal(restarted.canShake, false);
   assert.equal(restarted.hasCompletedRun, false);
-  assert.deepEqual(store.leaderboard(), leaders);
+  assert.deepEqual((await save(page)).records, leaders);
   await page.reload();
   await settled(page, "100");
   assert.deepEqual(await saved(page), restarted);
@@ -734,153 +545,6 @@ test("recent chip shortcuts remember only placed amounts and select without plac
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await page.screenshot({ path: `test-results/recent-chips-${width}.png`, fullPage: true });
   }
-  let release;
-  const gate = new Promise(resolve => release = resolve);
-  await page.route("**/api/action", async route => { await gate; await route.continue(); });
-  await page.locator('[data-target="n6"]').click();
-  await page.keyboard.press("r");
-  assert.equal(await page.locator("#recent-amounts button:disabled").count(), 3);
-  release();
-  await settled(page, "330");
-  await page.locator("#settings-open").click();
-  await page.locator("#settings-restart").click();
-  await page.locator("#restart-confirm").click();
-  await settled(page, "100");
-  assert.deepEqual(await history(), ["10", "25", "40"]);
-});
-
-test("Gold cards fit full exact values without changing card height, including animated counts", async t => {
-  const page = await game(t);
-  const id = (await saved(page)).id;
-  for (const width of [1280, 768, 390, 320]) {
-    await page.setViewportSize({ width, height: 900 });
-    let height;
-    for (const gold of ["100", "999999", "1000000", "9007199254740993", "100000000000000000000000000000001"]) {
-      store.db.prepare("UPDATE players SET gold = ? WHERE id = ?").run(gold, id);
-      await page.reload();
-      await page.waitForFunction(value => document.querySelector("#gold").textContent === BigInt(value).toLocaleString("en-US"), gold);
-      await page.locator("#bet-amount").fill(gold);
-      await page.locator('[data-target="n1"]').click();
-      assert.equal(await page.locator("#draft-gold").textContent(), BigInt(gold).toLocaleString("en-US"));
-      const cards = await page.locator(".bankroll, .table-wager").evaluateAll(cards => cards.map(card => {
-        const gold = card.querySelector(".stat-number").getBoundingClientRect();
-        const unit = card.querySelector(".gold-unit").getBoundingClientRect();
-        const row = card.querySelector(".stat-value").getBoundingClientRect();
-        return { height: card.getBoundingClientRect().height, fits: gold.right <= unit.left && unit.right <= row.right + 1, valueHeight: gold.height, rowHeight: row.height };
-      }));
-      height ??= cards[0].height;
-      for (const dimensions of cards) {
-        assert.equal(dimensions.height, height, `${width}px / ${gold} moved the card`);
-        assert.ok(dimensions.fits, `${width}px / ${gold} overflows the card`);
-        assert.ok(dimensions.valueHeight <= dimensions.rowHeight + 1);
-      }
-      if (gold === "1000000") await page.screenshot({ path: `test-results/million-bankroll-${width}.png`, fullPage: true });
-      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${width}px / ${gold}: ` + await page.evaluate(() => [...document.querySelectorAll("body *")].filter(el => el.getBoundingClientRect().right > innerWidth).map(el => el.id || el.className).join(", ")));
-    }
-    await page.screenshot({ path: `test-results/large-bankroll-${width}.png`, fullPage: true });
-  }
-  store.db.prepare("UPDATE players SET gold = ? WHERE id = ?").run("999999", id);
-  await page.reload();
-  await settled(page, "999,999");
-  await page.locator("#settings-open").click();
-  await page.locator("#motion").uncheck();
-  await page.keyboard.press("Escape");
-  const height = (await page.locator(".bankroll").boundingBox()).height;
-  await page.evaluate(() => {
-    window.cardHeights = [];
-    window.goldObserver = new MutationObserver(() => window.cardHeights.push(document.querySelector(".bankroll").getBoundingClientRect().height));
-    window.goldObserver.observe(document.querySelector("#gold"), { childList: true });
-  });
-  await page.locator('[data-target="n6"]').click();
-  await page.keyboard.press("r");
-  await settled(page, "1,000,229");
-  const heights = await page.evaluate(() => { window.goldObserver.disconnect(); return window.cardHeights; });
-  assert.ok(heights.length > 5);
-  assert.ok(heights.every(value => value === height));
-});
-
-test("results compare higher, tied and lower records and recover a lost named-restart response", async t => {
-  const page = await game(t);
-  const id = (await saved(page)).id;
-  for (const [gold, best, previous, comparison] of [
-    ["350", "350", "280", "New personal best! 70 G above your previous 280 G."],
-    ["350", "350", "350", "You matched your personal best."],
-    ["280", "350", "350", "70 G below your personal best."],
-  ]) {
-    store.db.prepare("UPDATE players SET gold = ?, best_gold = ?, previous_best_gold = ?, rolls_used = 100, has_completed_run = 1 WHERE id = ?")
-      .run(gold, best, previous, id);
-    await page.reload();
-    await page.waitForSelector("#run-dialog[open]");
-    assert.equal(await page.locator("#run-comparison").innerText(), comparison);
-    assert.equal(await page.locator("#run-best").innerText(), `${best} G`);
-  }
-  await page.locator("#run-nickname").fill("a".repeat(25));
-  await page.locator("#run-confirm").click();
-  await page.waitForFunction(() => document.querySelector("#run-error").textContent.includes("1–24"));
-  assert.equal((await saved(page)).rollsUsed, 100);
-  await page.locator("#run-nickname").fill("Recovered player");
-  const before = await saved(page);
-  const requests = [];
-  await page.route("**/api/action", async route => {
-    requests.push(route.request().postDataJSON());
-    if (requests.length === 1) {
-      await route.fetch(); // Commit the action, but lose its response.
-      await route.abort("failed");
-    } else await route.continue();
-  });
-  await page.locator("#run-confirm").click();
-  await page.waitForFunction(() => document.querySelector("#run-confirm").textContent === "Retry & play again");
-  assert.equal(await page.locator("#run-dialog").isVisible(), true);
-  assert.match(await page.locator("#run-error").innerText(), /saved/);
-  assert.equal(await page.locator("#run-nickname").isDisabled(), true);
-  await page.locator("#run-confirm").click();
-  await settled(page, "100");
-  assert.deepEqual(requests[0], requests[1]);
-  const after = await saved(page);
-  assert.equal(after.revision, String(BigInt(before.revision) + 1n));
-  assert.equal(after.nickname, "Recovered player");
-  assert.equal(after.bestGold, "350");
-  assert.equal(after.rollsUsed, 0);
-  assert.equal(await page.locator("#run-dialog").isVisible(), false);
-});
-
-test("amount shortcuts recall recent bets, adjust exact values and clear only the draft", async t => {
-  const page = await game(t);
-  const target = page.locator('[data-target="n1"]');
-  await target.focus();
-  for (const key of ["1", "2", "3"]) await page.keyboard.press(key);
-  assert.equal(await page.locator("#bet-amount").inputValue(), "10");
-  for (const amount of ["5", "15", "25"]) {
-    await page.locator("#bet-amount").fill(amount);
-    await target.click();
-    await page.keyboard.press("q");
-  }
-  const before = await saved(page);
-  for (const [key, value] of [["1", "25"], ["2", "15"], ["3", "5"]]) {
-    await page.keyboard.press(key);
-    assert.equal(await page.locator("#bet-amount").inputValue(), value);
-    assert.equal(await page.locator("#draft-total").textContent(), "0 G");
-  }
-  await page.keyboard.press("w");
-  await page.keyboard.press("w");
-  assert.equal(await page.locator("#bet-amount").inputValue(), "1");
-  await page.keyboard.press("e");
-  assert.equal(await page.locator("#bet-amount").inputValue(), "6");
-  for (const key of ["q", "Escape", "Shift+Q"]) {
-    await target.click();
-    await page.locator('[data-target="red"]').click();
-    assert.equal(await page.locator("#draft-total").textContent(), "12 G");
-    await page.keyboard.press(key);
-    assert.equal(await page.locator("#draft-total").textContent(), "0 G");
-    assert.equal(await page.locator(".chip-pile").count(), 0);
-  }
-  await page.locator("#bet-amount").fill("9007199254740993");
-  await target.focus();
-  await page.keyboard.press("Shift+E");
-  assert.equal(await page.locator("#bet-amount").inputValue(), "9007199254740998");
-  await page.keyboard.press("Shift+W");
-  assert.equal(await page.locator("#bet-amount").inputValue(), "9007199254740993");
-  assert.deepEqual(await saved(page), before);
 });
 
 test("new shortcuts honor typing, dialog, modifier, repeat and composition guards", async t => {
@@ -952,255 +616,298 @@ test("all seven guide languages fit desktop and mobile and remember the selectio
   assert.equal(await localized.locator("#welcome-title").innerText(), titles.ja);
 });
 
-test("compact leaderboard shows top 10 and distant personal context on desktop and mobile", async t => {
+test("a committed roll survives refresh during animation and rapid inputs settle once", async t => {
   const page = await game(t);
-  const id = (await saved(page)).id;
-  const opponents = Array.from({ length: 65 }, (_, index) => {
-    const other = store.create().state.id;
-    store.db.prepare("UPDATE players SET best_gold = ?, has_completed_run = 1, nickname = ? WHERE id = ?")
-      .run((10n ** 30n - BigInt(index)).toString(), `Leaderboard player ${index + 1}`, other);
-    return other;
-  });
-  t.after(() => { for (const id of opponents) store.db.prepare("DELETE FROM players WHERE id = ?").run(id); });
-  store.db.prepare("UPDATE players SET best_gold = '5000', has_completed_run = 1 WHERE id = ?").run(id);
-  await page.reload();
-  await page.waitForSelector("#leaders .you");
-  for (const width of [1280, 390, 320]) {
-    await page.setViewportSize({ width, height: 900 });
-    if (width < 1101) await page.locator("#leaderboard-open").click();
-    const ranks = await page.locator("#leaders li[value]").evaluateAll(rows => rows.map(row => row.value));
-    assert.deepEqual(ranks, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 64, 65, 66]);
-    assert.equal(await page.locator("#leaders .you").count(), 1);
-    assert.equal(await page.locator("#leaders .you > strong").getAttribute("aria-label"), "5,000 Gold");
-    assert.equal(await page.locator("#leaders .leader-gap").count(), 1);
-    assert.equal(await page.locator("#leaderboard-unranked").isVisible(), false);
-    const heights = await page.locator("#leaders li[value]").evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height));
-    assert.ok(heights.every(height => height <= 48), `Rows too tall: ${heights}`);
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-    assert.equal(await page.locator(".tower-floors").evaluate(el => el.scrollWidth > el.clientWidth), false);
-    await page.screenshot({ path: `test-results/leaderboard-context-${width}.png`, fullPage: true });
-    if (width < 1101) await page.keyboard.press("Escape");
-  }
-  store.db.prepare("UPDATE players SET best_gold = ? WHERE id = ?").run((10n ** 31n).toString(), id);
-  await page.reload();
-  await page.locator("#leaderboard-open").click();
-  await page.waitForFunction(() => document.querySelector("#leaders .you")?.value === 1);
-  assert.equal(await page.locator("#leaders li[value]").count(), 10);
-  assert.equal(await page.locator("#leaders .leader-gap").count(), 0);
-});
-
-test("ordinary rolls use their action response without per-roll state or leaderboard refetches", async t => {
-  const page = await game(t);
-  await page.locator("#leaders li").first().waitFor();
-  const counts = { state: 0, leaderboard: 0, action: 0 };
-  page.on("request", request => {
-    const path = new URL(request.url()).pathname;
-    if (path.startsWith("/api/")) counts[path.slice(5)]++;
-  });
-  await page.locator("#bet-amount").fill("1");
-  for (let i = 0; i < 10; i++) {
-    await page.locator('[data-target="red"]').click();
-    await page.locator('[data-target="black"]').click();
-    await page.locator("#roll").click();
-    await page.waitForFunction(remaining => document.querySelector("#rolls-remaining").textContent === String(remaining) && !document.querySelector('[data-target="n1"]').disabled, 99 - i);
-  }
-  assert.equal(counts.action, 10);
-  assert.equal(counts.leaderboard, 0);
-  assert.ok(counts.state <= 2, JSON.stringify(counts));
-  assert.equal(await page.locator("#gold").innerText(), "100");
-});
-
-test("focus bursts share one state request; simulated hidden tabs finish committed motion and pause reads", async t => {
-  const page = await game(t);
-  const id = (await saved(page)).id;
-  let active = 0, peak = 0, reads = 0;
-  await page.route("**/api/state", async route => {
-    active++; reads++; peak = Math.max(peak, active);
-    await page.waitForTimeout(200);
-    const response = await route.fetch();
-    active--;
-    await route.fulfill({ response });
-  });
-  await page.evaluate(() => { for (let i = 0; i < 10; i++) window.dispatchEvent(new Event("focus")); });
-  await page.waitForTimeout(400);
-  assert.equal(peak, 1); assert.equal(reads, 1);
-  await page.unroute("**/api/state");
   await page.locator("#settings-open").click();
   await page.locator("#motion").uncheck();
   await page.keyboard.press("Escape");
   await page.locator('[data-target="n6"]').click();
-  const response = page.waitForResponse("**/api/action");
-  await page.locator("#roll").click();
-  await response;
-  await page.waitForFunction(() => document.querySelector("#die").getAttribute("aria-label") === "Die rolling");
-  let hiddenReads = 0;
-  page.on("request", request => { if (/\/api\/(state|leaderboard)$/.test(request.url())) hiddenReads++; });
-  // Browser DOM event emulation, not a physical-device claim.
   await page.evaluate(() => {
-    window.testHidden = true;
-    Object.defineProperty(document, "hidden", { configurable: true, get: () => window.testHidden });
-    Object.defineProperty(document, "visibilityState", { configurable: true, get: () => window.testHidden ? "hidden" : "visible" });
-    document.dispatchEvent(new Event("visibilitychange"));
+    document.querySelector("#roll").click();
+    document.querySelector("#roll").click();
+    document.querySelector('[data-target="n1"]').click();
+    document.querySelector("#settings-restart").click();
   });
+  await page.waitForFunction(key => JSON.parse(localStorage.getItem(key)).state.rollsUsed === 1, SAVE_KEY);
+  assert.equal(await page.locator("#roll").isDisabled(), true);
+  assert.equal((await saved(page)).gold, "330");
+  assert.equal((await saved(page)).revision, "1");
+  const committed = await saved(page);
+  await page.reload();
   await settled(page, "330");
-  assert.equal(store.get(id).revision, "1");
-  assert.equal(await page.locator("#effects").evaluate(el => el.childElementCount), 0);
-  await page.waitForTimeout(5500);
-  assert.equal(hiddenReads, 0);
-  await page.evaluate(() => { window.testHidden = false; document.dispatchEvent(new Event("visibilitychange")); });
-  await page.waitForTimeout(400);
-  assert.equal(hiddenReads, 1);
-  assert.equal(store.get(id).revision, "1");
-  assert.equal(await page.locator("#gold").innerText(), "330");
+  assert.deepEqual(await saved(page), committed);
+  assert.equal(await page.locator("#draft-total").textContent(), "0 G");
+  assert.equal(await page.locator("#rolls-remaining").innerText(), "99");
 });
 
-test("a 429 after an uncertain commit keeps the stable action and retry delay across reload", async t => {
+test("the final roll records once before animation, reloads frozen, and named restart retains records and settings", async t => {
   const page = await game(t);
-  const id = (await saved(page)).id;
-  const requests = [];
-  await page.route("**/api/action", async route => {
-    requests.push(route.request().postDataJSON());
-    if (requests.length === 1) {
-      await route.fetch(); // Simulate a proxy failure after the server committed.
-      await route.fulfill({ status: 429, contentType: "application/json", headers: { "Retry-After": "1" }, body: JSON.stringify({ error: "Retry shortly.", retryAfter: 1 }) });
-    } else await route.continue();
-  });
+  await patchSave(page, { rollsUsed: 99 }, { settings: { ...(await save(page)).settings, reducedMotion: false } });
   await page.locator('[data-target="n6"]').click();
   await page.locator("#roll").click();
-  await page.waitForFunction(() => !document.querySelector("#retry").hidden);
-  assert.equal(await page.locator("#retry").isDisabled(), true);
-  const pending = await page.evaluate(() => JSON.parse(sessionStorage.getItem("sixfold-100-rolls-pending")));
-  assert.equal(pending.playerId, id); assert.deepEqual(pending.request, requests[0]);
-  assert.equal(store.get(id).revision, "1");
+  await page.waitForFunction(key => JSON.parse(localStorage.getItem(key)).state.recorded, SAVE_KEY);
+  assert.equal((await save(page)).records.length, 1);
+  const completed = await saved(page);
   await page.reload();
-  await page.waitForFunction(() => !document.querySelector("#retry").hidden);
-  assert.equal(requests.length, 1);
-  await page.locator("#retry").click();
-  await settled(page, "330");
-  assert.equal(requests.length, 2);
-  assert.deepEqual(requests[0], requests[1]);
-  assert.equal(store.get(id).revision, "1");
-  assert.equal(await page.evaluate(() => sessionStorage.getItem("sixfold-100-rolls-pending")), null);
-});
-
-test("a cookie replacement cannot replay a pending roll into the new player, and invalid saved requests recover", async t => {
-  const page = await game(t);
-  const original = (await saved(page)).id;
-  let requests = 0;
-  await page.route("**/api/action", async route => { requests++; await route.abort("failed"); });
-  await page.locator('[data-target="n6"]').click();
-  await page.locator("#roll").click();
-  await page.waitForFunction(() => !document.querySelector("#retry").hidden);
-  assert.equal(requests, 1);
-  await page.context().clearCookies();
-  await page.reload();
-  await page.locator("#welcome-start").click();
-  const replacement = await saved(page);
-  assert.notEqual(replacement.id, original);
-  assert.equal(replacement.revision, "0"); assert.equal(replacement.gold, "100");
-  assert.equal(store.get(original).revision, "0"); assert.equal(requests, 1);
-  assert.match(await page.locator("#notice").innerText(), /session changed/);
-  assert.equal(await page.evaluate(() => sessionStorage.getItem("sixfold-100-rolls-pending")), null);
-  await page.evaluate(() => sessionStorage.setItem("sixfold-100-rolls-pending", "{}"));
-  await page.reload();
-  await page.waitForFunction(() => !document.querySelector('[data-target="n1"]').disabled);
-  assert.equal(await page.evaluate(() => sessionStorage.getItem("sixfold-100-rolls-pending")), null);
-});
-
-test("blocked browser storage permits play with in-tab retry recovery", async t => {
-  const page = await game(t);
-  await page.addInitScript(() => {
-    for (const name of ["localStorage", "sessionStorage"])
-      Object.defineProperty(window, name, { configurable: true, get: () => { throw new DOMException("Storage disabled", "SecurityError"); } });
-  });
-  await page.reload();
-  await page.locator("#welcome-start").click();
-  await page.locator("#settings-open").click();
-  await page.locator("#motion").check();
-  await page.keyboard.press("Escape");
-  const requests = [];
-  await page.route("**/api/action", async route => {
-    requests.push(route.request().postDataJSON());
-    if (requests.length === 1) { await route.fetch(); await route.abort("failed"); }
-    else await route.continue();
-  });
-  await page.locator('[data-target="n6"]').click();
-  await page.locator("#roll").click();
-  await page.waitForFunction(() => !document.querySelector("#retry").hidden);
-  assert.match(await page.locator("#notice").innerText(), /saved in this tab/);
-  await page.locator("#retry").click();
-  await settled(page, "330");
-  assert.deepEqual(requests[0], requests[1]);
-});
-
-test("initial reads stop after bounded backoff and Reconnect recovers a saved action exactly once", async t => {
-  const page = await game(t);
-  const id = (await saved(page)).id;
-  const requests = [];
-  await page.route("**/api/action", async route => {
-    requests.push(route.request().postDataJSON());
-    if (requests.length === 1) { await route.fetch(); await route.abort("failed"); }
-    else await route.continue();
-  });
-  await page.locator('[data-target="n6"]').click();
-  await page.locator("#roll").click();
-  await page.waitForFunction(() => !document.querySelector("#retry").hidden);
-  assert.equal(store.get(id).revision, "1");
-  await page.clock.install({ time: new Date("2030-01-01T00:00:00Z") });
-  await page.clock.pauseAt(new Date("2030-01-01T00:00:01Z"));
-  let reads = 0, disconnected = true;
-  await page.route("**/api/state", async route => {
-    reads++;
-    if (disconnected) await route.fulfill({ status: 503, contentType: "application/json", body: '{"error":"Offline fixture"}' });
-    else await route.continue();
-  });
-  const waitFor = async condition => {
-    for (let i = 0; i < 100; i++) {
-      if (await condition()) return;
-      await new Promise(resolve => setTimeout(resolve, 10));
-    }
-    assert.fail("Condition did not settle");
-  };
-  await page.reload();
-  await waitFor(() => page.locator("#notice").innerText().then(text => text.includes("Could not connect")));
-  assert.equal(reads, 1);
-  assert.equal(await page.locator("#reconnect").isVisible(), true);
-  for (const delay of [10000, 20000, 40000, 80000, 80000]) {
-    const previous = reads;
-    await page.clock.runFor(delay + 1);
-    await waitFor(() => reads === previous + 1);
-    // Allow response microtasks to schedule the next virtual timer.
-    await new Promise(resolve => setTimeout(resolve, 20));
+  await page.locator("#run-dialog[open]").waitFor();
+  assert.equal(await page.locator("#run-score").innerText(), "330 G");
+  assert.match(await page.locator("#run-comparison").innerText(), /first completed run/);
+  assert.equal(await page.locator("#roll").isDisabled(), true);
+  assert.equal(await page.locator("#shake").isDisabled(), true);
+  assert.deepEqual(await saved(page), completed);
+  await page.screenshot({ path: "test-results/current-run-results-desktop.png", fullPage: true });
+  for (let i = 0; i < 2; i++) {
+    await page.reload();
+    await page.locator("#run-dialog[open]").waitFor();
+    assert.equal((await save(page)).records.length, 1);
   }
-  assert.equal(reads, 6);
-  assert.match(await page.locator("#notice").innerText(), /Reconnect/);
-  await page.clock.runFor(240000);
-  assert.equal(reads, 6);
-  assert.equal(requests.length, 1);
-  disconnected = false;
-  await page.locator("#reconnect").click({ force: true });
-  await waitFor(async () => await page.locator("#gold").innerText() === "330" && await page.evaluate(() => sessionStorage.getItem("sixfold-100-rolls-pending")) === null);
-  assert.equal(await page.locator("#reconnect").isVisible(), false);
-  assert.equal(requests.length, 2);
-  assert.deepEqual(requests[0], requests[1]);
-  assert.equal(store.get(id).revision, "1");
+  const preferences = (await save(page)).settings;
+  await page.locator("#run-nickname").fill("Finisher");
+  await page.locator("#run-confirm").click();
+  await settled(page, "100");
+  const restarted = await save(page);
+  assert.equal(restarted.state.rollsUsed, 0);
+  assert.notEqual(restarted.state.id, completed.id);
+  assert.equal(restarted.state.nickname, "Finisher");
+  assert.equal(restarted.records[0].nickname, "Finisher");
+  assert.equal(restarted.records[0].score, "330");
+  assert.deepEqual(restarted.settings, preferences);
+  await page.reload();
+  await settled(page, "100");
+  assert.deepEqual((await save(page)).records, restarted.records);
 });
 
-test("leaderboard names render as text and touch-capable mobile controls keep the layout within the viewport", async t => {
-  const page = await game(t, 390, { isMobile: true, hasTouch: true });
-  const id = (await saved(page)).id;
-  const nickname = "<svg/onload=alert(1)>";
-  store.act(id, { requestId: crypto.randomUUID(), revision: "0", action: { kind: "nickname", nickname } });
-  store.db.prepare("UPDATE players SET best_gold='100',has_completed_run=1 WHERE id=?").run(id);
+test("probabilities require confirmation and exclusion survives hiding and reload; restart preserves prior records", async t => {
+  const page = await game(t);
+  const records = [{ id: "b".repeat(32), nickname: "Earlier", score: "80", order: "0" }];
+  await patchSave(page, { bestGold: "80", hasCompletedRun: true }, { records });
+  await page.locator('[data-target="n1"]').click();
+  await page.locator("#settings-open").click();
+  await page.locator("#show-probabilities").click();
+  await page.locator("#probabilities-cancel").click();
+  assert.equal((await saved(page)).showProbabilities, false);
+  assert.equal(await page.locator("#draft-total").textContent(), "10 G");
+  await page.locator("#show-probabilities").click();
+  await page.locator("#probabilities-confirm").click();
+  await page.waitForFunction(() => !document.querySelector("#show-probabilities").disabled);
+  assert.equal((await saved(page)).leaderboardEligible, false);
+  await page.locator("#show-probabilities").click();
+  await page.waitForFunction(() => !document.querySelector("#show-probabilities").disabled);
   await page.reload();
-  await page.locator("#leaderboard-open").tap();
-  await page.waitForSelector("#leaders .you");
-  assert.equal(await page.locator("#leaders .you .leader-name").evaluate(el => el.childNodes[0].textContent), nickname);
-  assert.equal(await page.locator("#leaders svg, #leaders script").count(), 0);
-  await page.locator('[data-close="leaderboard-dialog"]').tap();
-  await page.locator('[data-target="row1"]').tap();
-  await page.locator("#roll").tap();
-  await settled(page, "110");
-  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-  await page.screenshot({ path: "test-results/public-mobile-touch.png", fullPage: true });
+  assert.equal((await saved(page)).leaderboardEligible, false);
+  assert.equal((await saved(page)).showProbabilities, false);
+  await patchSave(page, { rollsUsed: 99 });
+  await page.locator('[data-target="red"]').click();
+  await page.locator('[data-target="black"]').click();
+  await page.locator("#roll").click();
+  await page.locator("#run-dialog[open]").waitFor();
+  assert.deepEqual((await save(page)).records, records);
+  assert.match(await page.locator("#run-comparison").innerText(), /excluded from personal records/);
+  await page.locator("#run-confirm").click();
+  await settled(page, "100");
+  assert.equal((await saved(page)).leaderboardEligible, true);
+  assert.deepEqual((await save(page)).records, records);
+});
+
+test("personal records sort huge adjacent scores exactly with stable ties and safely render names", async t => {
+  const page = await game(t);
+  const large = 10n ** 80n;
+  const records = Array.from({ length: 10 }, (_, index) => ({
+    id: (index + 1).toString(16).padStart(32, "0"), nickname: index === 0 ? "<svg/onload=alert(1)>" : `Run ${index + 1}`,
+    score: (large + BigInt(index)).toString(), order: String(index + 1),
+  }));
+  records[0].score = records[9].score;
+  await patchSave(page, { bestGold: records[9].score, hasCompletedRun: true }, { records: records.reverse() });
+  for (const width of [1280, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    if (width < 1101) await page.locator("#leaderboard-open").click();
+    assert.equal(await page.locator("#leaders li[value]").count(), 10);
+    const names = await page.locator("#leaders .leader-name").evaluateAll(rows => rows.map(row => row.childNodes[0].textContent));
+    assert.equal(names[0], "<svg/onload=alert(1)>");
+    assert.equal(names[1], "Run 10");
+    assert.equal(names[2], "Run 9");
+    assert.equal(await page.locator("#leaders svg, #leaders script").count(), 0);
+    assert.equal(await page.locator("#leaders li[value='3'] > strong").getAttribute("aria-label"), `${(large + 8n).toLocaleString("en-US")} Gold`);
+    assert.match(await page.locator(".personal-records-note").innerText(), /stored in this browser/);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    await page.screenshot({ path: `test-results/current-records-${width}.png`, fullPage: true });
+    if (width < 1101) await page.keyboard.press("Escape");
+  }
+  await page.reload();
+  assert.equal(await page.locator("#leaders .leader-name").first().evaluate(el => el.childNodes[0].textContent), "<svg/onload=alert(1)>");
+});
+
+test("malformed saves recover, preserve the unreadable value, and leave neighboring projects untouched", async t => {
+  const page = await game(t);
+  await page.evaluate(key => {
+    localStorage.setItem("homepage:preference", "keep");
+    localStorage.setItem(key, "{broken");
+  }, SAVE_KEY);
+  await page.reload();
+  await page.locator("#welcome-start").click();
+  assert.match(await page.locator("#save-notice").innerText(), /could not be read/);
+  assert.equal(await page.evaluate(() => localStorage.getItem("sixfold:save:recovery")), "{broken");
+  await page.locator('[data-target="red"]').click();
+  await page.locator('[data-target="black"]').click();
+  await page.locator("#roll").click();
+  await page.waitForFunction(() => !document.querySelector('[data-target="n1"]').disabled);
+  assert.equal((await saved(page)).rollsUsed, 1);
+  await page.locator("#settings-open").click();
+  await page.locator("#settings-restart").click();
+  await page.locator("#restart-confirm").click();
+  await settled(page, "100");
+  assert.equal(await page.evaluate(() => localStorage.getItem("homepage:preference")), "keep");
+});
+
+test("blocked storage and quota failures explain unsaved progress while permitting play and restart", async t => {
+  for (const failure of ["getter", "quota"]) {
+    const page = await game(t);
+    await page.addInitScript(mode => {
+      if (mode === "getter") Object.defineProperty(window, "localStorage", { configurable: true, get() { throw new DOMException("Blocked", "SecurityError"); } });
+      else Storage.prototype.setItem = () => { throw new DOMException("Full", "QuotaExceededError"); };
+    }, failure);
+    await page.reload();
+    if (failure === "getter") await page.locator("#welcome-start").click();
+    await page.locator("#settings-open").click();
+    await page.locator("#motion").check();
+    await page.keyboard.press("Escape");
+    await page.locator('[data-target="red"]').click();
+    await page.locator('[data-target="black"]').click();
+    await page.locator("#roll").click();
+    await settled(page, "100");
+    assert.equal(await page.locator("#rolls-remaining").innerText(), "99");
+    assert.match(await page.locator("#save-notice").innerText(), /cannot be saved/);
+    await page.locator("#settings-open").click();
+    await page.locator("#settings-restart").click();
+    await page.locator("#restart-confirm").click();
+    await settled(page, "100");
+    assert.equal(await page.locator("#rolls-remaining").innerText(), "100");
+  }
+});
+
+test("same-origin tabs cannot settle two stale drafts or overwrite a restarted run", async t => {
+  const page = await game(t);
+  const other = await page.context().newPage();
+  await other.goto(origin);
+  await other.waitForSelector('[data-target="n6"]:enabled');
+  await page.locator('[data-target="n6"]').click();
+  await other.locator('[data-target="n6"]').click();
+  await Promise.all([page.evaluate(() => document.querySelector("#roll").click()), other.evaluate(() => document.querySelector("#roll").click())]);
+  await page.waitForFunction(() => !document.querySelector('[data-target="n1"]').disabled);
+  await other.waitForFunction(() => !document.querySelector('[data-target="n1"]').disabled);
+  assert.equal((await saved(page)).rollsUsed, 1);
+  assert.equal((await saved(page)).gold, "330");
+  await page.locator("#settings-open").click();
+  await page.locator("#settings-restart").click();
+  await page.locator("#restart-confirm").click();
+  await settled(page, "100");
+  await settled(other, "100");
+  assert.equal(await other.locator("#rolls-remaining").innerText(), "100");
+  assert.equal(await other.locator("#draft-total").textContent(), "0 G");
+});
+
+test("project-path assets and About navigation resolve; normal gameplay makes no requests even offline", async t => {
+  const page = await game(t);
+  const paths = await page.locator('script[src], link[rel="stylesheet"], link[rel="icon"]').evaluateAll(nodes => nodes.map(node => node.src || node.href));
+  for (const url of paths) {
+    assert.ok(new URL(url).pathname.startsWith("/sixfold/"), url);
+    const response = await page.request.get(url);
+    assert.equal(response.status(), 200, url);
+  }
+  await page.locator(".site-information").click();
+  assert.ok(page.url().endsWith("/sixfold/about.html"));
+  const back = await page.locator("nav a").getAttribute("href");
+  assert.equal(new URL(back, page.url()).pathname, "/sixfold/");
+  const favicon = await page.locator('link[rel="icon"]').evaluate(node => node.href);
+  assert.equal(new URL(favicon).pathname, "/sixfold/favicon.svg");
+  assert.equal((await page.request.get(favicon)).status(), 200);
+  const notice = await page.locator('a[href="./third-party-notices.txt"]').getAttribute("href");
+  const noticeResponse = await page.request.get(new URL(notice, page.url()).href);
+  assert.equal(noticeResponse.status(), 200);
+  assert.match(await noticeResponse.text(), /MIT License/);
+  for (const width of [1280, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `About overflow at ${width}px`);
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.locator("nav a").click();
+  await settled(page, "100");
+  const requests = [];
+  page.on("request", request => requests.push(request.url()));
+  await page.context().setOffline(true);
+  await page.locator('[data-target="n6"]').click();
+  await page.locator("#roll").click();
+  await settled(page, "330");
+  await page.locator("#settings-open").click();
+  await page.locator("#nickname").fill("Offline");
+  await page.locator("#save-nickname").click();
+  await page.waitForFunction(() => document.querySelector("#nickname-status").textContent === "Name saved.");
+  await page.locator("#settings-restart").click();
+  await page.locator("#restart-confirm").click();
+  await settled(page, "100");
+  assert.deepEqual(requests, []);
+  assert.equal((await saved(page)).nickname, "Offline");
+  await page.context().setOffline(false);
+  await page.mouse.move(0, 0);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.screenshot({ path: "test-results/current-game-desktop.png", fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: "test-results/current-game-mobile.png", fullPage: true });
+  const records = [7500, 1250, 330, 280, 190, 100].map((score, index) => ({
+    id: (index + 1).toString(16).padStart(32, "0"), nickname: `Run ${index + 1}`,
+    score: String(score), order: String(index + 1),
+  }));
+  await patchSave(page, { bestGold: "7500", hasCompletedRun: true }, { records });
+  await page.locator("#leaderboard-open").click();
+  await page.screenshot({ path: "test-results/current-personal-records-mobile.png", fullPage: true });
+});
+
+test("Gold cards fit full exact values without changing card height, including animated counts", async t => {
+  const page = await game(t);
+  const id = (await saved(page)).id;
+  for (const width of [1280, 768, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    let height;
+    for (const gold of ["100", "999999", "1000000", "9007199254740993", "100000000000000000000000000000001"]) {
+      await patchSave(page, { gold });
+      await page.reload();
+      await page.waitForFunction(value => document.querySelector("#gold").textContent === BigInt(value).toLocaleString("en-US"), gold);
+      await page.locator("#bet-amount").fill(gold);
+      await page.locator('[data-target="n1"]').click();
+      assert.equal(await page.locator("#draft-gold").textContent(), BigInt(gold).toLocaleString("en-US"));
+      const cards = await page.locator(".bankroll, .table-wager").evaluateAll(cards => cards.map(card => {
+        const gold = card.querySelector(".stat-number").getBoundingClientRect();
+        const unit = card.querySelector(".gold-unit").getBoundingClientRect();
+        const row = card.querySelector(".stat-value").getBoundingClientRect();
+        return { height: card.getBoundingClientRect().height, fits: gold.right <= unit.left && unit.right <= row.right + 1, valueHeight: gold.height, rowHeight: row.height };
+      }));
+      height ??= cards[0].height;
+      for (const dimensions of cards) {
+        assert.equal(dimensions.height, height, `${width}px / ${gold} moved the card`);
+        assert.ok(dimensions.fits, `${width}px / ${gold} overflows the card`);
+        assert.ok(dimensions.valueHeight <= dimensions.rowHeight + 1);
+      }
+      if (gold === "1000000") await page.screenshot({ path: `test-results/million-bankroll-${width}.png`, fullPage: true });
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${width}px / ${gold}: ` + await page.evaluate(() => [...document.querySelectorAll("body *")].filter(el => el.getBoundingClientRect().right > innerWidth).map(el => el.id || el.className).join(", ")));
+    }
+    await page.screenshot({ path: `test-results/large-bankroll-${width}.png`, fullPage: true });
+  }
+  await patchSave(page, { gold: "999999" });
+  await page.reload();
+  await settled(page, "999,999");
+  await page.locator("#settings-open").click();
+  await page.locator("#motion").uncheck();
+  await page.keyboard.press("Escape");
+  const height = (await page.locator(".bankroll").boundingBox()).height;
+  await page.evaluate(() => {
+    window.cardHeights = [];
+    window.goldObserver = new MutationObserver(() => window.cardHeights.push(document.querySelector(".bankroll").getBoundingClientRect().height));
+    window.goldObserver.observe(document.querySelector("#gold"), { childList: true });
+  });
+  await page.locator('[data-target="n6"]').click();
+  await page.keyboard.press("r");
+  await settled(page, "1,000,229");
+  const heights = await page.evaluate(() => { window.goldObserver.disconnect(); return window.cardHeights; });
+  assert.ok(heights.length > 5);
+  assert.ok(heights.every(value => value === height));
 });

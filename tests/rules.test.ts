@@ -10,7 +10,7 @@ import {
   transfer,
   tiltLevel,
   validateWagers,
-} from "../server/rules.ts";
+} from "../src/game/rules.ts";
 import type { Wagers } from "../src/types.ts";
 
 const p = [0.4, 0.2, 0.15, 0.1, 0.1, 0.05];
@@ -418,7 +418,7 @@ test("wager validation rejects malformed, empty, negative, fractional and oversp
   assert.equal(validateWagers({ n1: "1" }, 1n).get("n1"), 1n);
   assert.throws(() => parseGold(Number.MAX_SAFE_INTEGER));
 });
-test("Gold beyond Number and SQLite integer limits remains exact", () => {
+test("Gold beyond Number and 64-bit integer limits remains exact", () => {
   const gold = 10n ** 80n + 123456789n;
   const stake = 9007199254740993n;
   const r = settle(gold, p, { n1: stake.toString() }, land(1));
