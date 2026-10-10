@@ -1,5 +1,7 @@
 # Dice Betting Game — MVP Specification
 
+> Historical design reference. Current random odds, Tilt, and Shake eligibility are documented in [docs/PROBABILITY_MODEL.md](docs/PROBABILITY_MODEL.md); the implementation also uses the board mapping in `src/config.ts`.
+
 **Version:** 0.1  
 **Date:** October 9, 2026  
 **Platform:** Web browser  

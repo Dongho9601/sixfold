@@ -8,15 +8,16 @@ const tower = process.env.SCENARIO === "tower";
 let draws = 0;
 const random = () => {
   const index = draws++;
-  if (index < 5) return 0.999; // Initial template remains in numerical order.
   if (large) return 0.1; // First ordinary Roll lands on 1.
-  if (index === 5) return 0.99; // First Roll lands on the marked 6.
-  if (index < 11) return 0; // Jackpot's forced Shake creates a different permutation.
+  if (index === 0) return 0.99; // First Roll lands on the marked 6.
   return 0.1;
 };
 class FixtureStore extends Store {
   override create() {
     const { token, state } = super.create();
+    this.db.prepare("UPDATE players SET probabilities = ? WHERE id = ?")
+      .run(JSON.stringify([0.4, 0.2, 0.15, 0.1, 0.1, 0.05]), state.id);
+    draws = 0;
     if (large)
       this.db
         .prepare("UPDATE players SET gold = ?, best_gold = ? WHERE id = ?")

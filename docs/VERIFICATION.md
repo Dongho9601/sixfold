@@ -1,5 +1,59 @@
 # Verification report
 
+## Startup port conflicts and group bet typography — October 9, 2026
+
+Development startup now catches bind errors and, when no explicit `PORT` is set, tries up to 20 subsequent ports. The printed local and network URLs use the actual bound port. Explicit ports and production startup stay strict and exit with a concise explanation when the port is occupied. Failed startup closes Vite and SQLite resources.
+
+Row coverage labels previously used smaller type than column labels while their payout multipliers were larger: at 1280px, rows used 13px coverage / 19px payout; at 320px they used 10px / 17px. Row, column, and color bets now share responsive label/payout sizes: 19px / 15px on the spacious layout, 16px / 13px on compact desktop and tablet layouts, and 14px / 12px on mobile. Removed the conflicting row overrides and the extra text reduction below 360px.
+
+Verified:
+
+- All 44 automated tests passed, including four new listener tests covering successful binding, occupied-port recovery, strict rejection, other bind errors, and preservation of existing server listeners. TypeScript, the production build, and `git diff --check` passed.
+- Started `npm run dev` with an isolated in-memory database while a temporary server occupied 5173. Sixfold printed 5174, served the page and game API, and connected Vite's WebSocket on 5174. Explicit `PORT=5173` and production startup exited with status 1 and an actionable message, without an unhandled error or port fallback. `PORT=0` printed the actual assigned port. After releasing 5173, ordinary development startup served it successfully. Test servers were stopped afterward.
+- Chromium checked 16 viewport widths: 1600, 1351, 1350, 1280, 1150, 1101, 1100, 1024, 801, 800, 768, 651, 650, 390, 360, and 320px. Labels and payouts matched across all seven groups, labels remained larger than payouts, and no group text clipped or document overflow appeared. Repeated the checks with odds hidden, odds visible, and all targets wagered with odds visible.
+- At 320px, all 13 targets accepted 1 G wagers without changing board dimensions. Right-click canceled a row wager, Clear removed the draft, and a deterministic 10 G bottom-row win returned 20 G and settled the bankroll at 110 G. No page errors occurred. Desktop and mobile screenshots were visually inspected.
+
+Previews: [Desktop](screenshots/row-type-1280.jpg) · [Mobile](screenshots/row-type-390.jpg).
+
+Browser gameplay used the isolated in-memory fixture. The normal game database was not used for verification. Physical phones, Safari, and Firefox were not tested.
+
+## Prominent Tilt, slower transfers, and die replacement — October 9, 2026
+
+Tilt is now a large gold control above the table status (48px on desktop, 38px on mobile). It opens the guide directly at the explanation of low Tilt (1–2), high Tilt (4–5), and the middle level. Focus moves to that heading and returns to Tilt when the guide closes. A sticky guide header keeps Close visible during the jump; its print rule restores normal document flow.
+
+Paying rolls use the pre-roll Tilt to choose a random transfer rate: 2–4%, 3–6%, 4–8%, 5–10%, or 6–12% for levels 1–5. The probability floor, random recipient shares, payout triggers, and Shake eligibility keep their established behavior. A level change caused by a payout affects the next roll's rate.
+
+Roll keeps the original tumble. Shake instead slides the old die out and introduces a fresh stationary die from the other side, with separate moving shadows and softly masked edges. A Jackpot plays the replacement after its payout presentation. The replacement does not sample an outcome or change settlement. Reduced motion skips the movement, and decorative clones are removed at completion or cancellation.
+
+Verified:
+
+- All 40 automated tests passed. The new behavioral check covers every level's minimum, midpoint, and maximum rate, acceleration with Tilt, and a payout crossing from Tilt 5 into a lower level. Existing long-run probability, payout, persistence, retry, and Shake-lock tests still pass.
+- TypeScript, the production build, and `git diff --check` passed.
+- Chrome showed the Roll phase separately from the replacement phase. During replacement there was one identified live die plus two hidden decorative copies (old die and shadow); afterward the copies were removed. A 10 G Jackpot on 6 settled at 330 G, then showed the fresh die and a locked Shake. Manual Shake preserved the bankroll and locked again.
+- Enabled Reduce motion during a replacement and verified cleanup and the final stationary die. A subsequent reduced-motion roll and Shake completed with one die, no decorative copies, and the correct balance.
+- Visually checked the board and guide at 320px and 1280px. No document or guide horizontal overflow occurred. Tilt remained prominent, direct navigation focused the correct heading, closing returned focus, and the expanded odds example worked. Exact probability labels remained hidden. The guide header overlap found during mobile review was corrected and rechecked. Browser warning/error logs were empty.
+- Restarted the local development server after saving `data/backups/before-tilt-refinement.sqlite`. Compared all player rows and receipts with the backup: they matched. Port 5173 returned HTTP 200. Gameplay checks used the isolated in-memory fixture, which was stopped afterward.
+
+Previews: [Desktop](screenshots/tilt-refined-desktop.jpg) · [Mobile](screenshots/tilt-refined-mobile.jpg) · [Guide](screenshots/tilt-guide-desktop.jpg) · [Mobile guide](screenshots/tilt-guide-mobile.jpg).
+
+Physical phones, Safari, Firefox, and screen-reader speech were not tested. Print styling was checked in CSS; a print preview was not rendered. Earlier entries describe previous rates and layouts.
+
+## Random odds, Tilt, and earned Shake — October 9, 2026
+
+Replaced the shuffled fixed template with a fresh Dirichlet draw and a 2% floor per face. Ordinary paying rolls now transfer a random 10–40% of the rolled face's surplus above that floor to five random receiving shares. Added the single Tilt level, based on entropy, and server-persisted Shake eligibility. The current formulas and choices are in [PROBABILITY_MODEL.md](PROBABILITY_MODEL.md).
+
+Verified:
+
+- All 39 automated tests, TypeScript, the production build, and `git diff --check` passed. Coverage includes distinct random initial boards, face symmetry, all five Tilt levels, variable transfer amounts/shares, preserved totals and bounds over 100,000 transfers, Jackpot resets, amount independence, and unchanged odds on misses.
+- Store and HTTP checks cover rejected locked Shakes, the six-number break-even wager, 1 G gains/losses, returning to an earlier balance, eligibility surviving later break-even rolls, reset/restart/Jackpot locking, stale revisions, duplicate requests, and persistence across reopening SQLite. Legacy schema and receipt migration preserve game state.
+- In the isolated Chrome fixture, six 10 G number bets returned 60 G and kept both the 100 G bankroll and locked Shake. A 1 G loss unlocked Shake. Refresh preserved that unlock; Shake preserved the 99 G bankroll and locked again. Tilt moved from 2 to 1 on the deterministic reset. Refresh retained the lock.
+- Visually inspected the board at 320px and 1280px, plus the default desktop viewport. No horizontal overflow occurred at either measured breakpoint. All exact probability labels remained hidden. The expanded guide fit within its 287px mobile content width. Browser warning/error logs were empty.
+- Restarted the normal local development server after making a SQLite backup at `data/backups/before-random-odds-20261009-232139.sqlite`. Compared every existing player field and action receipt with the backup: all were preserved. The new Shake column starts locked. The running game returned HTTP 200 on port 5173.
+
+Previews: [Desktop](screenshots/random-odds-desktop.jpg) · [Mobile](screenshots/random-odds-mobile.jpg).
+
+Browser gameplay used the isolated in-memory fixture, which was stopped afterward. No normal-game rolls were performed. Physical phones, Safari, Firefox, screen-reader speech, and longer-term player enjoyment were not tested. Earlier report entries describe prior rules.
+
 ## Numeral centering, expanded guide, and peripheral UI — October 9, 2026
 
 Replaced SVG text-box centering with Canvas actual glyph measurements. The old SVG bounds included the same font ascent/descent area for every digit, leaving Georgia’s descending 3, 4, and 5 visibly low. The new positions center the visible numeral shapes and remove the downward text shadow.
@@ -16,6 +70,12 @@ Verified:
 Previews: [Desktop](screenshots/polished-desktop.png) · [Mobile](screenshots/polished-mobile.png) · [Guide](screenshots/expanded-guide.png) · [Settings](screenshots/polished-settings.png) · [Leaderboard](screenshots/polished-leaderboard.png).
 
 Browser checks used the isolated in-memory tower fixture; normal game data was not changed. Physical phones, Safari, and Firefox were not tested.
+
+## Wi-Fi access during development — October 9, 2026
+
+The development server now binds to `0.0.0.0` and prints the computer's network URLs. Vite's reload WebSocket uses the same HTTP server and port. Client action IDs use `crypto.getRandomValues`, which works on plain HTTP network origins. `HOST` still overrides the bind address, and production startup still defaults to loopback.
+
+Verified: all 34 tests, the production build, and `git diff --check` passed. An isolated `PORT=5175 DB_PATH=:memory: npm run dev` process listened on all IPv4 interfaces and returned HTTP 200 through the Mac's Wi-Fi address. Chrome loaded that network URL, connected Vite's WebSocket, completed Shake, and settled a 10 G wager on 1 at 150 G after rolling 1. No browser errors or warnings were reported. The test process was stopped; the normal game database was not used. Physical-phone connectivity and router/firewall behavior were not tested.
 
 ## Personal-best bet limit removed — October 9, 2026
 
@@ -177,7 +237,7 @@ The optional test server is separate from normal play. It uses an in-memory data
 npm run preview:fixture
 ```
 
-Open `http://qa.localhost:5174`, wager 10 G only on 6, then Roll. The first Roll hits Jackpot and the forced Shake moves the marker to 5. Restart this fixture process between deterministic runs.
+Open `http://qa.localhost:5174`, wager 10 G only on 6, then Roll. The first Roll hits Jackpot and the deterministic forced reset produces an even board (Tilt 1, hidden target 1). Shake stays locked until a subsequent roll changes the bankroll. Restart this fixture process between deterministic runs.
 
 For the large-integer case, stop the fixture process and run:
 

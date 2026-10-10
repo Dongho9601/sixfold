@@ -17,6 +17,8 @@ export interface PlayerState {
   gold: string;
   bestGold: string;
   probabilities: number[];
+  tiltLevel: number;
+  canShake: boolean;
   revision: string;
   jackpotNumber: number;
   lastRoll: Settlement | null;

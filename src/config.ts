@@ -4,10 +4,20 @@ export const CONFIG = {
   startingGold: "100",
   minimumWager: "1",
   selectedWager: "10",
-  initialProbabilities: [0.4, 0.2, 0.15, 0.1, 0.1, 0.05],
-  alpha: 0.25,
+  probabilityFloor: 0.02,
+  // Indexed by the board's Tilt before the roll, from level 1 through 5.
+  transferRates: [
+    { min: 0.02, max: 0.04 },
+    { min: 0.03, max: 0.06 },
+    { min: 0.04, max: 0.08 },
+    { min: 0.05, max: 0.10 },
+    { min: 0.06, max: 0.12 },
+  ],
+  // Effective-outcome cutoffs, from nearly even to strongly concentrated.
+  tiltThresholds: [5.4, 4.8, 4.2, 3.6],
   multipliers: { number: 6, row: 2, column: 3, color: 2, jackpot: 24 },
   animationMs: 1100,
+  replacementMs: 800,
   leaderboardLimit: 50,
   syncIntervalMs: 5000,
   port: 5173,

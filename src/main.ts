@@ -72,13 +72,20 @@ try {
 }
 
 const oddsGuide = `
-  <h3>The die starts uneven</h3>
-  <p>A fresh board assigns <b>40%, 20%, 15%, 10%, 10%, and 5%</b> to the six numbers in a random order. The odds are hidden: some numbers are much more likely than others. Red and Black are not necessarily a 50–50 bet.</p>
+  <h3>Every board is different</h3>
+  <p>A fresh board draws a new random set of hidden odds. Every number keeps at least a <b>2% chance</b>, but some can be much more likely than others. Red and Black are not necessarily a 50–50 bet.</p>
+  <h3 class="tilt-guide" tabindex="-1">Read the Tilt</h3>
+  <p><b>Tilt runs from 1 to 5.</b> It describes how uneven the whole board is. Tap the Tilt number on the table to return to this explanation.</p>
+  <p><b>Low Tilt · levels 1–2.</b> The chances are more evenly spread across the six numbers, though they are not necessarily equal. A few repeats can still happen by chance. Payouts change these boards gently, giving you more time to observe them.</p>
+  <p><b>High Tilt · levels 4–5.</b> More of the chance is concentrated on fewer numbers, so some faces are much more likely than others. Tilt does not reveal which ones. Payouts move the odds faster here, so a pattern you discover may fade sooner.</p>
+  <p><b>Level 3 is in between.</b> Combine the level with the results you see, and keep observing after payouts. High Tilt does not guarantee a better bet, and low Tilt does not make every bet fair.</p>
   <h3>Payouts change the odds</h3>
-  <p>After a payout other than a Jackpot, the rolled number gives up <b>25% of its current probability</b>, shared equally among the other five. Winning on a likely number can gradually even out a strong bias, so an early advantage can fade. Equal odds are not guaranteed.</p>
-  <details class="odds-example"><summary>See how a payout changes the die</summary><p>If a number has a 40% chance and a wager pays when it lands, its chance falls to 30%. Each other number gains 2 percentage points. This happens even if your other wagers leave the roll at break-even or a net loss. If no wager pays, the odds stay the same. A Jackpot instead resets the odds.</p></details>
-  <h3>A hint for your first few rolls</h3>
-  <p>Start with small bets and look for clues in the results. A few repeats do not prove a number is favored. Groups cover more outcomes but pay smaller multiples; adjust as payouts change the die. <b>Shake</b> is free: it reshuffles the starting odds and clears your bets, so any pattern you were tracking starts over.</p>
+  <p>After a payout other than a Jackpot, the rolled number gives up a small random share of its probability above the <b>2% minimum</b>. The transfer rate rises with the Tilt shown before the roll: <b>2–4% at level 1, up to 6–12% at level 5</b>. The other five numbers receive random shares of that amount.</p>
+  <p>One transfer happens per paying roll, regardless of wager size or how many bets pay. Even on a high-Tilt board, a rare number has little probability to give away. Tilt can rise, fall, or stay at the same level; faster changes do not guarantee that it falls.</p>
+  <details class="odds-example"><summary>See one possible change</summary><p>On a Tilt 2 board, the transfer rate is 3–6%. A number at 40% has 38 percentage points above the minimum. If this roll transfers 4.5% of that surplus, the number falls to 38.29%. The other five share the 1.71 percentage points randomly. The next payout draws a new rate and new shares. This happens even when your total return leaves the roll at break-even or a net loss. If no wager pays, the odds stay the same. A Jackpot instead brings in a fresh die and a new board.</p></details>
+  <h3>Earn your next Shake</h3>
+  <p><b>Shake</b> costs no Gold, but a roll must first change your settled bankroll: any gain or loss counts, even 1 G. A break-even roll does not count. Betting 10 G on all six numbers returns 60 G and does not unlock Shake. Editing bets does not count either.</p>
+  <p>Once unlocked, Shake stays available until you use it. It draws fresh odds, clears your bets, and locks again. A new game or a Jackpot’s automatic Shake also starts locked. Start with small bets and use the Tilt and results to decide whether to keep exploring the board.</p>
 `;
 
 app.innerHTML = `
@@ -97,7 +104,7 @@ app.innerHTML = `
         <section class="table-area" aria-label="Betting table">
           <div class="felt">
             <section class="stage" aria-label="Die and result">
-              <div class="table-heading"><span class="eyebrow">MAKE YOUR CALL</span><span id="table-status">Place your bets</span></div>
+              <div class="table-heading"><button id="tilt-info" class="board-tilt" aria-label="About board Tilt" aria-haspopup="dialog" aria-controls="welcome-dialog"><strong id="tilt-level">—</strong><span class="tilt-copy"><span class="tilt-name">Tilt</span><span class="tilt-help">Guide ${icon("chevron")}</span></span></button><span id="table-status">Place your bets</span></div>
               <div class="die-area"><div id="die-shadow" class="die-shadow"></div><div id="die-mover" class="die-mover"><div id="die" class="die" role="img" aria-label="Die, ready to roll"></div></div><div id="landing-ring" class="landing-ring"></div></div>
               <div id="result-display" class="result-display" aria-hidden="true"><span class="result-label">ONE ROLL. SIX POSSIBILITIES.</span><strong class="result-value">Good luck.</strong><span class="result-detail">Every number has its odds.</span></div>
             </section>
@@ -108,7 +115,8 @@ app.innerHTML = `
         </section>
         <section class="betting-controls" aria-label="Wager controls">
           <div class="chip-controls"><label class="control-label" for="bet-amount">Bet amount</label><div class="amount-selector"><button id="decrease" aria-label="Decrease bet by 5 Gold">−</button><input id="bet-amount" type="text" role="spinbutton" inputmode="numeric" pattern="[0-9]*" value="${CONFIG.selectedWager}" aria-valuemin="1" aria-valuenow="${CONFIG.selectedWager}" aria-label="Bet amount in Gold" aria-describedby="amount-hint" autocomplete="off" /><span>G</span><button id="increase" aria-label="Increase bet by 5 Gold">+</button></div><span id="amount-hint" class="amount-hint">Type an amount or ↑ ↓ by 5 G</span></div>
-          <div class="actions"><button id="roll" class="roll-button">${icon("dice")}<span>Roll dice</span><kbd>R</kbd></button><button id="shake" class="shake-button">${icon("shake")}<span>Shake</span><kbd>S</kbd></button></div>
+          <div class="actions"><button id="roll" class="roll-button">${icon("dice")}<span>Roll dice</span><kbd>R</kbd></button><button id="shake" class="shake-button" aria-describedby="shake-hint" disabled>${icon("shake")}<span>Shake</span><kbd>S</kbd></button></div>
+          <p id="shake-hint" class="shake-hint">Shake unlocks after a roll changes your bankroll.</p>
           <p class="hint"><span class="pointer-hint">Click a space to bet · Right-click to take it back</span><span class="touch-hint">Tap a space to bet · Edit bets to take it back</span></p>
           <div class="messages"><p id="roll-announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p><p id="notice" class="notice" role="status" aria-live="polite"></p><button id="retry" class="text-button" hidden>Retry saved action</button><button id="restart" class="restart-button" hidden>Start again with 100 G</button></div>
         </section>
@@ -200,10 +208,10 @@ function stopMotion() {
   activeAnimations.forEach(animation => animation.cancel());
   $("effects").replaceChildren();
 }
-async function rollDie(outcome: number, shake = false) {
+async function rollDie(outcome: number) {
   if (shouldReduceMotion()) { setDie(outcome); return; }
-  $("die").setAttribute("aria-label", shake ? "Die shaking" : "Die rolling");
-  const duration = shake ? 700 : CONFIG.animationMs;
+  $("die").setAttribute("aria-label", "Die rolling");
+  const duration = CONFIG.animationMs;
   const finalRotation = diePose(outcome, 2);
   await Promise.all([
     motion($("die"), [
@@ -231,6 +239,57 @@ async function rollDie(outcome: number, shake = false) {
   setDie(outcome);
   playTone("chip");
   void motion($("landing-ring"), [{transform: "scale(.55)", opacity: .65}, {transform: "scale(1.6)", opacity: 0}], {duration: 400, easing: "ease-out"});
+}
+async function replaceDie() {
+  if (shouldReduceMotion()) { setDie(1); return; }
+  const mover = $("die-mover");
+  const shadow = $("die-shadow");
+  const area = mover.parentElement!;
+  // Keep a decorative copy of the old die while the fresh one slides in.
+  const outgoing = mover.cloneNode(true) as HTMLElement;
+  const oldShadow = shadow.cloneNode(true) as HTMLElement;
+  for (const copy of [outgoing, oldShadow]) {
+    copy.removeAttribute("id");
+    copy.querySelectorAll("[id]").forEach(el => el.removeAttribute("id"));
+    copy.setAttribute("aria-hidden", "true");
+    copy.classList.add("departing-die");
+    area.append(copy);
+  }
+  area.classList.add("is-replacing");
+  setDie(1);
+  $("die").setAttribute("aria-label", "Replacing the die");
+  const duration = CONFIG.replacementMs;
+  try {
+    await Promise.all([
+      motion(outgoing, [
+        {transform: "translateX(0) scale(1)", opacity: 1},
+        {transform: "translateX(-92px) scale(.8)", opacity: 0, offset: .48},
+        {transform: "translateX(-92px) scale(.8)", opacity: 0},
+      ], {duration, easing: "ease-in-out"}),
+      motion(mover, [
+        {transform: "translate(92px,-8px) scale(.85)", opacity: 0},
+        {transform: "translate(92px,-8px) scale(.85)", opacity: 0, offset: .3},
+        {transform: "translate(0,2px) scale(1.02)", opacity: 1, offset: .85},
+        {transform: "translate(0,0) scale(1)", opacity: 1},
+      ], {duration, easing: "ease-out"}),
+      motion(oldShadow, [
+        {transform: "translateX(0) scale(1)", opacity: .4},
+        {transform: "translateX(-92px) scale(.6)", opacity: 0, offset: .48},
+        {transform: "translateX(-92px) scale(.6)", opacity: 0},
+      ], {duration, easing: "ease-in-out"}),
+      motion(shadow, [
+        {transform: "translateX(92px) scale(.6)", opacity: 0},
+        {transform: "translateX(92px) scale(.6)", opacity: 0, offset: .3},
+        {transform: "translateX(0) scale(1)", opacity: .4},
+      ], {duration, easing: "ease-out"}),
+    ]);
+  } finally {
+    outgoing.remove();
+    oldShadow.remove();
+    area.classList.remove("is-replacing");
+    setDie(1);
+  }
+  playTone("chip");
 }
 function compactGold(value: string) {
   if (value.length <= 5) return formatGold(value);
@@ -434,6 +493,8 @@ function render() {
   $("gold").classList.toggle("long-gold", state.gold.length > 12);
   $("best-gold").textContent = formatGold(state.bestGold);
   $("best-gold").classList.toggle("long-record", state.bestGold.length > 12);
+  $("tilt-level").textContent = String(state.tiltLevel);
+  $("tilt-info").setAttribute("aria-label", `Board Tilt, level ${state.tiltLevel} of 5. Open Tilt guide.`);
   $("game").classList.toggle(
     "vast-balance",
     state.gold.length > 12 || state.bestGold.length > 12,
@@ -473,13 +534,18 @@ function render() {
       }
     });
   for (const id of [
-    "shake",
     "increase",
     "decrease",
     "clear-draft",
     "edit-draft",
   ])
     $<HTMLButtonElement>(id).disabled = busy || !!pending;
+  $<HTMLButtonElement>("shake").disabled = busy || !!pending || !state.canShake;
+  $("shake-hint").textContent = busy && pending?.action.kind === "shake"
+    ? "Replacing the die and drawing fresh odds…"
+    : state.canShake
+    ? "Shake is ready. Fresh odds, same bankroll."
+    : "Shake unlocks after a roll changes your bankroll.";
   $<HTMLInputElement>("bet-amount").disabled = busy || !!pending;
   $<HTMLButtonElement>("roll").disabled =
     busy || !!pending || totalDraft() === 0n;
@@ -666,16 +732,20 @@ function savePending(value: ActionRequest | null) {
 async function perform(action?: Action) {
   if (!state || busy) return;
   if (action && pending) return;
+  if (action?.kind === "shake" && !state.canShake) return;
   if (action)
     savePending({
-      requestId: crypto.randomUUID(),
+      // getRandomValues also works over plain HTTP on a local Wi-Fi network.
+      requestId: Array.from(crypto.getRandomValues(new Uint8Array(16)), (byte) =>
+        byte.toString(16).padStart(2, "0"),
+      ).join(""),
       revision: state.revision,
       action,
     });
   if (!pending) return;
   const request = pending;
   busy = true;
-  actionPhase = request.action.kind === "roll" ? "Rolling…" : request.action.kind === "shake" ? "Shaking…" : "Saving…";
+  actionPhase = request.action.kind === "roll" ? "Rolling…" : request.action.kind === "shake" ? "New die…" : "Saving…";
   if (request.action.kind !== "nickname") clearResult();
   if (request.action.kind === "roll" || request.action.kind === "shake") {
     $("table-status").textContent = request.action.kind === "roll" ? "No more bets" : "Fresh odds coming";
@@ -711,11 +781,17 @@ async function perform(action?: Action) {
       actionPhase = "Settling…";
       $("roll").querySelector("span")!.textContent = actionPhase;
       await revealResult(data.result, request.action.kind === "roll" ? request.action.wagers : {}, data.state.gold);
-      if (data.result.jackpot) announce("Jackpot! Fresh odds are on the table.");
+      if (data.result.jackpot) {
+        $("table-status").textContent = "A fresh die";
+        await replaceDie();
+        $("table-status").textContent = "Fresh odds. Your call.";
+        announce("Jackpot! A fresh die and new odds are on the table.");
+      }
     } else if (request.action.kind === "shake") {
-      playTone("roll");
-      await rollDie(1, true);
+      $("table-status").textContent = "Replacing the die";
+      await replaceDie();
       $("table-status").textContent = "Fresh odds. Your call.";
+      announce("A fresh die. New odds are on the table.");
     } else if (request.action.kind === "restart") {
       setAmount(CONFIG.selectedWager);
       announce("");
@@ -932,13 +1008,19 @@ $("show-probabilities").addEventListener("change", () => {
 });
 $("welcome-start").addEventListener("click", () => $<HTMLDialogElement>("welcome-dialog").close());
 let guideReturnFocus = $("bet-amount");
-$("guide-open").addEventListener("click", () => {
-  guideReturnFocus = $("guide-open");
+function openGuide(trigger: HTMLElement, showTilt = false) {
+  guideReturnFocus = trigger;
   $("welcome-intro").textContent = `You have ${formatGold(state?.gold || CONFIG.startingGold)} G to play with. Make a call and see where the die lands.`;
   const guide = $<HTMLDialogElement>("welcome-dialog");
   guide.showModal();
-  guide.scrollTop = 0;
-});
+  if (showTilt) {
+    const heading = guide.querySelector<HTMLElement>(".tilt-guide")!;
+    heading.scrollIntoView({ block: "start" });
+    heading.focus({ preventScroll: true });
+  } else guide.scrollTop = 0;
+}
+$("guide-open").addEventListener("click", () => openGuide($("guide-open")));
+$("tilt-info").addEventListener("click", () => openGuide($("tilt-info"), true));
 $("welcome-dialog").addEventListener("close", () => {
   if (state) localStorage.setItem(`sixfold-guide-seen:${state.id}`, "yes");
   guideReturnFocus.focus({ preventScroll: true });

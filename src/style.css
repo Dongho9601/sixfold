@@ -11,6 +11,8 @@
   --die-size: 58px;
   --die-half: 29px;
   --outside: 100px;
+  --bet-label-size: 19px;
+  --bet-payout-size: 15px;
 }
 * { box-sizing: border-box; }
 html { scrollbar-gutter: stable; }
@@ -66,7 +68,17 @@ main { width: min(1540px, 100%); margin: 0 auto; display: grid; grid-template-co
 .table-heading { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .table-heading .eyebrow { color: #b7c7ad; font-size: 9px; letter-spacing: 2px; }
 #table-status { font: italic 22px Georgia, serif; }
+.board-tilt { align-self: flex-start; display: flex; align-items: center; gap: 10px; min-height: 54px; padding: 0 4px 0 0; background: transparent; color: #f3d38e; text-align: left; border-radius: 3px; }
+.board-tilt strong { font-size: 48px; line-height: 1; font-weight: 500; font-variant-numeric: tabular-nums; }
+.tilt-copy { display: flex; flex-direction: column; gap: 5px; }
+.tilt-name { font-size: 12px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; }
+.tilt-help { display: flex; align-items: center; gap: 3px; color: #d8dccc; font-size: 11px; }
+.tilt-help svg { width: 12px; height: 12px; }
+.board-tilt:hover { color: #ffe8b4; }
+.board-tilt:hover .tilt-help { text-decoration: underline; text-underline-offset: 3px; }
 .die-area { width: 110px; height: 102px; position: relative; perspective: 700px; justify-self: center; }
+.die-area.is-replacing { overflow: hidden; mask-image: linear-gradient(90deg, transparent, #000 16%, #000 84%, transparent); }
+.departing-die { pointer-events: none; }
 .die-mover { width: var(--die-size); height: var(--die-size); position: absolute; left: calc(50% - var(--die-half)); top: 18px; transform-style: preserve-3d; z-index: 2; }
 .die { width: 100%; height: 100%; position: relative; transform-style: preserve-3d; }
 .die-face { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); gap: 5px; padding: 11px; border-radius: 9px; background: linear-gradient(135deg, #fffdf0, #dedbc5); border: 1px solid #c8c5b0; box-shadow: inset 0 0 4px #fff8; backface-visibility: hidden; }
@@ -88,12 +100,11 @@ main { width: min(1540px, 100%); margin: 0 auto; display: grid; grid-template-co
 .target:hover:not(:disabled) { background-color: #e4e4bd12; }
 .column-target, .row-target[data-target="row0"] { border-top: 1px solid var(--line); }
 .group { display: flex; flex-direction: column; justify-content: center; gap: 5px; text-align: center; padding: 12px 13px; }
-.group-title { display: flex; align-items: center; justify-content: center; gap: 14px; font-size: 19px; }
-.group-title b { font-size: 15px; font-weight: 400; color: #d9e0c6; }
+.group-title { display: flex; align-items: center; justify-content: center; gap: 14px; font-size: var(--bet-label-size); line-height: 1.25; white-space: nowrap; }
+.group-title b { font-size: var(--bet-payout-size); font-weight: 400; color: #d9e0c6; }
 .group-odds { font-size: 14px; color: #c1d0b9; font-variant-numeric: tabular-nums; }
 .row-target { align-items: center; text-align: center; padding: 12px 6px; gap: 8px; }
-.row-target .group-title { flex-direction: column; font-size: 16px; gap: 6px; }
-.row-target .group-title b { font-size: 19px; }
+.row-target .group-title { flex-direction: column; gap: 6px; }
 .number-target { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 12px 8px; gap: 8px; background: #172b24; }
 .number-target.red { background: #963f42; }
 .number-target.black:hover:not(:disabled) { background: #273c2f; }
@@ -148,6 +159,8 @@ main { width: min(1540px, 100%); margin: 0 auto; display: grid; grid-template-co
 .roll-button svg { width: 20px; height: 20px; }
 .shake-button { background: transparent; color: #d7dece; border: 1px solid #52604e; font-size: 14px; font-weight: 400; padding: 0 14px; }
 .shake-button:hover:not(:disabled) { background: #2c3d30; }
+.shake-button:disabled { color: #99ab96; border-color: #3d4c3e; }
+.shake-hint { grid-column: 1 / -1; margin: -4px 0 0; text-align: center; color: #b5c3ab; font-size: 12px; line-height: 1.5; }
 .shake-button svg { width: 17px; height: 17px; }
 .hint { grid-column: 1 / -1; text-align: center; color: #99ab96; font-size: 11px; margin: 5px 0 0; }
 .touch-hint { display: none; }
@@ -267,7 +280,9 @@ dialog::backdrop {
 .odds-example p { margin: 12px 0 0; }
 .welcome-dialog .roll-button { width: 100%; margin-top: 28px; }
 .welcome-footnote { margin: 18px 0 0; color: #9daa97; text-align: center; font-size: 11px; line-height: 1.6; }
-.welcome-dialog { width: 640px; background: #fff; color: #242722; color-scheme: light; border-color: #e0e1dd; box-shadow: none; }
+.welcome-dialog { --guide-inset: 32px; width: 640px; background: #fff; color: #242722; color-scheme: light; border-color: #e0e1dd; box-shadow: none; }
+.welcome-dialog .dialog-top { position: sticky; top: calc(-1 * var(--guide-inset)); z-index: 4; background: #fff; padding-block: 12px; margin-top: -12px; }
+.welcome-dialog .tilt-guide { scroll-margin-top: 88px; }
 .welcome-dialog .dialog-intro, .welcome-steps p, .guide-odds p { font: 18px/1.65 Georgia, "Times New Roman", serif; color: #41453e; }
 .welcome-dialog h3 { color: #242722; }
 .welcome-dialog b { color: #242722; font-weight: 700; }
@@ -370,7 +385,7 @@ dialog::backdrop {
   #table-status { font-size: 19px; }
 }
 @media (max-width: 800px) {
-  :root { --outside: 82px; }
+  :root { --outside: 82px; --bet-label-size: 16px; --bet-payout-size: 13px; }
   .workspace { padding: 20px 16px; }
   main { grid-template-columns: 155px minmax(0, 1fr); gap: 15px; }
   .wordmark { padding-left: 29px; font-size: 27px; }
@@ -394,15 +409,13 @@ dialog::backdrop {
   .actions { margin-top: 0; }
   .chip-controls { align-items: center; }
   .group { padding-inline: 8px; }
-  .group-title { font-size: 16px; gap: 8px; }
-  .group-title b { font-size: 13px; }
+  .group-title { gap: 8px; }
   .group-odds { font-size: 12px; }
-  .row-target .group-title { font-size: 13px; }
   .table-footer { font-size: 7px; letter-spacing: .3px; }
   .table-footer > span:last-child { display: none; }
 }
 @media (max-width: 650px) {
-  :root { --outside: 66px; --die-size: 48px; --die-half: 24px; }
+  :root { --outside: 66px; --die-size: 48px; --die-half: 24px; --bet-label-size: 14px; --bet-payout-size: 12px; }
   .workspace { padding: 14px 10px; }
   main { display: block; max-width: 510px; }
   .sidebar { min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 0 4px; margin-bottom: 16px; }
@@ -438,6 +451,11 @@ dialog::backdrop {
   .landing-ring { left: 8px; bottom: 0; }
   #table-status { font-size: 15px; }
   .table-heading { gap: 7px; }
+  .board-tilt { min-height: 44px; gap: 7px; }
+  .board-tilt strong { font-size: 38px; }
+  .tilt-name { font-size: 10px; letter-spacing: 1px; }
+  .tilt-help { font-size: 10px; gap: 1px; }
+  .tilt-copy { gap: 3px; }
   .table-heading .eyebrow { font-size: 7px; letter-spacing: 1px; }
   .result-value { font-size: 17px; }
   .result-label { font-size: 7px; line-height: 1.5; }
@@ -448,12 +466,10 @@ dialog::backdrop {
   .board-key { font-size: 8px; }
   .board-key strong { font-size: 23px; }
   .group { padding: 10px 7px; gap: 5px; }
-  .group-title { font-size: 14px; gap: 4px; }
-  .group-title b { font-size: 11px; }
+  .group-title { gap: 4px; }
   .group-odds { font-size: 11px; }
   .row-target { padding: 10px 4px; gap: 8px; }
-  .row-target .group-title { font-size: 11px; gap: 8px; }
-  .row-target .group-title b { font-size: 17px; }
+  .row-target .group-title { gap: 8px; }
   .number { width: 62px; height: 62px; }
   .number-target { gap: 5px; }
   .table-chip { width: 40px; height: 40px; padding: 5px; }
@@ -463,7 +479,7 @@ dialog::backdrop {
   .probability { font-size: 13px; }
   .color-bets { height: 62px; margin-top: 12px; }
   .color-target { padding-inline: 9px; }
-  .color-target .group-title { font-size: 16px; gap: 9px; }
+  .color-target .group-title { gap: 9px; }
   .color-target .group-title > span::before { width: 7px; height: 7px; margin-right: 5px; }
   .table-footer { height: 31px; font-size: 6px; letter-spacing: .5px; justify-content: center; }
   .table-footer i { margin: 0 3px; }
@@ -478,14 +494,12 @@ dialog::backdrop {
   #gold.long-gold { font-size: 22px; }
   .best-value.long-record { font-size: 19px; }
   dialog { padding: 23px; max-width: calc(100vw - 24px); }
+  .welcome-dialog { --guide-inset: 23px; }
 }
 @media (max-width: 360px) {
   :root { --outside: 60px; }
   .felt { padding-inline: 7px; }
-  .group-title { font-size: 12px; }
-  .group-title b { font-size: 10px; }
   .group { padding-inline: 5px; }
-  .row-target .group-title { font-size: 10px; }
   .number { width: 55px; height: 55px; }
   .accounting { gap: 10px; }
   .draft-actions { gap: 8px; }
@@ -508,14 +522,12 @@ dialog::backdrop {
   .sidebar { min-height: 620px; }
 }
 @media (min-width: 1101px) and (max-width: 1350px) {
-  :root { --outside: 80px; }
+  :root { --outside: 80px; --bet-label-size: 16px; --bet-payout-size: 13px; }
   .workspace { padding: 24px; }
   main { grid-template-columns: 170px minmax(0, 1fr) 190px; gap: 18px; }
   .felt { padding-inline: 16px; }
   .wordmark { font-size: 28px; }
-  .group-title { font-size: 16px; gap: 8px; }
-  .group-title b { font-size: 13px; }
-  .row-target .group-title { font-size: 13px; }
+  .group-title { gap: 8px; }
   .tower-heading h2 { font-size: 24px; }
 }
 @media (max-width: 1100px) {
@@ -528,5 +540,6 @@ dialog::backdrop {
   body:has(.welcome-dialog[open]) .workspace, body:has(.welcome-dialog[open]) .effects { display: none; }
   .welcome-dialog[open] { position: static; width: 100%; max-width: none; max-height: none; overflow: visible; margin: 0; padding: 0; border: 0; }
   .welcome-dialog .icon-button, .welcome-dialog .roll-button { display: none; }
+  .welcome-dialog .dialog-top { position: static; padding: 0; margin: 0; }
   .welcome-dialog h3 { break-after: avoid; }
 }

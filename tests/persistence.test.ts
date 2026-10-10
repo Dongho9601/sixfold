@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { once } from "node:events";
 import { Store } from "../server/store.ts";
 import { createGameServer } from "../server/http.ts";
+import { tiltLevel } from "../server/rules.ts";
 import type {
   Action,
   ActionRequest,
@@ -39,6 +40,8 @@ test("all actions are retry-safe, revision guarded, atomic, and survive reopenin
     assert.equal(response.state.gold, "150");
     assert.equal(response.state.revision, "1");
     assert.equal(response.state.bestGold, "150");
+    assert.equal(response.state.canShake, true);
+    assert.equal(response.state.tiltLevel, tiltLevel(response.state.probabilities));
     assert.deepEqual(store.act(state.id, roll), response);
     assert.throws(
       () => store.act(state.id, { ...roll, action: { kind: "shake" } }),
@@ -68,15 +71,18 @@ test("all actions are retry-safe, revision guarded, atomic, and survive reopenin
     assert.deepEqual(store.act(state.id, roll), response);
     assert.deepEqual(store.get(state.id), named.state);
     assert.equal(store.leaderboard()[0].nickname, "Ada");
-    for (let i = 0; i < 25; i++) {
-      const current = store.get(state.id);
-      const action = request(current.revision, { kind: "shake" });
-      const next = store.act(state.id, action);
-      assert.equal(next.state.gold, "150");
-      assert.equal(next.state.bestGold, "150");
-      assert.deepEqual([...next.state.probabilities].sort(), [...p].sort());
-      assert.deepEqual(store.act(state.id, action), next);
-    }
+    const action = request(named.state.revision, { kind: "shake" });
+    const next = store.act(state.id, action);
+    assert.equal(next.state.gold, "150");
+    assert.equal(next.state.bestGold, "150");
+    assert.equal(next.state.canShake, false);
+    assert.notDeepEqual(next.state.probabilities, p);
+    assert.deepEqual(store.act(state.id, action), next);
+    assert.throws(() => store.act(state.id, request(next.state.revision, { kind: "shake" })), /changes your bankroll/);
+    assert.deepEqual(store.get(state.id), next.state);
+    store.close();
+    store = new Store(path);
+    assert.deepEqual(store.session(token), next.state);
   } finally {
     store.close();
     rmSync(dir, { recursive: true, force: true });
@@ -96,17 +102,20 @@ test("record integrity: break-even, loss, bankruptcy, retry and restart keep his
     );
     assert.equal(even.state.gold, "100");
     assert.equal(even.state.bestGold, "180");
+    assert.equal(even.state.canShake, false);
     const lost = store.act(
       state.id,
       request("1", { kind: "roll", wagers: { n2: "100" } }),
     );
     assert.equal(lost.state.gold, "0");
     assert.equal(lost.state.bestGold, "180");
+    assert.equal(lost.state.canShake, true);
     const restart = request("2", { kind: "restart" });
     const next = store.act(state.id, restart);
     assert.equal(next.state.gold, "100");
     assert.equal(next.state.bestGold, "180");
     assert.equal(next.state.lastRoll, null);
+    assert.equal(next.state.canShake, false);
     assert.deepEqual(store.act(state.id, restart), next);
     assert.throws(
       () => store.act(state.id, request("3", { kind: "restart" })),
@@ -201,6 +210,12 @@ test("HTTP: independent sessions, concurrent duplicates, stale tab, lost respons
     const b = (await second.json()) as PlayerState;
     assert.notEqual(a.id, b.id);
     fixture(store, a.id);
+    const locked = await post(cookie, request("0", { kind: "shake" }));
+    assert.equal(locked.status, 400);
+    const rejected = await locked.json();
+    assert.equal(rejected.state.canShake, false);
+    assert.equal(rejected.state.revision, "0");
+    assert.match(rejected.error, /changes your bankroll/);
     const roll = request("0", { kind: "roll", wagers: { n1: "10" } });
     const pair = await Promise.all([post(cookie, roll), post(cookie, roll)]);
     assert.ok(pair.every((r) => r.status === 200));
@@ -257,6 +272,92 @@ test("HTTP: independent sessions, concurrent duplicates, stale tab, lost respons
     assert.equal(largeBoard[0].bestGold, "100000000000000000000000000000001");
   } finally {
     await stop();
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Shake requires a settled change since reset; break-even, names and retries cannot earn it", () => {
+  const store = new Store(":memory:", () => 0.1);
+  try {
+    const { state } = store.create();
+    fixture(store, state.id);
+    const act = (action: Action) => store.act(state.id, request(store.get(state.id).revision, action));
+    const all = Object.fromEntries([1, 2, 3, 4, 5, 6].map((n) => [`n${n}`, "10"]));
+    assert.equal(store.get(state.id).canShake, false);
+    assert.throws(() => act({ kind: "shake" }), /changes your bankroll/);
+    const even = act({ kind: "roll", wagers: all });
+    assert.equal(even.state.gold, "100");
+    assert.equal(even.state.canShake, false);
+    assert.notDeepEqual(even.state.probabilities, p);
+    assert.throws(() => act({ kind: "shake" }), /changes your bankroll/);
+    assert.equal(act({ kind: "nickname", nickname: "No shortcut" }).state.canShake, false);
+    const loss = act({ kind: "roll", wagers: { n2: "1" } });
+    assert.equal(loss.state.gold, "99");
+    assert.equal(loss.state.canShake, true);
+    const firstShake = request(loss.state.revision, { kind: "shake" });
+    const reset = store.act(state.id, firstShake);
+    assert.equal(reset.state.gold, "99");
+    assert.equal(reset.state.canShake, false);
+    assert.deepEqual(store.act(state.id, firstShake), reset);
+    assert.throws(() => act({ kind: "shake" }), /changes your bankroll/);
+    const win = act({ kind: "roll", wagers: { red: "1" } });
+    assert.equal(win.state.gold, "100");
+    assert.equal(win.state.canShake, true);
+    const back = act({ kind: "roll", wagers: { n2: "1" } });
+    assert.equal(back.state.gold, "99"); // Same balance as the reset still qualifies.
+    assert.equal(back.state.canShake, true);
+    assert.equal(act({ kind: "roll", wagers: all }).state.canShake, true);
+    const secondReset = act({ kind: "shake" });
+    assert.equal(secondReset.state.canShake, false);
+    store.act(state.id, firstShake); // An old receipt cannot restore its entitlement.
+    assert.deepEqual(store.get(state.id), secondReset.state);
+    assert.throws(() => act({ kind: "shake" }), /changes your bankroll/);
+  } finally {
+    store.close();
+  }
+});
+
+test("Jackpot's automatic reset consumes the bankroll change and locks the new board", () => {
+  let draw = 0.1;
+  const store = new Store(":memory:", () => draw);
+  try {
+    const { state } = store.create();
+    fixture(store, state.id);
+    const win = store.act(state.id, request("0", { kind: "roll", wagers: { n1: "1" } }));
+    assert.equal(win.state.canShake, true);
+    draw = 0.999;
+    const jackpot = store.act(state.id, request("1", { kind: "roll", wagers: { n6: "10" } }));
+    assert.equal(jackpot.result!.jackpot, true);
+    assert.equal(jackpot.state.gold, "335");
+    assert.equal(jackpot.state.canShake, false);
+    assert.throws(() => store.act(state.id, request("2", { kind: "shake" })), /changes your bankroll/);
+  } finally {
+    store.close();
+  }
+});
+
+test("legacy databases and receipts migrate without resetting Gold, odds or records", () => {
+  const dir = mkdtempSync(join(tmpdir(), "sixfold-migration-"));
+  const path = join(dir, "game.sqlite");
+  let store = new Store(path, () => 0.1);
+  try {
+    const { state, token } = store.create();
+    fixture(store, state.id, "101", "900");
+    const name = request("0", { kind: "nickname", nickname: "Existing player" });
+    const previous = store.act(state.id, name);
+    const old = JSON.parse(JSON.stringify(previous));
+    delete old.state.canShake;
+    delete old.state.tiltLevel;
+    store.db.prepare("UPDATE receipts SET response = ? WHERE player_id = ?")
+      .run(JSON.stringify(old), state.id);
+    store.db.exec("ALTER TABLE players DROP COLUMN can_shake");
+    store.close();
+    store = new Store(path);
+    assert.deepEqual(store.session(token), previous.state);
+    assert.deepEqual(store.act(state.id, name), previous);
+    assert.throws(() => store.act(state.id, request("1", { kind: "shake" })), /changes your bankroll/);
+  } finally {
     store.close();
     rmSync(dir, { recursive: true, force: true });
   }

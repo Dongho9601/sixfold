@@ -11,13 +11,32 @@ export class GameError extends Error {
 }
 export type Random = () => number;
 
+// Normalized independent exponential weights sample Dirichlet(1, ..., 1).
+// Clamp only the RNG endpoints so injected zeroes cannot create 0 / 0.
+function randomShares(count: number, random: Random): number[] {
+  const weights = Array.from({ length: count }, () => {
+    const u = Math.max(Number.EPSILON, Math.min(1 - Number.EPSILON, random()));
+    return -Math.log1p(-u);
+  });
+  const total = weights.reduce((sum, value) => sum + value, 0);
+  return weights.map((value) => value / total);
+}
+
 export function freshProbabilities(random: Random): number[] {
-  const values: number[] = [...CONFIG.initialProbabilities];
-  for (let i = values.length - 1; i > 0; i--) {
-    const j = Math.floor(random() * (i + 1));
-    [values[i], values[j]] = [values[j], values[i]];
-  }
-  return values;
+  const floor = CONFIG.probabilityFloor;
+  return randomShares(6, random).map((share) => floor + (1 - 6 * floor) * share);
+}
+
+export function tiltLevel(p: readonly number[]): number {
+  // Sort before summing so relabeling faces cannot affect boundary rounding.
+  const values = [...p].sort((a, b) => a - b);
+  const total = values.reduce((sum, value) => sum + value, 0);
+  const entropy = -values.reduce((sum, value) => {
+    const probability = value / total;
+    return sum + (probability > 0 ? probability * Math.log(probability) : 0);
+  }, 0);
+  const effectiveOutcomes = Math.exp(entropy);
+  return 1 + CONFIG.tiltThresholds.filter((cutoff) => effectiveOutcomes < cutoff).length;
 }
 
 export function marker(p: readonly number[]): number {
@@ -65,10 +84,16 @@ export function sample(p: readonly number[], random: Random): number {
   return 6;
 }
 
-export function transfer(p: readonly number[], outcome: number): number[] {
-  const delta = CONFIG.alpha * p[outcome - 1];
+export function transfer(p: readonly number[], outcome: number, random: Random): number[] {
+  const { min, max } = CONFIG.transferRates[tiltLevel(p) - 1];
+  const rate = min + (max - min) * random();
+  // Older saved boards can contain probabilities below the new floor. Preserve
+  // those boards; their rare faces donate nothing until they receive more mass.
+  const delta = rate * Math.max(0, p[outcome - 1] - CONFIG.probabilityFloor);
+  const shares = randomShares(5, random);
+  let recipient = 0;
   return p.map((value, i) =>
-    i === outcome - 1 ? value - delta : value + delta / 5,
+    i === outcome - 1 ? value - delta : value + delta * shares[recipient++],
   );
 }
 
@@ -100,7 +125,7 @@ export function settle(
   const probabilities = jackpot
     ? freshProbabilities(random)
     : transferred
-      ? transfer(p, outcome)
+      ? transfer(p, outcome, random)
       : [...p];
   return {
     gold: gold - stake + totalReturn,

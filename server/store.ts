@@ -15,6 +15,7 @@ import {
   marker,
   parseGold,
   settle,
+  tiltLevel,
   type Random,
 } from "./rules.ts";
 
@@ -26,6 +27,7 @@ interface Row {
   probabilities: string;
   revision: string;
   last_roll: string | null;
+  can_shake: number;
 }
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 export const secureRandom: Random = () =>
@@ -47,7 +49,8 @@ export class Store {
       CREATE TABLE IF NOT EXISTS players (
         id TEXT PRIMARY KEY, session_hash TEXT NOT NULL UNIQUE,
         nickname TEXT NOT NULL, gold TEXT NOT NULL, best_gold TEXT NOT NULL,
-        probabilities TEXT NOT NULL, revision TEXT NOT NULL, last_roll TEXT
+        probabilities TEXT NOT NULL, revision TEXT NOT NULL, last_roll TEXT,
+        can_shake INTEGER NOT NULL DEFAULT 0 CHECK (can_shake IN (0, 1))
       ) STRICT;
       CREATE TABLE IF NOT EXISTS receipts (
         player_id TEXT NOT NULL REFERENCES players(id), request_id TEXT NOT NULL,
@@ -56,6 +59,9 @@ export class Store {
       ) STRICT;
       CREATE INDEX IF NOT EXISTS best_gold_order ON players(length(best_gold) DESC, best_gold DESC, id);
     `);
+    const columns = this.db.prepare("PRAGMA table_info(players)").all();
+    if (!columns.some((column) => column.name === "can_shake"))
+      this.db.exec("ALTER TABLE players ADD COLUMN can_shake INTEGER NOT NULL DEFAULT 0 CHECK (can_shake IN (0, 1))");
   }
   close() {
     this.db.close();
@@ -68,6 +74,8 @@ export class Store {
       gold: row.gold,
       bestGold: row.best_gold,
       probabilities,
+      tiltLevel: tiltLevel(probabilities),
+      canShake: row.can_shake === 1,
       revision: row.revision,
       jackpotNumber: marker(probabilities),
       lastRoll: row.last_roll ? JSON.parse(row.last_roll) : null,
@@ -91,7 +99,7 @@ export class Store {
     const token = randomBytes(32).toString("hex");
     const id = randomUUID();
     this.db
-      .prepare("INSERT INTO players VALUES (?, ?, ?, ?, ?, ?, ?, NULL)")
+      .prepare("INSERT INTO players (id, session_hash, nickname, gold, best_gold, probabilities, revision, last_roll, can_shake) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 0)")
       .run(
         id,
         hash(token),
@@ -145,7 +153,12 @@ export class Store {
             409,
           );
         this.db.exec("COMMIT");
-        return JSON.parse(receipt.response);
+        const response = JSON.parse(receipt.response) as ActionResponse;
+        // Receipts from before these fields existed still replay their original
+        // outcome. Do not infer a new Shake entitlement from an old payout.
+        response.state.canShake ??= false;
+        response.state.tiltLevel ??= tiltLevel(response.state.probabilities);
+        return response;
       }
       const state = this.get(id);
       if (state.revision !== request.revision)
@@ -165,9 +178,15 @@ export class Store {
         state.gold = settled.gold.toString();
         state.probabilities = settled.probabilities;
         state.lastRoll = result = settled.result;
+        state.canShake = settled.result.jackpot
+          ? false
+          : state.canShake || settled.result.net !== "0";
         if (settled.gold > BigInt(state.bestGold)) state.bestGold = state.gold;
       } else if (action.kind === "shake") {
+        if (!state.canShake)
+          throw new GameError("Shake unlocks after a roll changes your bankroll. Break-even rolls do not count.");
         state.probabilities = freshProbabilities(this.random);
+        state.canShake = false;
       } else if (action.kind === "restart") {
         if (state.gold !== "0")
           throw new GameError(
@@ -176,6 +195,7 @@ export class Store {
         state.gold = CONFIG.startingGold;
         state.probabilities = freshProbabilities(this.random);
         state.lastRoll = null;
+        state.canShake = false;
       } else {
         const nickname = action.nickname.trim().normalize("NFC");
         if (
@@ -188,9 +208,10 @@ export class Store {
       }
       state.revision = (BigInt(state.revision) + 1n).toString();
       state.jackpotNumber = marker(state.probabilities);
+      state.tiltLevel = tiltLevel(state.probabilities);
       this.db
         .prepare(
-          "UPDATE players SET nickname = ?, gold = ?, best_gold = ?, probabilities = ?, revision = ?, last_roll = ? WHERE id = ?",
+          "UPDATE players SET nickname = ?, gold = ?, best_gold = ?, probabilities = ?, revision = ?, last_roll = ?, can_shake = ? WHERE id = ?",
         )
         .run(
           state.nickname,
@@ -199,6 +220,7 @@ export class Store {
           JSON.stringify(state.probabilities),
           state.revision,
           state.lastRoll ? JSON.stringify(state.lastRoll) : null,
+          state.canShake ? 1 : 0,
           id,
         );
       const response = { state, result };
