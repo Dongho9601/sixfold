@@ -200,9 +200,9 @@ Uncommitted drafts belong to the current tab and clear on refresh, settlement, S
 
 ## 8. Leaderboard and identity
 
-A player’s score is their highest final balance from a completed 100-roll run. New players have no leaderboard entry and display a dash for best score. The saved `hasCompletedRun` flag distinguishes this from a valid completed score of zero. Intermediate gains never update the score. Roll 100 settles and submits atomically; repeated receipts cannot submit twice. Lower completed scores, early bankruptcy, and new runs preserve a previous best.
+A player’s score is their highest final balance from a completed 100-roll run. New players have no leaderboard entry and see a prompt to complete 100 rolls for their first record. The saved `hasCompletedRun` flag distinguishes this from a valid completed score of zero. Intermediate gains never update the score. Roll 100 settles and submits atomically; repeated receipts cannot submit twice. Lower completed scores, early bankruptcy, and new runs preserve a previous best.
 
-The shared leaderboard lists the top 50 players by best Gold descending. Exact decimal strings sort by length, then lexical value; ties use stable ascending player ID. There is no score cap. Players outside the visible top 50 remain stored.
+The shared leaderboard lists the top 10 players by best Gold descending, plus the current player’s best completed record and up to two players immediately above it in the full ranking. The session cookie identifies the current player; the API returns the union, sorted by global rank, without duplicates. A gap marks skipped ranks. Exact decimal strings sort by length, then lexical value; ties use stable ascending player ID. There is no score cap or cutoff for personal context. Players without a completed run see a prompt to finish 100 rolls. Rows normally measure 40 px, with a slightly taller highlighted personal row. Large scores use compact display values while retaining exact values in tooltips and accessible labels.
 
 Nicknames are trimmed and normalized to NFC, must contain 1–24 visible Unicode code points, and reject control/format characters. Names need not be unique. A nickname change uses the same revision and receipt mechanism as other actions.
 
@@ -214,13 +214,14 @@ Wide screens show three left-side cards: Bankroll, Rolls remaining, and On the t
 
 Draft wagers appear as tossed chip piles, with up to five visible chips per target and the top chip displaying the total. Grid tracks remain fixed as bets change. A six-faced CSS die tumbles for Roll; Shake slides the old die out and a fresh one in. Ordinary roll timing is 1,100 ms and die replacement is 800 ms, with additional result presentation. These timings do not alter committed rules or add a cooldown after completion.
 
-Paying targets glow and show returns. Net-positive results receive a gain banner, coin flights, particles, and fanfares. Break-even and net-loss returns retain accurate net labels without a victory banner. Jackpot uses a larger celebration followed by the die replacement. A live region announces results and action errors.
+Hovered targets use brighter fills and a gold inset outline; covered numbers use a stronger outline and light wash. The “Play Gold only” labels are removed. Paying targets glow and show returns. Net-positive results receive a gain banner, coin flights, particles, and fanfares. Break-even and net-loss returns retain accurate net labels without a victory banner. Jackpot uses a larger celebration followed by the die replacement. A live region announces results and action errors.
 
 ### 9.2 Keyboard
 
-- Tab navigates controls; Enter and Space activate buttons.
-- **R** rolls a valid draft and **S** uses an available Shake, including when a betting target or another game button has focus.
-- Uppercase R/S work. Ctrl, Command, and Alt combinations, held-key repeats, IME composition, and already-consumed events do not trigger actions.
+- Tab navigates controls; Enter activates buttons. During play, Space is reserved for Shake and does not also activate a focused target or scroll the page.
+- **R** rolls a valid draft and **Space** uses an available Shake, including when a betting target or another game button has focus.
+- **1 / 2 / 3** recall the three most recent distinct successfully placed amounts, newest first, without placing a wager. Empty history slots do nothing. **W / E** decrease / increase the selected amount by 5 G, with a floor of 1 G. **Q / Escape** clear all unrolled wagers without changing Gold, roll count, or recent history.
+- Uppercase letter shortcuts work. Ctrl, Command, and Alt combinations, held-key repeats, IME composition, and already-consumed events do not trigger actions.
 - Shortcuts are inactive while an input, textarea, select, or editable text region is being edited, and while any dialog is open.
 - Disabled actions and pending settlements cannot be activated through shortcuts.
 - ↑ / ↓ in the amount control adjust by 5 G. Escape closes the guide, Settings, leaderboard, and restart confirmation; the results dialog requires confirmation. Delete / Backspace removes the focused target’s wager; text fields and open dialogs keep their normal keyboard behavior.
@@ -229,7 +230,7 @@ Paying targets glow and show returns. Net-positive results receive a gain banner
 
 Settings contains the nickname form, **Sound effects**, **Reduce motion**, and **Show probabilities (developer)** controls, plus Restart run. How to Play is available from the separate sidebar control and Tilt; Settings has no guide link. Rule descriptions and explanations of these preferences live in **How to Play**.
 
-The guide includes wager editing, payouts and overlap, random odds, low/high Tilt, probability transfer and an expandable numerical example, Shake eligibility, Jackpot exclusivity, persistence, the 100-roll limit, final-score submission, new runs, keyboard controls, and preference descriptions. It uses a white reading surface, dark 18 px serif body text, simple headings, and a sticky close control. The Tilt control opens it at the appropriate section; closing restores focus to its trigger.
+The guide leads with two playing steps, payout multipliers, Tilt, Shake, Jackpot, and a keyboard reference. An expandable section covers wager editing, probability transfers and a numerical example, persistence, final-score submission, new runs, and preference descriptions. English, Korean, Japanese, Simplified Chinese, Spanish, French, and German versions share the same structure. A native language selector starts with the first supported browser language (falling back to English) and remembers an explicit choice across reloads; the dialog language and accessible controls update with it. It uses a white reading surface, dark 18 px serif body text, simple headings, and a sticky close control. The Tilt control opens it at the appropriate section; closing restores focus to its trigger.
 
 The guide opens automatically for a player with no previous roll who has not dismissed it. Dismissal is saved per player in the browser and survives refreshes and restarts. How to Play can reopen it at any time.
 

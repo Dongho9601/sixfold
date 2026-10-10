@@ -335,6 +335,55 @@ test("large integer balances persist, settle, transport as strings and rank nume
     rmSync(dir, { recursive: true, force: true });
   }
 });
+test("leaderboard returns top 10 plus the player's best and two above, without duplicate ranks", async () => {
+  const store = new Store(":memory:");
+  const server = createGameServer(store);
+  try {
+    const players = Array.from({ length: 65 }, (_, index) => {
+      const player = store.create();
+      // Include scores beyond Number and SQLite integer precision.
+      fixture(store, player.state.id, "100", (10n ** 30n - BigInt(index)).toString());
+      return player;
+    });
+    const top = Array.from({ length: 10 }, (_, i) => i + 1);
+    const ranks = (id?: string) => store.leaderboard(id).map(row => row.rank);
+    assert.deepEqual(ranks(), top);
+    assert.deepEqual(ranks(players[0].state.id), top);
+    assert.deepEqual(ranks(players[9].state.id), top);
+    assert.deepEqual(ranks(players[10].state.id), [...top, 11]);
+    assert.deepEqual(ranks(players[11].state.id), [...top, 11, 12]);
+    assert.deepEqual(ranks(players[12].state.id), [...top, 11, 12, 13]);
+    assert.deepEqual(ranks(players[60].state.id), [...top, 59, 60, 61]);
+    const unranked = store.create();
+    assert.deepEqual(ranks(unranked.state.id), top);
+    assert.deepEqual(ranks("unknown"), top);
+    fixture(store, players[64].state.id, "100", "0");
+    store.db.prepare("UPDATE players SET has_completed_run = 1 WHERE id = ?").run(players[64].state.id);
+    assert.equal(store.leaderboard(players[64].state.id).at(-1)!.bestGold, "0");
+    // Ties retain deterministic player-ID ordering, including the two neighbors.
+    const tied = players.slice(58, 62).map(player => player.state.id).sort();
+    for (const id of tied) fixture(store, id, "100", (10n ** 30n - 58n).toString());
+    const nearby = store.leaderboard(tied[3]).slice(-3);
+    assert.deepEqual(nearby.map(row => row.id), tied.slice(1));
+    assert.deepEqual(nearby.map(row => row.rank), [60, 61, 62]);
+
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const address = server.address() as { port: number };
+    const url = `http://127.0.0.1:${address.port}/api/leaderboard`;
+    const anonymous = await (await fetch(url)).json();
+    assert.deepEqual(anonymous.map((row: { rank: number }) => row.rank), top);
+    const personal = await (await fetch(url, {
+      headers: { Cookie: `one_of_six=${players[63].token}` },
+    })).json();
+    assert.deepEqual(personal.map((row: { rank: number }) => row.rank), [...top, 62, 63, 64]);
+    assert.equal(personal.at(-1).id, players[63].state.id);
+  } finally {
+    if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()));
+    store.close();
+  }
+});
+
 test("server validates identity, payload, names and never accepts submitted scores", () => {
   const store = new Store(":memory:");
   try {

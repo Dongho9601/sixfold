@@ -57,7 +57,7 @@ export function createGameServer(
         }
         json(res, 200, state);
       } else if (req.method === "GET" && path === "/api/leaderboard") {
-        json(res, 200, store.leaderboard());
+        json(res, 200, store.leaderboard(state?.id));
       } else if (req.method === "POST" && path === "/api/action") {
         if (!state)
           throw new GameError(

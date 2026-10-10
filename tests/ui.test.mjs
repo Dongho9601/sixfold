@@ -82,16 +82,19 @@ test("keyboard placement with Enter then R works from the focused target", async
   assert.equal((await saved(page)).lastRoll.totalReturn, "20");
 });
 
-test("S respects the lock and works from a target after a bankroll change", async t => {
+test("Space respects the lock and shakes from a focused target without placing another bet", async t => {
   const page = await game(t);
   await page.locator('[data-target="row1"]').click();
-  await page.keyboard.press("s");
+  await page.keyboard.press("Space");
   assert.equal((await saved(page)).revision, "0");
+  assert.equal(await page.locator("#draft-total").textContent(), "10 G");
   await page.keyboard.press("r");
   await settled(page, "110");
   assert.equal((await saved(page)).canShake, true);
   await page.locator('[data-target="n1"]').click();
-  await page.keyboard.press("s");
+  await page.keyboard.press("s"); // The old shortcut is no longer active.
+  assert.equal((await saved(page)).revision, "1");
+  await page.keyboard.press("Space");
   await page.waitForFunction(() => document.querySelector("#draft-total").textContent === "0 G" &&
     !document.querySelector('[data-target="n1"]').disabled);
   const state = await saved(page);
@@ -107,14 +110,14 @@ test("shortcuts ignore text fields, dialogs, modifiers, repeats, composition and
   await page.locator('[data-target="n6"]').click();
   await page.locator("#bet-amount").focus();
   await page.keyboard.press("r");
-  await page.keyboard.press("s");
+  await page.keyboard.press("Space");
   assert.equal((await saved(page)).revision, "0");
   await page.locator("#bet-amount").fill("10");
   for (const opener of ["settings-open", "guide-open"]) {
     await page.locator(`#${opener}`).click();
     await page.locator("dialog[open] .icon-button").focus();
     await page.keyboard.press("r");
-    await page.keyboard.press("s");
+    await page.locator("dialog[open] .icon-button").dispatchEvent("keydown", { key: " ", bubbles: true });
     assert.equal((await saved(page)).revision, "0");
     await page.keyboard.press("Escape");
   }
@@ -154,7 +157,12 @@ test("busy Roll cannot be resubmitted by a second keypress", async t => {
   await page.locator('[data-target="n6"]').click();
   await page.keyboard.press("r");
   await page.keyboard.press("r");
-  await page.keyboard.press("s");
+  await page.keyboard.press("Space");
+  await page.keyboard.press("q");
+  await page.keyboard.press("e");
+  await page.keyboard.press("1");
+  assert.equal(await page.locator("#draft-total").textContent(), "10 G");
+  assert.equal(await page.locator("#bet-amount").inputValue(), "10");
   assert.equal(await page.locator("#roll").isDisabled(), true);
   await page.locator("#settings-open").click();
   assert.equal(await page.locator("#settings-restart").isDisabled(), true);
@@ -183,13 +191,16 @@ test("Settings stays compact and the complete guide works on desktop and mobile"
     await page.locator("#guide-open").click();
     assert.equal(await page.locator("#settings-dialog").isVisible(), false);
     const guide = await page.locator("#welcome-dialog").innerText();
-    for (const text of ["Right-click", "230 G gain", "100 rolls", "single bet on the least likely number", "on every board", "Earlier peaks do not count", "Keyboard controls", "Sound effects", "Reduce motion", "Show probabilities", "1 to 6", "levels 5–6", "4%–8%", "5%–10%"])
+    for (const text of ["100 rolls", "least likely number", "×24", "Keyboard controls", "Tilt 1–2", "5–6", "Space", "W / E", "Q / Esc"])
       assert.ok(guide.includes(text), `Guide missing ${text}`);
     assert.ok(!guide.includes("1 in 24"));
     assert.ok(!guide.includes("Full rules in Settings"));
-    if (!await page.locator(".odds-example").evaluate(element => element.open))
-      await page.locator(".odds-example summary").click();
-    assert.match(await page.locator(".odds-example").innerText(), /37\.61%/);
+    if (!await page.locator(".guide-details").evaluate(element => element.open))
+      await page.locator(".guide-details summary").click();
+    const details = await page.locator(".guide-details").innerText();
+    for (const text of ["Right-click", "Earlier peaks do not count", "Sound effects", "Reduce motion", "Show probabilities", "4%–8%", "5%–10%", "37.61%"])
+      assert.ok(details.includes(text), `Details missing ${text}`);
+    await page.screenshot({ path: `test-results/guide-details-${width}.png` });
     assert.equal(await page.evaluate(() => {
       const guide = document.querySelector("#welcome-dialog");
       return guide.scrollWidth > guide.clientWidth || document.documentElement.scrollWidth > innerWidth;
@@ -580,4 +591,149 @@ test("results compare higher, tied and lower records and recover a lost named-re
   assert.equal(after.bestGold, "350");
   assert.equal(after.rollsUsed, 0);
   assert.equal(await page.locator("#run-dialog").isVisible(), false);
+});
+
+test("amount shortcuts recall recent bets, adjust exact values and clear only the draft", async t => {
+  const page = await game(t);
+  const target = page.locator('[data-target="n1"]');
+  await target.focus();
+  for (const key of ["1", "2", "3"]) await page.keyboard.press(key);
+  assert.equal(await page.locator("#bet-amount").inputValue(), "10");
+  for (const amount of ["5", "15", "25"]) {
+    await page.locator("#bet-amount").fill(amount);
+    await target.click();
+    await page.keyboard.press("q");
+  }
+  const before = await saved(page);
+  for (const [key, value] of [["1", "25"], ["2", "15"], ["3", "5"]]) {
+    await page.keyboard.press(key);
+    assert.equal(await page.locator("#bet-amount").inputValue(), value);
+    assert.equal(await page.locator("#draft-total").textContent(), "0 G");
+  }
+  await page.keyboard.press("w");
+  await page.keyboard.press("w");
+  assert.equal(await page.locator("#bet-amount").inputValue(), "1");
+  await page.keyboard.press("e");
+  assert.equal(await page.locator("#bet-amount").inputValue(), "6");
+  for (const key of ["q", "Escape", "Shift+Q"]) {
+    await target.click();
+    await page.locator('[data-target="red"]').click();
+    assert.equal(await page.locator("#draft-total").textContent(), "12 G");
+    await page.keyboard.press(key);
+    assert.equal(await page.locator("#draft-total").textContent(), "0 G");
+    assert.equal(await page.locator(".chip-pile").count(), 0);
+  }
+  await page.locator("#bet-amount").fill("9007199254740993");
+  await target.focus();
+  await page.keyboard.press("Shift+E");
+  assert.equal(await page.locator("#bet-amount").inputValue(), "9007199254740998");
+  await page.keyboard.press("Shift+W");
+  assert.equal(await page.locator("#bet-amount").inputValue(), "9007199254740993");
+  assert.deepEqual(await saved(page), before);
+});
+
+test("new shortcuts honor typing, dialog, modifier, repeat and composition guards", async t => {
+  const page = await game(t);
+  await page.locator('[data-target="n1"]').click();
+  const before = await saved(page);
+  const keys = ["r", " ", "1", "2", "3", "w", "e", "q", "Escape"];
+  for (const flag of ["ctrlKey", "metaKey", "altKey", "repeat", "isComposing"]) {
+    for (const key of keys)
+      await page.locator('[data-target="n1"]').dispatchEvent("keydown", { key, [flag]: true, bubbles: true });
+  }
+  await page.locator("#bet-amount").focus();
+  for (const key of keys)
+    await page.locator("#bet-amount").dispatchEvent("keydown", { key, bubbles: true });
+  assert.equal(await page.locator("#bet-amount").inputValue(), "10");
+  await page.locator("#settings-open").click();
+  for (const key of keys)
+    await page.locator("#settings-title").dispatchEvent("keydown", { key, bubbles: true });
+  // Escape closes the dialog through its normal behavior, preserving the board.
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator("#draft-total").textContent(), "10 G");
+  assert.deepEqual(await saved(page), before);
+  await page.locator('[data-target="n1"]').focus();
+  await page.keyboard.down("Space");
+  await page.keyboard.down("Space");
+  await page.keyboard.up("Space");
+  assert.equal(await page.locator("#draft-total").textContent(), "10 G");
+});
+
+test("all seven guide languages fit desktop and mobile and remember the selection", async t => {
+  const page = await game(t);
+  const titles = { en: "How to play", ko: "게임 방법", ja: "遊び方", zh: "玩法说明", es: "Cómo jugar", fr: "Comment jouer", de: "Spielanleitung" };
+  await page.locator("#guide-open").click();
+  assert.equal(await page.locator("#guide-language option").count(), 7);
+  for (const width of [1280, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const [code, title] of Object.entries(titles)) {
+      await page.locator("#guide-language").selectOption(code);
+      assert.equal(await page.locator("#welcome-title").innerText(), title);
+      assert.equal(await page.locator("#welcome-dialog").getAttribute("lang"), code);
+      assert.equal(await page.locator(".guide-shortcuts > div").count(), 6);
+      assert.equal(await page.locator(".guide-details").evaluate(el => el.open), false);
+      assert.equal(await page.evaluate(() => {
+        const dialog = document.querySelector("#welcome-dialog");
+        return dialog.scrollWidth > dialog.clientWidth || document.documentElement.scrollWidth > innerWidth;
+      }), false, `${code} overflows at ${width}px`);
+      await page.screenshot({ path: `test-results/guide-${code}-${width}.png` });
+      await page.locator(".guide-details summary").click();
+      assert.equal(await page.locator(".guide-details h3").count(), 5);
+      assert.equal(await page.locator("#welcome-dialog").evaluate(el => el.scrollWidth > el.clientWidth), false);
+    }
+  }
+  await page.locator("#guide-language").selectOption("ko");
+  await page.keyboard.press("Escape");
+  await page.reload();
+  await page.locator("#tilt-info").click();
+  assert.equal(await page.locator("#guide-language").inputValue(), "ko");
+  assert.equal(await page.locator("#welcome-title").innerText(), titles.ko);
+  assert.equal(await page.evaluate(() => document.activeElement.className), "tilt-guide");
+  await page.locator('[data-close="welcome-dialog"]').click();
+  assert.equal(await page.evaluate(() => document.activeElement.id), "tilt-info");
+  // A new browser starts in its own language before a saved selection exists.
+  const context = await browser.newContext({ locale: "ja-JP" });
+  t.after(() => context.close());
+  const localized = await context.newPage();
+  await localized.goto(origin);
+  await localized.waitForSelector("#welcome-dialog[open]");
+  assert.equal(await localized.locator("#guide-language").inputValue(), "ja");
+  assert.equal(await localized.locator("#welcome-title").innerText(), titles.ja);
+});
+
+test("compact leaderboard shows top 10 and distant personal context on desktop and mobile", async t => {
+  const page = await game(t);
+  const id = (await saved(page)).id;
+  const opponents = Array.from({ length: 65 }, (_, index) => {
+    const other = store.create().state.id;
+    store.db.prepare("UPDATE players SET best_gold = ?, has_completed_run = 1, nickname = ? WHERE id = ?")
+      .run((10n ** 30n - BigInt(index)).toString(), `Leaderboard player ${index + 1}`, other);
+    return other;
+  });
+  t.after(() => { for (const id of opponents) store.db.prepare("DELETE FROM players WHERE id = ?").run(id); });
+  store.db.prepare("UPDATE players SET best_gold = '5000', has_completed_run = 1 WHERE id = ?").run(id);
+  await page.reload();
+  await page.waitForSelector("#leaders .you");
+  for (const width of [1280, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    if (width < 1101) await page.locator("#leaderboard-open").click();
+    const ranks = await page.locator("#leaders li[value]").evaluateAll(rows => rows.map(row => row.value));
+    assert.deepEqual(ranks, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 64, 65, 66]);
+    assert.equal(await page.locator("#leaders .you").count(), 1);
+    assert.equal(await page.locator("#leaders .you > strong").getAttribute("aria-label"), "5,000 Gold");
+    assert.equal(await page.locator("#leaders .leader-gap").count(), 1);
+    assert.equal(await page.locator("#leaderboard-unranked").isVisible(), false);
+    const heights = await page.locator("#leaders li[value]").evaluateAll(rows => rows.map(row => row.getBoundingClientRect().height));
+    assert.ok(heights.every(height => height <= 48), `Rows too tall: ${heights}`);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    assert.equal(await page.locator(".tower-floors").evaluate(el => el.scrollWidth > el.clientWidth), false);
+    await page.screenshot({ path: `test-results/leaderboard-context-${width}.png`, fullPage: true });
+    if (width < 1101) await page.keyboard.press("Escape");
+  }
+  store.db.prepare("UPDATE players SET best_gold = ? WHERE id = ?").run((10n ** 31n).toString(), id);
+  await page.reload();
+  await page.locator("#leaderboard-open").click();
+  await page.waitForFunction(() => document.querySelector("#leaders .you")?.value === 1);
+  assert.equal(await page.locator("#leaders li[value]").count(), 10);
+  assert.equal(await page.locator("#leaders .leader-gap").count(), 0);
 });

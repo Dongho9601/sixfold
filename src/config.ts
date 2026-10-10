@@ -22,7 +22,7 @@ export const CONFIG = {
   multipliers: { number: 6, row: 2, column: 3, color: 2, jackpot: 24 },
   animationMs: 1100,
   replacementMs: 800,
-  leaderboardLimit: 50,
+  leaderboardLimit: 10,
   syncIntervalMs: 5000,
   port: 5173,
 } as const;

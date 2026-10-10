@@ -147,17 +147,24 @@ export class Store {
       );
     return { token, state: this.get(id) };
   }
-  leaderboard(): Leader[] {
+  leaderboard(playerId?: string): Leader[] {
     const rows = this.db
       .prepare(
-        "SELECT id, nickname, best_gold FROM players WHERE has_completed_run = 1 ORDER BY length(best_gold) DESC, best_gold DESC, id ASC LIMIT ?",
+        `WITH ranked AS (
+          SELECT id, nickname, best_gold,
+            ROW_NUMBER() OVER (ORDER BY length(best_gold) DESC, best_gold DESC, id ASC) AS rank
+          FROM players WHERE has_completed_run = 1
+        ), own AS (SELECT rank FROM ranked WHERE id = ?)
+        SELECT * FROM ranked
+        WHERE rank <= ? OR rank BETWEEN (SELECT rank - 2 FROM own) AND (SELECT rank FROM own)
+        ORDER BY rank`,
       )
-      .all(CONFIG.leaderboardLimit) as unknown as Row[];
-    return rows.map((row, i) => ({
+      .all(playerId ?? null, CONFIG.leaderboardLimit) as unknown as (Pick<Row, "id" | "nickname" | "best_gold"> & { rank: number })[];
+    return rows.map((row) => ({
       id: row.id,
       nickname: row.nickname,
       bestGold: row.best_gold,
-      rank: i + 1,
+      rank: row.rank,
     }));
   }
   act(id: string, request: ActionRequest): ActionResponse {

@@ -1,5 +1,6 @@
 import "./style.css";
 import { BOARD, CONFIG, TARGET_BY_ID } from "./config";
+import { guideBody, guideLanguages, guides, resolveGuideLanguage, type GuideLanguage } from "./guide";
 import type {
   Action,
   ActionRequest,
@@ -79,28 +80,12 @@ try {
   sessionStorage.removeItem("sixfold-100-rolls-pending");
 }
 
-const transferRange = (level: number) => {
-  const { min, max } = CONFIG.transferRates[level - 1];
-  return `${percent(min)}–${percent(max)}`;
-};
-const exampleRate = (CONFIG.transferRates[1].min + CONFIG.transferRates[1].max) / 2;
-const exampleTransfer = exampleRate * (0.4 - CONFIG.probabilityFloor);
-const oddsGuide = `
-  <h3>Every board is different</h3>
-  <p>A fresh board draws a new random set of hidden odds. Every number keeps at least a <b>2% chance</b>, but some can be much more likely than others. Red and Black are not necessarily a 50–50 bet.</p>
-  <h3 class="tilt-guide" tabindex="-1">Read the Tilt</h3>
-  <p><b>Tilt runs from 1 to 6.</b> It describes how uneven the whole board is. Tap the Tilt number on the table to return to this explanation.</p>
-  <p><b>Low Tilt · levels 1–2.</b> The chances are more evenly spread across the six numbers, though they are not necessarily equal. A few repeats can still happen by chance. Payouts change these boards gently, giving you more time to observe them.</p>
-  <p><b>High Tilt · levels 5–6.</b> More of the chance is concentrated on fewer numbers, so some faces are much more likely than others. Tilt does not reveal which ones. Payouts change these boards a little faster, but the gentler pace gives you time to try a pattern.</p>
-  <p><b>Levels 3–4 are in between.</b> Combine the level with the results you see, and keep observing after payouts. High Tilt does not guarantee a better bet, and low Tilt does not make every bet fair.</p>
-  <h3>Payouts change the odds</h3>
-  <p>After a payout other than a Jackpot, the rolled number gives up a random share of its probability above the <b>2% minimum</b>. The transfer rate rises with the Tilt shown before the roll: <b>${transferRange(1)} at level 1, up to ${transferRange(6)} at level 6</b>. The other five numbers receive random shares of that amount.</p>
-  <p>One transfer happens per paying roll, regardless of wager size or how many bets pay. Even on a high-Tilt board, a rare number has little probability to give away. Tilt can rise, fall, or stay at the same level; faster changes do not guarantee that it falls.</p>
-  <details class="odds-example"><summary>See one possible change</summary><p>On a Tilt 2 board, the transfer rate is ${transferRange(2)}. A number at 40% has 38 percentage points above the minimum. If this roll transfers ${percent(exampleRate)} of that surplus, the number falls to ${percent(0.4 - exampleTransfer)}. The other five share the ${(exampleTransfer * 100).toFixed(2)} percentage points randomly. The next payout draws a new rate and new shares. This happens even when your total return leaves the roll at break-even or a net loss. If no wager pays, the odds stay the same. A Jackpot instead brings in a fresh die and a new board.</p></details>
-  <h3>Earn your next Shake</h3>
-  <p><b>Shake</b> costs no Gold, but a roll must first change your settled bankroll: any gain or loss counts, even 1 G. A break-even roll does not count. Betting 10 G on all six numbers returns 60 G and does not unlock Shake. Editing bets does not count either.</p>
-  <p>Once unlocked, Shake stays available until you use it. It draws fresh odds, clears your bets, and locks again. A new game or a Jackpot’s automatic Shake also starts locked. Start with small bets and use the Tilt and results to decide whether to keep exploring the board.</p>
-`;
+const guideLanguageKey = "sixfold-guide-language";
+let guideLanguage = resolveGuideLanguage(navigator.languages);
+try {
+  const saved = localStorage.getItem(guideLanguageKey);
+  if (guideLanguages.some(([code]) => code === saved)) guideLanguage = saved as GuideLanguage;
+} catch { /* Use the browser language if preferences are unavailable. */ }
 
 app.innerHTML = `
   <div class="workspace">
@@ -112,7 +97,7 @@ app.innerHTML = `
         </section>
         <section class="stat-card remaining-rolls" aria-labelledby="rolls-label"><span id="rolls-label" class="eyebrow">Rolls remaining</span><strong class="stat-value"><span id="rolls-remaining" class="stat-number" aria-live="polite">${CONFIG.rollsPerRun}</span></strong></section>
         <section class="stat-card table-wager" aria-label="On the table"><span class="eyebrow">On the table</span><strong id="draft-total" class="stat-value"><span id="draft-gold" class="stat-number">0</span> <span class="gold-unit">G</span></strong></section>
-        <div class="sidebar-bottom"><div class="header-actions"><button id="leaderboard-open" class="utility-button" aria-label="Open leaderboard" aria-expanded="false">${icon("trophy")}<span>Leaderboard</span></button><button id="guide-open" class="utility-button" aria-label="How to play">${icon("help")}<span>How to play</span></button><button id="settings-open" class="utility-button" aria-label="Settings">${icon("settings")}<span>Settings</span></button></div><span class="play-note">Play Gold only</span></div>
+        <div class="sidebar-bottom"><div class="header-actions"><button id="leaderboard-open" class="utility-button" aria-label="Open leaderboard" aria-expanded="false">${icon("trophy")}<span>Leaderboard</span></button><button id="guide-open" class="utility-button" aria-label="How to play">${icon("help")}<span>How to play</span></button><button id="settings-open" class="utility-button" aria-label="Settings">${icon("settings")}<span>Settings</span></button></div></div>
       </aside>
       <div class="playfield">
         <section class="table-area" aria-label="Betting table">
@@ -124,12 +109,12 @@ app.innerHTML = `
             </section>
             <div id="board" class="board"></div>
             <div class="color-bets" id="color-bets"></div>
-            <div class="table-footer"><span>NUMBER ×6 <i>·</i> COLUMN ×3 <i>·</i> ROW & COLOR ×2</span><span>PLAY GOLD ONLY</span></div>
+            <div class="table-footer"><span>NUMBER ×6 <i>·</i> COLUMN ×3 <i>·</i> ROW & COLOR ×2</span></div>
           </div>
         </section>
         <section class="betting-controls" aria-label="Wager controls">
-          <div class="chip-controls"><label class="control-label" for="bet-amount">Bet amount</label><div class="amount-row"><div class="amount-selector"><button id="decrease" aria-label="Decrease bet by 5 Gold">−</button><input id="bet-amount" type="text" role="spinbutton" inputmode="numeric" pattern="[0-9]*" value="${CONFIG.selectedWager}" aria-valuemin="1" aria-valuenow="${CONFIG.selectedWager}" aria-label="Bet amount in Gold" autocomplete="off" /><span>G</span><button id="increase" aria-label="Increase bet by 5 Gold">+</button></div><div id="recent-amounts" class="recent-amounts" role="group" aria-label="Recently used bet amounts"></div></div></div>
-          <div class="actions"><button id="roll" class="roll-button" aria-keyshortcuts="r">${icon("dice")}<span>Roll dice</span><kbd>R</kbd></button><button id="shake" class="shake-button" aria-keyshortcuts="s" aria-describedby="shake-hint" disabled>${icon("shake")}<span>Shake</span><kbd>S</kbd></button></div>
+          <div class="chip-controls"><label class="control-label" for="bet-amount">Bet amount</label><div class="amount-row"><div class="amount-selector"><button id="decrease" aria-label="Decrease bet by 5 Gold" aria-keyshortcuts="w" title="Decrease bet by 5 Gold (W)">−</button><input id="bet-amount" type="text" role="spinbutton" inputmode="numeric" pattern="[0-9]*" value="${CONFIG.selectedWager}" aria-valuemin="1" aria-valuenow="${CONFIG.selectedWager}" aria-label="Bet amount in Gold" autocomplete="off" /><span>G</span><button id="increase" aria-label="Increase bet by 5 Gold" aria-keyshortcuts="e" title="Increase bet by 5 Gold (E)">+</button></div><div id="recent-amounts" class="recent-amounts" role="group" aria-label="Recently used bet amounts"></div></div></div>
+          <div class="actions"><button id="roll" class="roll-button" aria-keyshortcuts="r">${icon("dice")}<span>Roll dice</span><kbd>R</kbd></button><button id="shake" class="shake-button" aria-keyshortcuts="Space" aria-describedby="shake-hint" disabled>${icon("shake")}<span>Shake</span><kbd>Space</kbd></button></div>
           <p id="shake-hint" class="shake-hint">Shake unlocks after a roll changes your bankroll.</p>
           <div class="messages"><p id="run-status" class="notice" role="status" hidden></p><p id="roll-announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p><p id="notice" class="notice" role="status" aria-live="polite"></p><button id="retry" class="text-button" hidden>Retry saved action</button></div>
         </section>
@@ -138,7 +123,7 @@ app.innerHTML = `
     </main>
   </div>
   <div id="effects" class="effects" aria-hidden="true"></div>
-  <dialog id="leaderboard-dialog" class="leaderboard-dialog" aria-labelledby="leaderboard-title"><div id="leaderboard-content"><div class="tower-heading"><h2 id="leaderboard-title">Leaderboard</h2><button class="icon-button" data-close="leaderboard-dialog" aria-label="Close leaderboard">${icon("close")}</button></div><div class="tower-floors"><ol id="leaders" aria-label="Scores after 100 rolls"></ol></div></div></dialog>
+  <dialog id="leaderboard-dialog" class="leaderboard-dialog" aria-labelledby="leaderboard-title"><div id="leaderboard-content"><div class="tower-heading"><h2 id="leaderboard-title">Leaderboard</h2><button class="icon-button" data-close="leaderboard-dialog" aria-label="Close leaderboard">${icon("close")}</button></div><div class="tower-floors"><ol id="leaders" aria-label="Top 10 and your best score with the two players above you"></ol><div id="leaderboard-unranked" class="leaderboard-unranked" hidden>Complete 100 rolls to set your first record.</div></div></div></dialog>
   <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title"><div class="dialog-top"><div><h2 id="settings-title">Settings</h2></div><button class="icon-button" data-close="settings-dialog" aria-label="Close settings">${icon("close")}</button></div>
     <form id="nickname-form"><label for="nickname">Your leaderboard name</label><div class="nickname-row"><input id="nickname" maxlength="48" required autocomplete="nickname"/><button type="submit" id="save-nickname">Save</button></div><p id="nickname-status" role="status"></p></form>
     <label class="sound-control"><span>Sound effects</span><input id="sound" type="checkbox" role="switch" ${sound ? "checked" : ""}/></label>
@@ -166,20 +151,10 @@ app.innerHTML = `
     </form>
   </dialog>
   <dialog id="welcome-dialog" class="welcome-dialog" aria-labelledby="welcome-title" aria-describedby="welcome-intro">
-    <div class="dialog-top"><h2 id="welcome-title">How to play</h2><button class="icon-button" data-close="welcome-dialog" aria-label="Close gameplay guide">${icon("close")}</button></div>
-    <p id="welcome-intro" class="dialog-intro">Each run starts with 100 G and lasts ${CONFIG.rollsPerRun} rolls. Your Gold after the final roll is your score.</p>
-    <ol class="welcome-steps">
-      <li><h3>Place your bets</h3><p>Type a whole amount, then tap a number, row, column, or color to add it. Tap again to add more. You can combine bets up to your available Gold. The + / − buttons and ↑ / ↓ keys in the amount control change your selected amount by 5 G, down to 1 G. The three chips beside the amount recall your most recently placed amounts, newest first. They remember distinct amounts across runs and refreshes.</p><p>Right-click a target or its chips to take back that target’s entire wager. Clicking or tapping a chip adds another bet, just like the rest of its target. With a target focused, press <kbd>Delete</kbd> or <kbd>Backspace</kbd> to remove its wager. Add a smaller amount to reduce a bet. Editing a draft never spends Gold.</p></li>
-      <li><h3>Roll & collect</h3><p><b>Roll</b> draws one outcome using the hidden odds. A number pays ×6, a column ×3, and a row or color ×2. All matching bets pay, including overlapping groups. Returns include your winning stake: a 10 G number bet returns 60 G, a 50 G gain if that was your only bet.</p></li>
-    </ol>
-    <div class="guide-odds">
-      ${oddsGuide}
-      <h3>The hidden Jackpot</h3><p>A winning <b>single bet on the least likely number</b> pays <b>×24</b> on every board, regardless of that number’s chance. A Jackpot hit automatically Shakes to a fresh board without using an extra roll. A 10 G Jackpot returns 240 G, a 230 G gain. The target is hidden; the lowest number breaks ties. Adding more Gold to that same number still counts as a single bet. Any other positive bet removes Jackpot eligibility, even if it covers that number too.</p>
-      <h3>Make your 100 rolls count</h3><p>Every settled Roll counts, including losses and break-even bets. Shake keeps your Gold and does not use or restore rolls. Rolls and Shakes clear your draft. After roll 100, your final Gold posts to the leaderboard if it is your best completed run. Earlier peaks do not count. The results popup shows your score and compares it with your previous personal best. Set your leaderboard name, then choose <b>Confirm &amp; play again</b> to save the name and start a fresh run.</p><p>If you reach zero Gold before roll 100, the run ends without posting a score. The popup lets you start again with 100 G and 100 rolls. Your best completed score stays. There is no limit on new runs.</p><p>Gold, odds, and your roll count save automatically. A refresh resumes your board but clears uncommitted bets. Your browser identifies your player; keep its game cookie to return to the same record.</p>
-      <h3>Keyboard controls</h3><p>Press <kbd>R</kbd> to roll and <kbd>S</kbd> to Shake, including just after placing a bet. Shortcuts pause while you type in a field or have a dialog open. Holding a key does not repeat an action. Use Tab to move between controls and Enter or Space to activate buttons.</p>
-      <h3>Make yourself comfortable</h3><p>In <b>Settings</b>, choose a leaderboard name of 1–24 visible characters. <b>Sound effects</b> controls dice sounds, coin showers, and fanfares. <b>Reduce motion</b> skips dice movement and celebration effects; your system’s reduced-motion preference is respected too.</p><p><b>Show probabilities</b> is a developer option that reveals the hidden number and group odds. It changes the display only. Sound, motion, and probability visibility are remembered in this browser.</p>
-    </div>
-    <button id="welcome-start" class="roll-button">Let’s play ${icon("chevron")}</button><p class="welcome-footnote">Play Gold only · No real money</p>
+    <div class="dialog-top"><h2 id="welcome-title"></h2><button class="icon-button" data-close="welcome-dialog">${icon("close")}</button></div>
+    <div class="guide-language"><label id="guide-language-label" for="guide-language"></label><select id="guide-language">${guideLanguages.map(([code, name]) => `<option value="${code}" lang="${code}">${name}</option>`).join("")}</select></div>
+    <div id="guide-content"></div>
+    <button id="welcome-start" class="roll-button"></button>
   </dialog>
 `;
 
@@ -581,7 +556,7 @@ function renderRecentAmounts() {
     holder.innerHTML = Array.from({ length: 3 }, (_, index) => {
       const value = recentAmounts[index];
       return value
-        ? `<button type="button" class="recent-chip chip-tone-${index}" data-amount="${value}" title="${formatGold(value)} G" aria-label="Set bet amount to ${formatGold(value)} Gold"><span class="chip-face ${compactGold(value).length > 5 ? "compact-chip" : ""}">${compactGold(value)}</span></button>`
+        ? `<button type="button" class="recent-chip chip-tone-${index}" data-amount="${value}" aria-keyshortcuts="${index + 1}" title="${formatGold(value)} G (${index + 1})" aria-label="Set bet amount to ${formatGold(value)} Gold"><span class="chip-face ${compactGold(value).length > 5 ? "compact-chip" : ""}">${compactGold(value)}</span></button>`
         : '<button type="button" class="recent-chip empty-chip" aria-label="No recent bet amount yet" disabled><span class="chip-face">—</span></button>';
     }).join("");
   }
@@ -818,13 +793,15 @@ async function refreshLeaderboard() {
     if (!response.ok) throw new Error();
     const leaders: Leader[] = await response.json();
     const ownRank = leaders.find(leader => leader.id === state?.id)?.rank;
-    $("leaders").innerHTML = leaders
-      .map(
-        (leader) =>
-          `<li class="${leader.id === state?.id ? "you" : ""}" ${leader.id === state?.id ? 'aria-current="true"' : ""}><span class="rank">${String(leader.rank).padStart(2, "0")}</span><span class="leader-name">${escape(leader.nickname)}</span><strong>${formatGold(leader.bestGold)}<small> G</small></strong></li>`,
-      )
-      .join("");
+    $("leaders").innerHTML = leaders.map((leader, index) => {
+      const own = leader.id === state?.id;
+      const gap = index > 0 && leader.rank > leaders[index - 1].rank + 1
+        ? '<li class="leader-gap" role="presentation" aria-hidden="true">···</li>' : "";
+      const score = formatGold(leader.bestGold);
+      return `${gap}<li value="${leader.rank}" class="${own ? "you" : ""}" ${own ? 'aria-current="true"' : ""}><span class="rank">${String(leader.rank).padStart(2, "0")}</span><span class="leader-name" title="${escape(leader.nickname)}">${escape(leader.nickname)}${own ? '<small class="leader-you">Your best</small>' : ""}</span><strong title="${score} G" aria-label="${score} Gold">${compactGold(leader.bestGold)}<small> G</small></strong></li>`;
+    }).join("");
     if (!leaders.length) $("leaders").innerHTML = '<li class="empty-floor">No scores yet.</li>';
+    $("leaderboard-unranked").hidden = ownRank !== undefined;
     const ownFloor = $("leaders").querySelector<HTMLElement>(".you");
     if (ownFloor && ownRank && previousRank && ownRank < previousRank) {
       void motion(ownFloor, [{transform: "translateY(28px) scale(.94)", filter: "brightness(1.8)"}, {transform: "translateY(0) scale(1)", filter: "brightness(1)"}], {duration: 900, easing: "cubic-bezier(.2,.8,.2,1)"});
@@ -832,7 +809,8 @@ async function refreshLeaderboard() {
     previousRank = ownRank;
   } catch {
     $("leaders").innerHTML =
-      "<li>Leaderboard unavailable. Retrying shortly.</li>";
+      '<li class="empty-floor">Leaderboard unavailable. Retrying shortly.</li>';
+    $("leaderboard-unranked").hidden = true;
   }
 }
 function savePending(value: ActionRequest | null) {
@@ -1008,7 +986,7 @@ $("recent-amounts").addEventListener("click", event => {
   announce("");
 });
 function adjustAmount(step: bigint) {
-  if (busy || pending) return;
+  if (!state || busy || pending || runEnded()) return;
   const value = readAmount();
   if (value === null) return;
   const next = value + step < 1n ? 1n : value + step;
@@ -1107,11 +1085,27 @@ $("show-probabilities").addEventListener("change", () => {
   localStorage.setItem("sixfold-show-probabilities", showProbabilities ? "on" : "off");
   render();
 });
+function renderGuide() {
+  const copy = guides[guideLanguage];
+  $("welcome-dialog").lang = guideLanguage;
+  $("welcome-title").textContent = copy.title;
+  $("welcome-dialog").querySelector("[data-close]")!.setAttribute("aria-label", copy.close);
+  $("guide-language-label").textContent = copy.language;
+  $<HTMLSelectElement>("guide-language").value = guideLanguage;
+  $("guide-content").innerHTML = guideBody(guideLanguage);
+  $("welcome-start").textContent = copy.start;
+}
+renderGuide();
+$("guide-language").addEventListener("change", () => {
+  guideLanguage = $<HTMLSelectElement>("guide-language").value as GuideLanguage;
+  try { localStorage.setItem(guideLanguageKey, guideLanguage); } catch { /* Keep this session's selection. */ }
+  renderGuide();
+  $("welcome-dialog").scrollTop = 0;
+});
 $("welcome-start").addEventListener("click", () => $<HTMLDialogElement>("welcome-dialog").close());
 let guideReturnFocus = $("bet-amount");
 function openGuide(trigger: HTMLElement, showTilt = false) {
   guideReturnFocus = trigger;
-  $("welcome-intro").textContent = `You have ${formatGold(state?.gold || CONFIG.startingGold)} G to play with. Make a call and see where the die lands.`;
   const guide = $<HTMLDialogElement>("welcome-dialog");
   guide.showModal();
   if (showTilt) {
@@ -1131,7 +1125,6 @@ function showFirstGameGuide() {
   const key = `sixfold-guide-seen:${state.id}`;
   if (state.lastRoll) localStorage.setItem(key, "yes");
   if (!state.lastRoll && localStorage.getItem(key) !== "yes") {
-    $("welcome-intro").textContent = `You have ${formatGold(state.gold)} G to play with. Make a call and see where the die lands.`;
     $<HTMLDialogElement>("welcome-dialog").showModal();
   }
 }
@@ -1160,12 +1153,15 @@ document.addEventListener("keydown", (event) => {
     event.ctrlKey ||
     event.metaKey ||
     event.altKey ||
-    event.repeat ||
     document.querySelector("dialog[open]") ||
     (target instanceof HTMLElement &&
       (target.closest("input,textarea,select") || target.isContentEditable))
   )
     return;
+  if (event.repeat) {
+    if (event.key === " ") event.preventDefault();
+    return;
+  }
   if (event.key === "Delete" || event.key === "Backspace") {
     const bet = target instanceof HTMLElement ? target.closest<HTMLElement>("[data-target]") : null;
     if (bet) {
@@ -1174,12 +1170,25 @@ document.addEventListener("keydown", (event) => {
     }
     return;
   }
-  const action = { r: "roll", s: "shake" }[event.key.toLowerCase()];
-  if (!action) return;
-  const button = $<HTMLButtonElement>(action);
-  if (button.disabled) return;
+  const key = event.key.toLowerCase();
+  if (!["r", " ", "1", "2", "3", "w", "e", "q", "escape"].includes(key)) return;
+  // Space must never also click a focused bet, scroll, or repeat a native action.
   event.preventDefault();
-  button.click();
+  if (!state || busy || pending || runEnded()) return;
+  if (key === "q" || key === "escape") {
+    draft = {};
+    chipPoses.clear();
+    announce("");
+    render();
+  } else if (key === "w" || key === "e") {
+    adjustAmount(key === "w" ? -5n : 5n);
+  } else if (["1", "2", "3"].includes(key)) {
+    const value = recentAmounts[Number(key) - 1];
+    if (value) { setAmount(value); announce(""); }
+  } else {
+    const button = $<HTMLButtonElement>(key === "r" ? "roll" : "shake");
+    if (!button.disabled) button.click();
+  }
 });
 
 async function sync() {

@@ -1,5 +1,28 @@
 # Verification report
 
+## Compact rankings, revised shortcuts, and localized guide — October 10, 2026
+
+Removed the “Play Gold only” labels from the sidebar, table, and guide. Leaderboard entries now use 40 px standard rows instead of 64 px, with a slightly taller highlighted personal record. Stronger target fills, gold hover outlines, and clearer group coverage make mouse feedback easier to see.
+
+The leaderboard returns the top 10 plus the current player's best completed record and up to two immediately higher ranks. Global ranks remain correct outside the former top-50 cutoff; overlapping rows appear once, and a gap marks omitted ranks. Anonymous and unranked players receive the top 10. The browser shows a first-record prompt for an unranked player. Large displayed scores are compact; exact values remain in tooltips and accessible labels. The personal record context follows the idea described in the [osu! client interface reference](https://osu.ppy.sh/wiki/en/Client/Interface); the top-10/two-above selection follows this project's requested behavior.
+
+Keyboard controls are R to roll, Space to Shake, 1/2/3 to recall recent amounts, W/E to subtract/add 5 G, and Q/Escape to clear unrolled bets. Clearing changes only the draft. Space suppresses native button activation and page scrolling during play, including when Shake is locked or the key repeats. Text fields, dialogs, composition, modifiers, busy actions, and pending actions retain their guards. Escape inside an ordinary dialog closes it without clearing bets.
+
+How to play now starts with the goal, two playing steps, a payout reference, Tilt, Shake, Jackpot, and a keyboard reference. Longer rules, a probability example, and saving/preferences are in one disclosure. English, Korean, Japanese, Simplified Chinese, Spanish, French, and German share this structure. Browser language sets the initial selection; an explicit choice persists. The white 18 px serif reading style, sticky close control, and Tilt navigation remain. Korean uses serif fallbacks and keeps words together.
+
+Verified:
+
+- `npm test`: **54 passed**, including session-specific leaderboard selection, ranks 1/10/11/12/13/61, duplicate prevention, unranked users, zero records, ties, and scores beyond Number/SQLite integer precision.
+- `npm run build`: TypeScript and production build passed. `git diff --check` passed.
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' npm run test:ui`: **19 passed**. Used the installed Chrome because the Playwright-managed executable is absent. The tests retain the existing gameplay, persistence, motion, touch, results, and restart coverage and add the requested keyboard and ranking behavior.
+- All seven guide versions were exercised at 1280, 390, and 320 px, including expanded details, language persistence, automatic browser-language selection, and no horizontal overflow. The leaderboard fixture checks ranks 1–10 plus 64–66, a single personal row, row heights at most 48 px, and a move into first place without duplicates.
+- After the final typography and personal-row label refinements, the two affected browser tests and the build passed again. A concurrent screenshot run briefly caused a Vite WebSocket port collision; the affected tests passed when run on their own.
+- Visually inspected desktop/mobile rankings, the stronger column-hover highlight, the English desktop guide, the French desktop guide, and the Korean mobile guide. Also generated an expanded print preview and inspected its first page. Browser tests use isolated in-memory databases and emulated mobile widths; physical-device and other-browser coverage is not claimed. No normal game data was changed.
+
+Previews: [Leaderboard, desktop](screenshots/compact-leaderboard-desktop.png) · [Leaderboard, mobile](screenshots/compact-leaderboard-mobile.png) · [Hover feedback](screenshots/stronger-hover-desktop.png) · [English guide](screenshots/concise-guide-desktop.png) · [Korean guide](screenshots/korean-guide-mobile.png).
+
+Earlier sections record previous rules and layouts.
+
 ## Jackpot on every board and consistent stat cards — October 10, 2026
 
 Removed the Jackpot probability gate. A winning sole wager on the pre-roll least-likely number now pays ×24 on every board, including nearly even and exactly even boards. Exact ties still select the lowest numerical face. Extra positive targets remove eligibility; zero entries are ignored. Jackpot still commits a fresh board and locks Shake. The obsolete probability threshold and availability field are removed, and the guide, specification, README, probability model, and offline audit match the new rule.
