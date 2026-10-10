@@ -12,7 +12,6 @@ import type {
 import {
   freshProbabilities,
   GameError,
-  jackpotAvailable,
   marker,
   parseGold,
   settle,
@@ -115,7 +114,6 @@ export class Store {
       canShake: row.can_shake === 1,
       revision: row.revision,
       jackpotNumber: marker(probabilities),
-      jackpotAvailable: jackpotAvailable(probabilities),
       lastRoll: row.last_roll ? JSON.parse(row.last_roll) : null,
     };
   }
@@ -244,7 +242,6 @@ export class Store {
       }
       state.revision = (BigInt(state.revision) + 1n).toString();
       state.jackpotNumber = marker(state.probabilities);
-      state.jackpotAvailable = jackpotAvailable(state.probabilities);
       state.tiltLevel = tiltLevel(state.probabilities);
       this.db
         .prepare(

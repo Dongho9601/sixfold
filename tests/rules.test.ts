@@ -4,7 +4,6 @@ import { BOARD, CONFIG, TARGETS, TARGET_BY_ID } from "../src/config.ts";
 import {
   freshProbabilities,
   marker,
-  jackpotAvailable,
   parseGold,
   sample,
   settle,
@@ -70,7 +69,7 @@ for (const target of TARGETS) {
     for (let outcome = 1; outcome <= 6; outcome++) {
       const result = settle(100n, p, { [target.id]: "10" }, land(outcome));
       const multiplier =
-        target.multiplier;
+        target.id === "n6" ? CONFIG.multipliers.jackpot : target.multiplier;
       assert.equal(
         result.result.totalReturn,
         target.coverage.includes(outcome) ? String(10 * multiplier) : "0",
@@ -160,11 +159,14 @@ test("sole 10 G Jackpot from 100 finishes at 330 G, then a fresh random board", 
   assert.notDeepEqual(r.probabilities, rare);
 });
 test("every additional positive target disables Jackpot, including overlapping groups", () => {
-  for (const target of TARGETS.filter((t) => t.id !== "n6")) {
-    const r = settle(100n, rare, { n6: "10", [target.id]: "1" }, land(6, rare));
-    assert.equal(r.result.jackpot, false);
-    assert.equal(r.result.transferred, true);
-    near(r.probabilities, transfer(rare, 6, steady));
+  for (const board of [rare, p, Array(6).fill(1 / 6)]) {
+    const marked = marker(board);
+    for (const target of TARGETS.filter(t => t.id !== `n${marked}`)) {
+      const r = settle(100n, board, { [`n${marked}`]: "10", [target.id]: "1" }, land(marked, board));
+      assert.equal(r.result.jackpot, false);
+      assert.equal(r.result.transferred, true);
+      near(r.probabilities, transfer(board, marked, steady));
+    }
   }
   assert.equal(
     settle(100n, rare, { n6: "10", n1: "0", black: "0" }, land(6, rare)).result.jackpot,
@@ -180,24 +182,33 @@ test("marker uses internal minimum and lowest numerical label for exact ties", (
   assert.equal(marker(transfer(p, 2, steady)), 6);
 });
 
-test("Jackpot requires an inclusive normalized 1/24 chance and uses pre-roll odds", () => {
-  const boundary = [1, 4, 4, 5, 5, 5];
-  assert.equal(jackpotAvailable(boundary), true);
-  assert.equal(jackpotAvailable([1 + 1e-10, 4, 4, 5, 5, 5]), false);
-  assert.equal(jackpotAvailable([1 - 1e-10, 4, 4, 5, 5, 5]), true);
-  assert.equal(settle(100n, boundary, { n1: "10" }, () => 0).result.jackpot, true);
-  for (const board of [p, Array(6).fill(1 / 6)]) {
+test("a sole least-likely number hit Jackpots on every board, regardless of its chance", () => {
+  for (const board of [rare, p, [0.2, 0.16, 0.16, 0.16, 0.16, 0.16], Array(6).fill(1 / 6), Array(6).fill(2)]) {
     const face = marker(board);
     const result = settle(100n, board, { [`n${face}`]: "10" }, land(face, board));
-    assert.equal(result.result.jackpot, false);
-    assert.equal(result.result.totalReturn, "60");
-    assert.equal(result.result.transferred, true);
+    assert.equal(result.result.jackpot, true);
+    assert.equal(result.result.totalReturn, "240");
+    assert.equal(result.gold, 330n);
+    assert.equal(result.result.transferred, false);
+    validBoard(result.probabilities);
+    const missed = settle(100n, board, { [`n${face}`]: "10" }, land(face % 6 + 1, board));
+    assert.equal(missed.result.jackpot, false);
+    assert.equal(missed.gold, 90n);
+    assert.deepEqual(missed.probabilities, board);
   }
-  const before = [0.4, 0.2, 0.15, 0.1075, 0.1, 0.0425];
-  const ordinary = settle(100n, before, { n6: "1" }, land(6, before));
+  const tied = Array(6).fill(1 / 6);
+  const ordinary = settle(100n, tied, { n2: "10" }, land(2, tied));
   assert.equal(ordinary.result.jackpot, false);
-  assert.equal(jackpotAvailable(ordinary.probabilities), true);
-  const next = settle(ordinary.gold, ordinary.probabilities, { n6: "1" }, land(6, ordinary.probabilities));
+  assert.equal(ordinary.result.totalReturn, "60");
+});
+test("Jackpot uses the least-likely number before the roll, then recomputes it for the next roll", () => {
+  const before = [0.2, 0.2, 0.2, 0.13, 0.135, 0.135];
+  assert.equal(marker(before), 4);
+  const ordinary = settle(100n, before, { n5: "10" }, land(5, before));
+  assert.equal(ordinary.result.jackpot, false);
+  assert.equal(ordinary.result.totalReturn, "60");
+  assert.equal(marker(ordinary.probabilities), 5);
+  const next = settle(ordinary.gold, ordinary.probabilities, { n5: "10" }, land(5, ordinary.probabilities));
   assert.equal(next.result.jackpot, true);
 });
 test("initial odds vary continuously, stay bounded and treat every face symmetrically", () => {

@@ -14,7 +14,7 @@ Sixfold is a 100-roll game of wagering play Gold on a weighted six-sided die. Ea
 
 Each board has hidden, unequal probabilities. Players choose a wager amount, place one or more bets, and Roll. A paying ordinary outcome changes the odds; a complete miss preserves them. The visible **Tilt 1–6** describes how concentrated the probabilities are without identifying a favored number. Players can observe results, adjust their bets, or use an unlocked **Shake** to replace the board.
 
-The intended tension comes from an opportunity that lasts long enough to explore but changes as it pays. Stronger concentration produces faster probability transfers. Neither high Tilt nor a short run of repeated outcomes proves that a particular wager is favorable. A hidden Jackpot offers a larger return for an exclusive wager on the least likely face only while its chance is at most 1/24.
+The intended tension comes from an opportunity that lasts long enough to explore but changes as it pays. Stronger concentration produces faster probability transfers. Neither high Tilt nor a short run of repeated outcomes proves that a particular wager is favorable. A hidden Jackpot offers a larger return for an exclusive wager on the least likely face on every board, regardless of its probability.
 
 This file is the current specification, not the earlier design proposal. Rule constants and coverage are defined in [`src/config.ts`](src/config.ts); settlement is in [`server/rules.ts`](server/rules.ts). The probability model and pacing experiment are explained in [`docs/PROBABILITY_MODEL.md`](docs/PROBABILITY_MODEL.md).
 
@@ -89,7 +89,7 @@ The transition to 100-roll competition resets existing endless-game saves and sc
 
 ### 4.2 Hidden odds and visible Tilt
 
-Number probabilities, group probabilities, and the Jackpot target are hidden in ordinary play. Jackpot availability is also hidden; no availability message appears beneath the table. Settings has a **Show probabilities (developer)** switch, off by default, which reveals number and group percentages. It does not reveal a Jackpot marker or alter the rules. Hidden percentages are also omitted from target accessible names and tooltips.
+Number probabilities, group probabilities, and the Jackpot target are hidden in ordinary play. Jackpot is available on every board; no availability message appears beneath the table. Settings has a **Show probabilities (developer)** switch, off by default, which reveals number and group percentages. It does not reveal a Jackpot marker or alter the rules. Hidden percentages are also omitted from target accessible names and tooltips.
 
 This is presentation hiding: the state API still returns the probabilities and Jackpot number. It is not a secrecy boundary against browser inspection.
 
@@ -170,7 +170,7 @@ Among starts above Tilt 1, rotating group bets reach Tilt 1 after a median 37 ro
 
 The Jackpot target is the face with the lowest current internal probability; the lowest numerical label breaks exact ties. It is recomputed after transfers and resets but remains fixed throughout a roll's settlement.
 
-A roll qualifies only if the target’s normalized pre-roll probability is at most `1/24` and its sole positive wager is on that target’s single number. The comparison is inclusive and uses the same stored-weight normalization as the outcome sampler. If the threshold is exceeded, even a sole hit on the least likely number pays the ordinary ×6 and transfers probability. Several additions on the same target remain one wager. Any other positive wager removes eligibility, even if it overlaps the target. Zero entries are ignored.
+A roll qualifies when its sole positive wager is on that target’s single number. Every board supports Jackpot, regardless of the target’s probability. The target is determined before the outcome is sampled. Several additions on the same target remain one wager. Any other positive wager removes eligibility, even if it overlaps the target. Zero entries are ignored.
 
 A qualifying hit pays **×24 total return**, replacing ×6, and immediately commits a fresh random board. Earned Gold and records remain; Shake is locked on the new board. The client shows the Jackpot reward before presenting the die replacement. A sole 10 G Jackpot from 100 G ends at `100 − 10 + 240 = 330 G`.
 
@@ -210,7 +210,7 @@ Nicknames are trimmed and normalized to NFC, must contain 1–24 visible Unicode
 
 ### 9.1 Layout and feedback
 
-Wide screens show three left-side cards: Bankroll, Rolls remaining, and On the table. Rolls remaining is emphasized with a large gold number and counts down from 100 to zero. The felt table sits in the center, with a compact rank/name/score leaderboard on the right. No best-score card, Available readout, ranking progress meter, or repeated leaderboard copy is shown. Smaller screens provide the leaderboard through a trophy button and right-side drawer. All 13 targets remain visible on narrow screens. No Jackpot availability message appears. On the table contains only its label and wager total. On narrow screens, Bankroll and Rolls remaining share a row above the full-width wager card. Completion disables wagers/Roll/Shake and opens the results popup described in Section 3.4; the same state survives reload. The bankroll value row has a fixed height. Its full exact numeral scales down to fit the available width, including during count animation and viewport resizing, so six-figure and larger amounts cannot wrap or grow the card.
+Wide screens show three left-side cards: Bankroll, Rolls remaining, and On the table. Rolls remaining is emphasized with a large gold number and counts down from 100 to zero. The felt table sits in the center, with a compact rank/name/score leaderboard on the right. No best-score card, Available readout, ranking progress meter, or repeated leaderboard copy is shown. Smaller screens provide the leaderboard through a trophy button and right-side drawer. All 13 targets remain visible on narrow screens. No Jackpot availability message appears. On the table contains only its label and wager total. On narrow screens, Bankroll and Rolls remaining share a row above the full-width wager card. Completion disables wagers/Roll/Shake and opens the results popup described in Section 3.4; the same state survives reload. All three cards share the same padding, label-over-value layout, spacing, and numeral size and weight. Rolls remaining retains its highlighted background. Gold values use a smaller G aligned to the numeral baseline. Value rows have a fixed height; full exact Bankroll and On the table numerals scale down to fit the available width, including during count animation and viewport resizing, so six-figure and larger amounts cannot wrap or grow the cards.
 
 Draft wagers appear as tossed chip piles, with up to five visible chips per target and the top chip displaying the total. Grid tracks remain fixed as bets change. A six-faced CSS die tumbles for Roll; Shake slides the old die out and a fresh one in. Ordinary roll timing is 1,100 ms and die replacement is 800 ms, with additional result presentation. These timings do not alter committed rules or add a cooldown after completion.
 
@@ -227,9 +227,9 @@ Paying targets glow and show returns. Net-positive results receive a gain banner
 
 ### 9.3 Settings and How to Play
 
-Settings contains the nickname form, **Sound effects**, **Reduce motion**, and **Show probabilities (developer)** controls, plus a link to How to Play. Rule descriptions and explanations of these preferences live in **How to Play**.
+Settings contains the nickname form, **Sound effects**, **Reduce motion**, and **Show probabilities (developer)** controls, plus Restart run. How to Play is available from the separate sidebar control and Tilt; Settings has no guide link. Rule descriptions and explanations of these preferences live in **How to Play**.
 
-The guide includes wager editing, payouts and overlap, random odds, low/high Tilt, probability transfer and an expandable numerical example, Shake eligibility, Jackpot exclusivity, persistence, the 100-roll limit, final-score submission, new runs, keyboard controls, and preference descriptions. It uses a white reading surface, dark 18 px serif body text, simple headings, and a sticky close control. The Tilt control opens it at the appropriate section; closing restores focus to its trigger. The Settings link closes Settings before opening the guide and returns focus to the Settings button afterward.
+The guide includes wager editing, payouts and overlap, random odds, low/high Tilt, probability transfer and an expandable numerical example, Shake eligibility, Jackpot exclusivity, persistence, the 100-roll limit, final-score submission, new runs, keyboard controls, and preference descriptions. It uses a white reading surface, dark 18 px serif body text, simple headings, and a sticky close control. The Tilt control opens it at the appropriate section; closing restores focus to its trigger.
 
 The guide opens automatically for a player with no previous roll who has not dismissed it. Dismissal is saved per player in the browser and survives refreshes and restarts. How to Play can reopen it at any time.
 
@@ -251,7 +251,7 @@ The API does not accept authoritative balances, scores, probability vectors, or 
 
 ## 11. Acceptance examples and checks
 
-Unless otherwise stated, examples start with 100 G and `[40, 20, 15, 10, 10, 5]%`, with face 6 least likely but Jackpot unavailable because its chance is 5%.
+Unless otherwise stated, examples start with 100 G and `[40, 20, 15, 10, 10, 5]%`, with face 6 least likely and eligible for a sole-number Jackpot bet.
 
 1. **Ordinary hit:** 10 G on 1, outcome 1 → 150 G, one transfer, Shake unlocked.
 2. **Complete miss:** 10 G on 1, outcome 2 → 90 G, identical probabilities, Shake unlocked.
@@ -260,7 +260,7 @@ Unless otherwise stated, examples start with 100 G and `[40, 20, 15, 10, 10, 5]%
 5. **Overlap:** 10 G each on 1, Top, and Red, outcome 1 → 100 G return, 170 G bankroll, exactly one transfer.
 6. **Amount independence:** Identical boards and random draws with different positive ordinary stakes produce identical next probabilities.
 7. **Rare ordinary hit:** Full-coverage bets, outcome 6, rate 6.3%, equal recipient shares → face 6 falls from 5% to 4.811%; each other face gains 0.0378 percentage points. No Jackpot applies.
-8. **Jackpot:** On `[40, 20, 15, 12, 10, 3]%`, sole 10 G on 6, outcome 6 → 330 G, fresh board, Shake locked. Any additional positive target removes eligibility. On the default 5% board, the same hit instead settles at 150 G with an ordinary transfer.
+8. **Jackpot:** On `[40, 20, 15, 12, 10, 3]%`, sole 10 G on 6, outcome 6 → 330 G, fresh board, Shake locked. Any additional positive target removes eligibility. On the default 5% board, the same hit also pays 330 G and draws a fresh board. On an exactly even board, number 1 is the Jackpot target.
 9. **Earned Shake:** A nonzero settlement unlocks Shake; using it preserves Gold and best, resets odds, clears the draft, and locks it again. A second immediate Shake is rejected.
 10. **Restart:** Zero Gold or 100 rolls permits a new 100 G run with zero rolls used and fresh odds; a completed best remains.
 11. **Precision and retry:** Huge integer balances survive storage and ranking; a retried action cannot sample or pay twice; stale-tab actions cannot settle.
@@ -272,6 +272,6 @@ Unless otherwise stated, examples start with 100 G and `[40, 20, 15, 10, 10, 5]%
 
 ## 12. Prototype boundary
 
-The implemented loop is the fixed six-number board, hidden weighted outcomes with visible Tilt, probability transfers, earned free Shake, threshold-gated exclusive Jackpot, persistent 100-roll runs, and a leaderboard of completed scores. Progression trees, items, missions, extra board sizes, and additional modes are outside the current build.
+The implemented loop is the fixed six-number board, hidden weighted outcomes with visible Tilt, probability transfers, earned free Shake, always-available exclusive Jackpot, persistent 100-roll runs, and a leaderboard of completed scores. Progression trees, items, missions, extra board sizes, and additional modes are outside the current build.
 
 This is a local prototype without account recovery, moderation, rate limiting, public deployment configuration, or receipt-retention cleanup. Existing verification uses Chromium; physical phones, Safari, and Firefox are not claimed. Probability tuning is supported by repeatable simulation and regression checks, with player enjoyment and broader strategic balance still subject to playtesting.

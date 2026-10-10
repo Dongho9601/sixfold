@@ -43,12 +43,6 @@ export function marker(p: readonly number[]): number {
   return p.indexOf(Math.min(...p)) + 1;
 }
 
-export function jackpotAvailable(p: readonly number[]): boolean {
-  // Match the sampler's normalization, including floating-point sum drift.
-  return Math.min(...p) / p.reduce((sum, value) => sum + value, 0)
-    <= CONFIG.jackpotMaxProbability;
-}
-
 export function parseGold(value: unknown): bigint {
   if (typeof value !== "string" || !/^(0|[1-9]\d*)$/.test(value)) {
     throw new GameError("Gold must be a whole, nonnegative decimal string.");
@@ -116,7 +110,7 @@ export function settle(
 ): { gold: bigint; probabilities: number[]; result: Settlement } {
   const wagers = validateWagers(input, gold);
   const marked = marker(p);
-  const eligible = jackpotAvailable(p) && wagers.size === 1 && wagers.has(`n${marked}`);
+  const eligible = wagers.size === 1 && wagers.has(`n${marked}`);
   const outcome = sample(p, random);
   const jackpot = eligible && outcome === marked;
   let stake = 0n;

@@ -12,7 +12,7 @@ before(async () => {
     create() {
       const { token, state } = super.create();
       this.db.prepare("UPDATE players SET probabilities = ? WHERE id = ?")
-        .run(JSON.stringify([0.4, 0.2, 0.15, 0.12, 0.1, 0.03]), state.id);
+        .run(JSON.stringify([0.4, 0.2, 0.15, 0.1, 0.1, 0.05]), state.id);
       draws = 0;
       return { token, state: this.get(state.id) };
     }
@@ -64,7 +64,7 @@ test("click a bet then R settles exactly once; uppercase R works too", async t =
   await settled(page, "330");
   assert.equal((await saved(page)).revision, "1");
   assert.equal((await saved(page)).lastRoll.jackpot, true);
-  assert.equal(await page.locator("#draft-total").innerText(), "0 G");
+  assert.equal(await page.locator("#draft-total").textContent(), "0 G");
   assert.equal(await page.locator("#tilt-level").innerText(), "1");
   await page.locator('[data-target="n2"]').click();
   await page.keyboard.press("Shift+R");
@@ -76,7 +76,7 @@ test("keyboard placement with Enter then R works from the focused target", async
   const page = await game(t);
   await page.locator('[data-target="row1"]').focus();
   await page.keyboard.press("Enter");
-  assert.equal(await page.locator("#draft-total").innerText(), "10 G");
+  assert.equal(await page.locator("#draft-total").textContent(), "10 G");
   await page.keyboard.press("r");
   await settled(page, "110");
   assert.equal((await saved(page)).lastRoll.totalReturn, "20");
@@ -177,11 +177,15 @@ test("Settings stays compact and the complete guide works on desktop and mobile"
     await page.locator("#show-probabilities").check();
     assert.equal(await page.locator(".probability, .group-odds").count(), 13);
     await page.locator("#show-probabilities").uncheck();
-    await page.locator("#settings-guide").click();
+    assert.equal(await page.locator("#settings-dialog").getByText("How to play", { exact: true }).count(), 0);
+    await page.screenshot({ path: `test-results/settings-${width}.png` });
+    await page.keyboard.press("Escape");
+    await page.locator("#guide-open").click();
     assert.equal(await page.locator("#settings-dialog").isVisible(), false);
     const guide = await page.locator("#welcome-dialog").innerText();
-    for (const text of ["Right-click", "230 G gain", "100 rolls", "1 in 24", "Earlier peaks do not count", "Keyboard controls", "Sound effects", "Reduce motion", "Show probabilities", "1 to 6", "levels 5–6", "4%–8%", "5%–10%"])
+    for (const text of ["Right-click", "230 G gain", "100 rolls", "single bet on the least likely number", "on every board", "Earlier peaks do not count", "Keyboard controls", "Sound effects", "Reduce motion", "Show probabilities", "1 to 6", "levels 5–6", "4%–8%", "5%–10%"])
       assert.ok(guide.includes(text), `Guide missing ${text}`);
+    assert.ok(!guide.includes("1 in 24"));
     assert.ok(!guide.includes("Full rules in Settings"));
     if (!await page.locator(".odds-example").evaluate(element => element.open))
       await page.locator(".odds-example summary").click();
@@ -191,7 +195,7 @@ test("Settings stays compact and the complete guide works on desktop and mobile"
       return guide.scrollWidth > guide.clientWidth || document.documentElement.scrollWidth > innerWidth;
     }), false);
     await page.keyboard.press("Escape");
-    assert.equal(await page.evaluate(() => document.activeElement.id), "settings-open");
+    assert.equal(await page.evaluate(() => document.activeElement.id), "guide-open");
     await page.locator("#tilt-info").click();
     assert.equal(await page.evaluate(() => document.activeElement.className), "tilt-guide");
     const heading = await page.locator(".tilt-guide").boundingBox();
@@ -283,7 +287,7 @@ test("three sidebar cards highlight remaining rolls and keep the leaderboard com
     await page.screenshot({ path: `test-results/three-cards-${width}.png`, fullPage: true });
   }
   await page.locator('[data-target="n6"]').click();
-  assert.equal(await page.locator("#draft-total").innerText(), "10 G");
+  assert.equal(await page.locator("#draft-total").textContent(), "10 G");
   await page.keyboard.press("r");
   await settled(page, "330");
   assert.equal(await page.locator("#rolls-remaining").innerText(), "99");
@@ -306,29 +310,29 @@ test("left clicks and taps on chips add bets; right-click and keyboard remove wa
   await touch.locator("#welcome-start").tap();
   const touchTarget = touch.locator('[data-target="row0"]');
   await touchTarget.tap();
-  assert.equal(await touch.locator("#draft-total").innerText(), "10 G");
+  assert.equal(await touch.locator("#draft-total").textContent(), "10 G");
   await touchTarget.locator(".table-chip").tap();
-  assert.equal(await touch.locator("#draft-total").innerText(), "20 G");
+  assert.equal(await touch.locator("#draft-total").textContent(), "20 G");
   assert.equal((await saved(touch)).revision, "0");
   for (const id of ["n1", "row0", "col1", "black"]) {
     const target = page.locator(`[data-target="${id}"]`);
     await target.focus();
     await page.keyboard.press("Enter");
     await page.keyboard.press("Enter");
-    assert.equal(await page.locator("#draft-total").innerText(), "20 G");
+    assert.equal(await page.locator("#draft-total").textContent(), "20 G");
     await target.locator(".table-chip:last-child").click();
-    assert.equal(await page.locator("#draft-total").innerText(), "30 G");
+    assert.equal(await page.locator("#draft-total").textContent(), "30 G");
     await target.locator(".table-chip:last-child").click({ button: "right" });
-    assert.equal(await page.locator("#draft-total").innerText(), "0 G");
+    assert.equal(await page.locator("#draft-total").textContent(), "0 G");
     for (const key of ["Delete", "Backspace"]) {
       await target.focus();
       await page.keyboard.press("Enter");
       await page.keyboard.press(key);
-      assert.equal(await page.locator("#draft-total").innerText(), "0 G");
+      assert.equal(await page.locator("#draft-total").textContent(), "0 G");
     }
     await target.click();
     await target.click({ button: "right" });
-    assert.equal(await page.locator("#draft-total").innerText(), "0 G");
+    assert.equal(await page.locator("#draft-total").textContent(), "0 G");
   }
   assert.equal(await page.locator("#gold").innerText(), "100");
   assert.equal((await saved(page)).revision, "0");
@@ -407,7 +411,7 @@ test("Settings restart requires confirmation, cancels safely, and animates a fre
     assert.equal(await page.locator("#settings-dialog").isVisible(), true);
     assert.equal(await page.evaluate(() => document.activeElement.id), "settings-restart");
     assert.deepEqual(await saved(page), before);
-    assert.equal(await page.locator("#draft-total").innerText(), "10 G");
+    assert.equal(await page.locator("#draft-total").textContent(), "10 G");
   }
   await page.locator("#settings-restart").click();
   await page.locator("#restart-confirm").click();
@@ -417,7 +421,7 @@ test("Settings restart requires confirmation, cancels safely, and animates a fre
   assert.equal(await page.locator('[data-target="n1"]').isDisabled(), true);
   await settled(page, "100");
   assert.equal(await page.locator("#rolls-remaining").innerText(), "100");
-  assert.equal(await page.locator("#draft-total").innerText(), "0 G");
+  assert.equal(await page.locator("#draft-total").textContent(), "0 G");
   const restarted = await saved(page);
   assert.equal(restarted.revision, "2");
   assert.equal(restarted.rollsUsed, 0);
@@ -450,7 +454,7 @@ test("recent chip shortcuts remember only placed amounts and select without plac
   await page.locator('[data-amount="25"]').click();
   assert.equal(await page.locator("#bet-amount").inputValue(), "25");
   assert.equal(await page.locator("#bet-amount").getAttribute("aria-invalid"), null);
-  assert.equal(await page.locator("#draft-total").innerText(), "0 G");
+  assert.equal(await page.locator("#draft-total").textContent(), "0 G");
   assert.deepEqual(await history(), ["40", "10", "25"]);
   await page.locator('[data-target="n1"]').click();
   assert.deepEqual(await history(), ["25", "40", "10"]);
@@ -483,7 +487,7 @@ test("recent chip shortcuts remember only placed amounts and select without plac
   assert.deepEqual(await history(), ["10", "25", "40"]);
 });
 
-test("bankroll fits full exact values without changing card height, including animated counts", async t => {
+test("Gold cards fit full exact values without changing card height, including animated counts", async t => {
   const page = await game(t);
   const id = (await saved(page)).id;
   for (const width of [1280, 768, 390, 320]) {
@@ -493,16 +497,21 @@ test("bankroll fits full exact values without changing card height, including an
       store.db.prepare("UPDATE players SET gold = ? WHERE id = ?").run(gold, id);
       await page.reload();
       await page.waitForFunction(value => document.querySelector("#gold").textContent === BigInt(value).toLocaleString("en-US"), gold);
-      const dimensions = await page.locator(".bankroll").evaluate(card => {
-        const gold = card.querySelector("#gold").getBoundingClientRect();
+      await page.locator("#bet-amount").fill(gold);
+      await page.locator('[data-target="n1"]').click();
+      assert.equal(await page.locator("#draft-gold").textContent(), BigInt(gold).toLocaleString("en-US"));
+      const cards = await page.locator(".bankroll, .table-wager").evaluateAll(cards => cards.map(card => {
+        const gold = card.querySelector(".stat-number").getBoundingClientRect();
         const unit = card.querySelector(".gold-unit").getBoundingClientRect();
-        const row = card.querySelector(".balance-value").getBoundingClientRect();
+        const row = card.querySelector(".stat-value").getBoundingClientRect();
         return { height: card.getBoundingClientRect().height, fits: gold.right <= unit.left && unit.right <= row.right + 1, valueHeight: gold.height, rowHeight: row.height };
-      });
-      height ??= dimensions.height;
-      assert.equal(dimensions.height, height, `${width}px / ${gold} moved the card`);
-      assert.ok(dimensions.fits, `${width}px / ${gold} overflows the card`);
-      assert.ok(dimensions.valueHeight <= dimensions.rowHeight + 1);
+      }));
+      height ??= cards[0].height;
+      for (const dimensions of cards) {
+        assert.equal(dimensions.height, height, `${width}px / ${gold} moved the card`);
+        assert.ok(dimensions.fits, `${width}px / ${gold} overflows the card`);
+        assert.ok(dimensions.valueHeight <= dimensions.rowHeight + 1);
+      }
       if (gold === "1000000") await page.screenshot({ path: `test-results/million-bankroll-${width}.png`, fullPage: true });
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${width}px / ${gold}: ` + await page.evaluate(() => [...document.querySelectorAll("body *")].filter(el => el.getBoundingClientRect().right > innerWidth).map(el => el.id || el.className).join(", ")));
     }

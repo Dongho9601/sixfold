@@ -37,17 +37,14 @@ main { width: min(1540px, 100%); min-width: 0; margin: 0 auto; display: grid; gr
 .wordmark svg { position: absolute; left: 0; top: 9px; color: var(--gold); width: 27px; height: 27px; transform: rotate(-8deg); }
 .wordmark > span { display: block; margin-top: 10px; font: 9px "Helvetica Neue", Arial, sans-serif; letter-spacing: 2px; color: var(--muted); }
 .eyebrow { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 1.8px; text-transform: uppercase; }
-.stat-card { min-width: 0; padding: 20px 18px; background: #1e2922; border: 1px solid #37463b; border-radius: 6px; }
+.stat-card { min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 20px 18px; background: #1e2922; border: 1px solid #37463b; border-radius: 6px; }
 .stat-card .eyebrow { font-size: 12px; font-weight: 400; letter-spacing: .2px; text-transform: none; }
-.balance { min-width: 0; display: flex; flex-direction: column; gap: 12px; }
-.balance-value { display: flex; align-items: center; gap: 8px; height: 1.15em; font-size: 44px; font-weight: 500; line-height: 1.15; color: var(--gold); margin: 0; font-variant-numeric: tabular-nums; }
-#gold { display: inline-block; flex-shrink: 0; white-space: nowrap; letter-spacing: 0; }
-.gold-unit { font-size: 16px; font-weight: 400; letter-spacing: 0; color: #aab5a8; }
-.remaining-rolls, .table-wager { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; min-width: 0; }
+.stat-value { display: flex; align-items: baseline; gap: 8px; height: 1.15em; font-size: 44px; font-weight: 500; line-height: 1.15; color: var(--gold); margin: 0; font-variant-numeric: tabular-nums; }
+.stat-number { display: inline-block; flex-shrink: 0; white-space: nowrap; letter-spacing: 0; }
+.gold-unit { flex-shrink: 0; font-size: 16px; font-weight: 400; letter-spacing: 0; color: #aab5a8; }
+.remaining-rolls, .table-wager { margin-top: 12px; }
 .remaining-rolls { border-color: #9c895b; background: #2b3023; }
-.rolls-value { color: #ffe1a0; font-size: 52px; line-height: 1; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -1px; }
-.wager-value { font-size: 30px; line-height: 1.2; font-weight: 400; font-variant-numeric: tabular-nums; min-width: 0; overflow-wrap: anywhere; }
-#draft-total.long-gold { font-size: 24px; letter-spacing: -.5px; }
+.remaining-rolls .stat-value { color: #ffe1a0; }
 .sidebar-bottom { margin-top: auto; padding-top: 32px; }
 .header-actions { display: grid; gap: 4px; }
 .utility-button { display: flex; align-items: center; justify-content: flex-start; gap: 12px; padding: 0 10px; background: transparent; color: #bec8bb; min-height: 44px; border-radius: 4px; font-size: 12px; text-align: left; }
@@ -318,7 +315,6 @@ dialog::backdrop {
   flex-direction: column;
   gap: 5px;
 }
-#settings-guide { display: inline-flex; align-items: center; gap: 8px; margin-top: 12px; }
 .settings-restart { margin-top: 24px; padding-top: 24px; border-top: 1px solid var(--border); }
 .danger-button, .cancel-button { min-height: 44px; padding: 12px 18px; border-radius: 5px; font-size: 15px; }
 .danger-button { background: #a83e38; color: #fff5f3; }
@@ -386,7 +382,7 @@ dialog::backdrop {
   .sidebar { min-height: 620px; }
   .wordmark { font-size: 30px; }
   .header { margin-bottom: 35px; }
-  .bankroll { padding-inline: 14px; }
+  .stat-card { padding-inline: 14px; }
   .result-label { font-size: 7px; }
   #table-status { font-size: 19px; }
 }
@@ -397,8 +393,8 @@ dialog::backdrop {
   .wordmark { padding-left: 29px; font-size: 27px; }
   .wordmark svg { width: 22px; height: 22px; }
   .wordmark > span { letter-spacing: 2px; font-size: 8px; }
-  .bankroll { padding-inline: 12px; }
-  .balance-value { font-size: 40px; }
+  .stat-card { padding-inline: 12px; }
+  .stat-value { font-size: 40px; }
   .utility-button { font-size: 12px; }
   .felt { padding-inline: 12px; }
   .table-area { padding: 8px; border-radius: 27px; }
@@ -432,17 +428,12 @@ dialog::backdrop {
   .header-actions { display: flex; gap: 2px; }
   .utility-button { min-height: 44px; width: 44px; padding: 0; justify-content: center; }
   .utility-button span, .play-note { display: none; }
-  .bankroll { grid-row: 2; grid-column: 1; padding: 16px 14px; min-height: 104px; }
-  .balance { gap: 10px; }
-  .balance-value { font-size: 32px; }
+  .stat-card { padding: 16px 14px; gap: 10px; margin: 0; }
+  .stat-card .eyebrow { font-size: 11px; }
+  .bankroll { grid-row: 2; grid-column: 1; }
   .gold-unit { font-size: 15px; }
-  .balance .eyebrow { font-size: 11px; }
-  .remaining-rolls { grid-row: 2; grid-column: 2; padding: 16px 14px; margin: 0; gap: 10px; min-height: 104px; }
-  .remaining-rolls .eyebrow { font-size: 11px; }
-  .rolls-value { font-size: 44px; }
-  .table-wager { grid-column: 1 / -1; grid-row: 3; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 16px; margin: 0; padding: 14px; align-items: center; }
-  .table-wager .eyebrow { grid-column: 1; font-size: 11px; }
-  .table-wager .wager-value { grid-column: 2; text-align: right; font-size: 26px; }
+  .remaining-rolls { grid-row: 2; grid-column: 2; }
+  .table-wager { grid-column: 1 / -1; grid-row: 3; }
   .table-area { border-radius: 23px; padding: 7px; }
   .felt { border-radius: 16px; padding: 0 10px; }
   .stage { height: 108px; grid-template-columns: minmax(0, 1fr) 76px minmax(0, 1fr); }

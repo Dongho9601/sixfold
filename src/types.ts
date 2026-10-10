@@ -24,7 +24,6 @@ export interface PlayerState {
   canShake: boolean;
   revision: string;
   jackpotNumber: number;
-  jackpotAvailable: boolean;
   lastRoll: Settlement | null;
 }
 export type Action =

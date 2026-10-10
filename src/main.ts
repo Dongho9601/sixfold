@@ -108,10 +108,10 @@ app.innerHTML = `
       <aside class="sidebar" aria-label="Your game">
         <header class="header"><a class="wordmark" href="/" aria-label="${CONFIG.title} home">${icon("dice")}${CONFIG.title}<span>PLAY THE ODDS</span></a></header>
         <section class="stat-card bankroll" aria-label="Your Gold">
-          <div class="balance"><span class="eyebrow">Bankroll</span><div class="balance-value"><span id="gold">—</span><span class="gold-unit">G</span></div></div>
+          <span class="eyebrow">Bankroll</span><strong class="stat-value"><span id="gold" class="stat-number">—</span> <span class="gold-unit">G</span></strong>
         </section>
-        <section class="stat-card remaining-rolls" aria-labelledby="rolls-label"><span id="rolls-label" class="eyebrow">Rolls remaining</span><strong id="rolls-remaining" class="rolls-value" aria-live="polite">${CONFIG.rollsPerRun}</strong></section>
-        <section class="stat-card table-wager" aria-label="On the table"><span class="eyebrow">On the table</span><strong id="draft-total" class="wager-value">0 G</strong></section>
+        <section class="stat-card remaining-rolls" aria-labelledby="rolls-label"><span id="rolls-label" class="eyebrow">Rolls remaining</span><strong class="stat-value"><span id="rolls-remaining" class="stat-number" aria-live="polite">${CONFIG.rollsPerRun}</span></strong></section>
+        <section class="stat-card table-wager" aria-label="On the table"><span class="eyebrow">On the table</span><strong id="draft-total" class="stat-value"><span id="draft-gold" class="stat-number">0</span> <span class="gold-unit">G</span></strong></section>
         <div class="sidebar-bottom"><div class="header-actions"><button id="leaderboard-open" class="utility-button" aria-label="Open leaderboard" aria-expanded="false">${icon("trophy")}<span>Leaderboard</span></button><button id="guide-open" class="utility-button" aria-label="How to play">${icon("help")}<span>How to play</span></button><button id="settings-open" class="utility-button" aria-label="Settings">${icon("settings")}<span>Settings</span></button></div><span class="play-note">Play Gold only</span></div>
       </aside>
       <div class="playfield">
@@ -144,7 +144,6 @@ app.innerHTML = `
     <label class="sound-control"><span>Sound effects</span><input id="sound" type="checkbox" role="switch" ${sound ? "checked" : ""}/></label>
     <label class="sound-control"><span>Reduce motion</span><input id="motion" type="checkbox" role="switch" ${shouldReduceMotion() ? "checked" : ""}/></label>
     <label class="sound-control"><span>Show probabilities (developer)</span><input id="show-probabilities" type="checkbox" role="switch" ${showProbabilities ? "checked" : ""}/></label>
-    <button id="settings-guide" class="text-button">How to play ${icon("chevron")}</button>
     <div class="settings-restart"><button id="settings-restart" class="danger-button" aria-haspopup="dialog" aria-controls="restart-dialog" disabled>Restart run</button></div>
   </dialog>
   <dialog id="restart-dialog" class="restart-dialog" aria-labelledby="restart-title" aria-describedby="restart-description">
@@ -175,7 +174,7 @@ app.innerHTML = `
     </ol>
     <div class="guide-odds">
       ${oddsGuide}
-      <h3>The hidden Jackpot</h3><p>A sole wager on the least likely number pays <b>×24</b> only when that number’s chance is <b>at most 1 in 24</b> (about 4.17%). Its availability and target stay hidden. When the chance is higher, the number pays the ordinary ×6. A Jackpot hit automatically Shakes to a fresh board without using an extra roll. A 10 G Jackpot returns 240 G, a 230 G gain. The target is hidden; the lowest number breaks ties. Any other positive bet removes Jackpot eligibility, even if it covers that number too.</p>
+      <h3>The hidden Jackpot</h3><p>A winning <b>single bet on the least likely number</b> pays <b>×24</b> on every board, regardless of that number’s chance. A Jackpot hit automatically Shakes to a fresh board without using an extra roll. A 10 G Jackpot returns 240 G, a 230 G gain. The target is hidden; the lowest number breaks ties. Adding more Gold to that same number still counts as a single bet. Any other positive bet removes Jackpot eligibility, even if it covers that number too.</p>
       <h3>Make your 100 rolls count</h3><p>Every settled Roll counts, including losses and break-even bets. Shake keeps your Gold and does not use or restore rolls. Rolls and Shakes clear your draft. After roll 100, your final Gold posts to the leaderboard if it is your best completed run. Earlier peaks do not count. The results popup shows your score and compares it with your previous personal best. Set your leaderboard name, then choose <b>Confirm &amp; play again</b> to save the name and start a fresh run.</p><p>If you reach zero Gold before roll 100, the run ends without posting a score. The popup lets you start again with 100 G and 100 rolls. Your best completed score stays. There is no limit on new runs.</p><p>Gold, odds, and your roll count save automatically. A refresh resumes your board but clears uncommitted bets. Your browser identifies your player; keep its game cookie to return to the same record.</p>
       <h3>Keyboard controls</h3><p>Press <kbd>R</kbd> to roll and <kbd>S</kbd> to Shake, including just after placing a bet. Shortcuts pause while you type in a field or have a dialog open. Holding a key does not repeat an action. Use Tab to move between controls and Enter or Space to activate buttons.</p>
       <h3>Make yourself comfortable</h3><p>In <b>Settings</b>, choose a leaderboard name of 1–24 visible characters. <b>Sound effects</b> controls dice sounds, coin showers, and fanfares. <b>Reduce motion</b> skips dice movement and celebration effects; your system’s reduced-motion preference is respected too.</p><p><b>Show probabilities</b> is a developer option that reveals the hidden number and group odds. It changes the display only. Sound, motion, and probability visibility are remembered in this browser.</p>
@@ -555,24 +554,25 @@ function centerBoardNumbers() {
   });
 }
 void document.fonts.ready.then(centerBoardNumbers);
-function fitGold() {
-  const gold = $("gold");
-  const row = gold.parentElement!;
-  gold.style.fontSize = "";
-  const available = row.clientWidth - row.querySelector<HTMLElement>(".gold-unit")!.offsetWidth
-    - parseFloat(getComputedStyle(row).gap);
-  const width = gold.getBoundingClientRect().width;
+function fitStatValue(number: HTMLElement) {
+  const row = number.parentElement!;
+  number.style.fontSize = "";
+  const unit = row.querySelector<HTMLElement>(".gold-unit");
+  const available = row.clientWidth - (unit ? unit.offsetWidth + parseFloat(getComputedStyle(row).gap) : 0);
+  const width = number.getBoundingClientRect().width;
   if (width > available && available > 0) {
-    const size = parseFloat(getComputedStyle(gold).fontSize);
-    gold.style.fontSize = `${Math.floor(size * available / width * 10) / 10}px`;
+    const size = parseFloat(getComputedStyle(number).fontSize);
+    number.style.fontSize = `${Math.floor(size * available / width * 10) / 10}px`;
   }
 }
 function showGold(value: string | bigint) {
   $("gold").textContent = formatGold(value);
-  fitGold();
+  fitStatValue($("gold"));
 }
-new ResizeObserver(fitGold).observe($("gold").parentElement!);
-void document.fonts.ready.then(fitGold);
+const fitStats = () => document.querySelectorAll<HTMLElement>(".stat-number").forEach(fitStatValue);
+const statObserver = new ResizeObserver(fitStats);
+document.querySelectorAll(".stat-value").forEach(row => statObserver.observe(row));
+void document.fonts.ready.then(fitStats);
 function renderRecentAmounts() {
   const holder = $("recent-amounts");
   const signature = recentAmounts.join(",");
@@ -638,8 +638,8 @@ function render() {
   }
   $("tilt-level").textContent = String(state.tiltLevel);
   $("tilt-info").setAttribute("aria-label", `Board Tilt, level ${state.tiltLevel} of 6. Open Tilt guide.`);
-  $("draft-total").textContent = `${formatGold(totalDraft())} G`;
-  $("draft-total").classList.toggle("long-gold", totalDraft().toString().length > 12);
+  $("draft-gold").textContent = formatGold(totalDraft());
+  fitStatValue($("draft-gold"));
   for (const id of chipPoses.keys()) if (!draft[id]) chipPoses.delete(id);
   document
     .querySelectorAll<HTMLButtonElement>("[data-target]")
@@ -1121,10 +1121,6 @@ function openGuide(trigger: HTMLElement, showTilt = false) {
   } else guide.scrollTop = 0;
 }
 $("guide-open").addEventListener("click", () => openGuide($("guide-open")));
-$("settings-guide").addEventListener("click", () => {
-  $<HTMLDialogElement>("settings-dialog").close();
-  openGuide($("settings-open"));
-});
 $("tilt-info").addEventListener("click", () => openGuide($("tilt-info"), true));
 $("welcome-dialog").addEventListener("close", () => {
   if (state) localStorage.setItem(`sixfold-guide-seen:${state.id}`, "yes");

@@ -16,7 +16,7 @@ class FixtureStore extends Store {
   override create() {
     const { token, state } = super.create();
     this.db.prepare("UPDATE players SET probabilities = ? WHERE id = ?")
-      .run(JSON.stringify([0.4, 0.2, 0.15, 0.12, 0.1, 0.03]), state.id);
+      .run(JSON.stringify([0.4, 0.2, 0.15, 0.1, 0.1, 0.05]), state.id);
     draws = 0;
     if (large)
       this.db

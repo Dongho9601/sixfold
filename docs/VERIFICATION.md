@@ -1,5 +1,25 @@
 # Verification report
 
+## Jackpot on every board and consistent stat cards — October 10, 2026
+
+Removed the Jackpot probability gate. A winning sole wager on the pre-roll least-likely number now pays ×24 on every board, including nearly even and exactly even boards. Exact ties still select the lowest numerical face. Extra positive targets remove eligibility; zero entries are ignored. Jackpot still commits a fresh board and locks Shake. The obsolete probability threshold and availability field are removed, and the guide, specification, README, probability model, and offline audit match the new rule.
+
+Settings no longer contains How to play. The sidebar help control and Tilt guide remain available. Bankroll, Rolls remaining, and On the table now share padding, label-over-value layout, spacing, and numeral typography. Rolls remaining retains its highlighted background. Both Gold cards use smaller G units on the numeral baseline and fit full exact amounts within fixed-height rows.
+
+Verified:
+
+- `npm test`: **53 passed**, including always-available Jackpot settlement, exact ties, pre-roll target selection, misses, extra bets, saved results, and restart behavior.
+- `npm run build`: TypeScript and production build passed. `git diff --check` passed.
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' npm run test:ui`: **15 passed**. The browser fixture now uses a 5% least-likely face, above the removed threshold, and confirms ×24 settlement through the real API. Settings, sidebar help, Tilt navigation, touch and keyboard betting, final scores, and restart flows pass.
+- Visually inspected desktop and mobile card formatting and mobile Settings. Layout checks cover 1280, 768, 390, and 320 px. Both Gold cards retain their height and fit exact amounts from 100 G through a 31-digit value; animated bankroll changes also preserve height. Tests use isolated databases and browser touch emulation, not physical phones.
+- `npm run audit:strategies`: **5,000 seeded 100-roll runs per policy**, using fixed small wagers. Mean final Gold is **118.02** for random numbers, **121.23** for the old hedge-to-12% strategy, and **183.89** for selection using known expected returns. This measures the more generous rule without claiming optimal strategy or human balance.
+
+Restarted the development server at `http://localhost:5173` to load the new settlement rule and confirmed HTTP 200. Read-only database counts matched before and after: **three players and 472 receipts**. No save or leaderboard reset was performed.
+
+Previews: [Cards, desktop](screenshots/consistent-cards-desktop.png) · [Cards, mobile](screenshots/consistent-cards-mobile.png) · [Settings, mobile](screenshots/settings-without-guide-mobile.png).
+
+Earlier sections record previous rules and layouts.
+
 ## Recent bets, stable bankroll cards, and run results — October 10, 2026
 
 Removed the two betting hints. Left-clicking or tapping a placed chip now adds the selected amount; right-click removes the target's entire wager, and Delete/Backspace remains available for a focused target. Three chip shortcuts beside the amount remember distinct successful placements in newest-first order, persist across refreshes/restarts, and select an amount without placing a bet. Empty history slots are disabled.

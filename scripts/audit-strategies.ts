@@ -1,7 +1,7 @@
 /** Offline balance audit. Uses production settlement; never opens a database. */
 import assert from "node:assert/strict";
 import { CONFIG, TARGETS } from "../src/config.ts";
-import { freshProbabilities, jackpotAvailable, marker, settle } from "../server/rules.ts";
+import { freshProbabilities, marker, settle } from "../server/rules.ts";
 import type { Wagers } from "../src/types.ts";
 
 const trials = 5000;
@@ -36,20 +36,19 @@ for (let outcome = 1; outcome <= 6; outcome++) {
   assert.equal(next.result.transferred, true);
 }
 
-// Blind number choice has zero ordinary expectation. Its extra return is now
-// 3*p_min only on eligible boards, bounded by 1/8; otherwise it is zero.
+// Blind number choice has zero ordinary expectation. Jackpot adds 3*p_min
+// on every board, bounded by 1/2 when all six faces are equally likely.
 for (let trial = 0; trial < trials; trial++) {
   const p = freshProbabilities(seeded(20261010 + trial * 7919));
-  const eligible = jackpotAvailable(p);
   const marked = marker(p);
   const expectedReturn = p.reduce((sum, chance, i) => sum + chance / total(p)
-    * (eligible && i + 1 === marked ? CONFIG.multipliers.jackpot : CONFIG.multipliers.number) / 6, 0);
-  const bonus = eligible ? 3 * minimumChance(p) : 0;
+    * (i + 1 === marked ? CONFIG.multipliers.jackpot : CONFIG.multipliers.number) / 6, 0);
+  const bonus = 3 * minimumChance(p);
   assert.ok(Math.abs(expectedReturn - 1 - bonus) < 1e-12);
-  assert.ok(bonus <= 0.125 + 1e-12);
+  assert.ok(bonus <= 0.5 + 1e-12);
 }
-assert.equal(jackpotAvailable(Array(6).fill(1 / 6)), false);
-console.log("Verified zero-Gold-cost hedges and the gated Jackpot expectation. Hedges still consume a roll.");
+assert.equal(settle(100n, Array(6).fill(1 / 6), { n1: "1" }, () => 0).result.totalReturn, "24");
+console.log("Verified zero-Gold-cost hedges and Jackpot on every board. Hedges still consume a roll.");
 console.log(`${trials.toLocaleString()} seeded runs per policy; ${CONFIG.startingGold} G start; ${CONFIG.rollsPerRun} rolls or bankruptcy.`);
 console.log("No Shake or restart. Fixed 1 G bets (2 G total for a hedge). All preparation counts toward the limit.");
 console.log("Policies share fresh boards; later random streams diverge. This is not an optimal-strategy search.\n");
@@ -81,9 +80,8 @@ for (const policy of ["Random number", "Old hedge-to-12% strategy", "Known best 
         }
       } else {
         const marked = marker(p);
-        const eligible = jackpotAvailable(p);
         const expected = (target: typeof TARGETS[number]) => {
-          const multiplier = eligible && target.id === `n${marked}`
+          const multiplier = target.id === `n${marked}`
             ? CONFIG.multipliers.jackpot : target.multiplier;
           return multiplier * target.coverage.reduce((sum, face) => sum + p[face - 1], 0) / total(p);
         };

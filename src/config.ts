@@ -3,7 +3,6 @@ export const CONFIG = {
   title: "Sixfold",
   startingGold: "100",
   rollsPerRun: 100,
-  jackpotMaxProbability: 1 / 24,
   minimumWager: "1",
   selectedWager: "10",
   probabilityFloor: 0.02,
