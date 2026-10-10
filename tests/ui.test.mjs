@@ -232,8 +232,11 @@ test("the final roll posts the final balance, freezes controls, and survives rel
   await page.locator("#bet-amount").fill("50");
   await page.locator('[data-target="n6"]').click();
   await page.keyboard.press("r");
-  await page.waitForFunction(() => !document.querySelector("#restart").hidden);
+  await page.waitForFunction(() => document.querySelector("#run-dialog").open);
   assert.equal(await page.locator("#gold").innerText(), "280");
+  assert.equal(await page.locator("#run-score").innerText(), "280 G");
+  assert.match(await page.locator("#run-comparison").innerText(), /first completed run/);
+  assert.equal(await page.locator("#run-best").innerText(), "280 G");
   assert.equal(await page.locator("#rolls-remaining").innerText(), "0");
   assert.match(await page.locator("#run-status").innerText(), /Final score: 280 G/);
   for (const selector of ['[data-target="n1"]', "#roll", "#shake", "#bet-amount"])
@@ -244,18 +247,25 @@ test("the final roll posts the final balance, freezes controls, and survives rel
   assert.equal((await saved(page)).revision, completed.revision);
   assert.equal(store.leaderboard().find(player => player.id === id).bestGold, "280");
   await page.reload();
-  await page.waitForFunction(() => !document.querySelector("#restart").hidden);
+  await page.waitForFunction(() => document.querySelector("#run-dialog").open);
   for (const width of [1280, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-    await page.screenshot({ path: `test-results/run-complete-${width}.png`, fullPage: true });
+    await page.screenshot({ path: `test-results/run-complete-${width}.png` });
   }
-  await page.locator("#restart").click();
+  assert.match(await page.locator("#run-comparison").innerText(), /first completed run/);
+  await page.keyboard.press("Escape");
+  assert.equal(await page.locator("#run-dialog").isVisible(), true);
+  await page.locator("#run-nickname").fill("Finisher");
+  await page.locator("#run-confirm").click();
   await settled(page, "100");
   assert.equal(await page.locator("#rolls-remaining").innerText(), "100");
   assert.equal((await saved(page)).bestGold, "280");
+  assert.equal((await saved(page)).nickname, "Finisher");
+  assert.equal(store.leaderboard().find(player => player.id === id).nickname, "Finisher");
   assert.equal(await page.locator("#run-status").isVisible(), false);
-  assert.equal(await page.locator("#restart").isVisible(), false);
+  assert.equal(await page.locator("#restart").count(), 0);
+  assert.equal(await page.locator("#run-dialog").isVisible(), false);
   await page.screenshot({ path: "test-results/new-run-320.png", fullPage: true });
 });
 
@@ -282,7 +292,7 @@ test("three sidebar cards highlight remaining rolls and keep the leaderboard com
   assert.equal(await page.locator("#leaderboard-dialog p, #leaderboard-dialog [role=progressbar]").count(), 0);
 });
 
-test("chips remove wagers on touch and desktop, and focused targets support keyboard removal", async t => {
+test("left clicks and taps on chips add bets; right-click and keyboard remove wagers", async t => {
   const page = await game(t, 390);
   // A real touch context exercises hit testing, not just a synthetic DOM click.
   const touchContext = await browser.newContext({ viewport: { width: 390, height: 900 }, hasTouch: true });
@@ -298,7 +308,7 @@ test("chips remove wagers on touch and desktop, and focused targets support keyb
   await touchTarget.tap();
   assert.equal(await touch.locator("#draft-total").innerText(), "10 G");
   await touchTarget.locator(".table-chip").tap();
-  assert.equal(await touch.locator("#draft-total").innerText(), "0 G");
+  assert.equal(await touch.locator("#draft-total").innerText(), "20 G");
   assert.equal((await saved(touch)).revision, "0");
   for (const id of ["n1", "row0", "col1", "black"]) {
     const target = page.locator(`[data-target="${id}"]`);
@@ -307,6 +317,8 @@ test("chips remove wagers on touch and desktop, and focused targets support keyb
     await page.keyboard.press("Enter");
     assert.equal(await page.locator("#draft-total").innerText(), "20 G");
     await target.locator(".table-chip:last-child").click();
+    assert.equal(await page.locator("#draft-total").innerText(), "30 G");
+    await target.locator(".table-chip:last-child").click({ button: "right" });
     assert.equal(await page.locator("#draft-total").innerText(), "0 G");
     for (const key of ["Delete", "Backspace"]) {
       await target.focus();
@@ -341,17 +353,18 @@ test("the table and guide display all six Tilt levels", async t => {
 
 test("bankruptcy restart animates the die and cards while actions stay locked", async t => {
   const page = await game(t);
-  await page.locator("#bet-amount").fill("100");
-  await page.locator('[data-target="n1"]').click();
-  await page.keyboard.press("r");
-  await page.waitForFunction(() => document.querySelector("#gold").textContent === "0" && !document.querySelector("#restart").hidden);
-  assert.equal(await page.locator("#rolls-remaining").innerText(), "99");
   await page.locator("#settings-open").click();
   await page.locator("#motion").uncheck();
   await page.keyboard.press("Escape");
-  await page.locator("#restart").click();
+  await page.locator("#bet-amount").fill("100");
+  await page.locator('[data-target="n1"]').click();
+  await page.keyboard.press("r");
+  await page.waitForFunction(() => document.querySelector("#gold").textContent === "0" && document.querySelector("#run-dialog").open);
+  assert.equal(await page.locator("#rolls-remaining").innerText(), "99");
+  assert.match(await page.locator("#run-comparison").innerText(), /No score was posted/);
+  await page.locator("#run-confirm").click();
   await page.waitForFunction(() => document.querySelector("#game").classList.contains("is-restarting") && document.querySelector(".departing-die"));
-  assert.equal(await page.locator("#restart").isDisabled(), true);
+  assert.equal(await page.locator("#run-confirm").isDisabled(), true);
   assert.equal(await page.locator('[data-target="n1"]').isDisabled(), true);
   assert.ok(await page.locator(".remaining-rolls").evaluate(element => element.getAnimations().length > 0));
   await page.keyboard.press("r");
@@ -415,4 +428,147 @@ test("Settings restart requires confirmation, cancels safely, and animates a fre
   await page.reload();
   await settled(page, "100");
   assert.deepEqual(await saved(page), restarted);
+});
+
+test("recent chip shortcuts remember only placed amounts and select without placing", async t => {
+  const page = await game(t);
+  const chips = page.locator("#recent-amounts button");
+  assert.equal(await chips.count(), 3);
+  assert.equal(await page.locator("#recent-amounts button:disabled").count(), 3);
+  assert.equal(await page.locator("#amount-hint, .pointer-hint, .touch-hint").count(), 0);
+  const place = async amount => {
+    await page.locator("#bet-amount").fill(amount);
+    await page.locator('[data-target="n1"]').click();
+    await page.locator('[data-target="n1"]').click({ button: "right" });
+  };
+  for (const amount of ["5", "10", "25", "10", "40"]) await place(amount);
+  const history = () => page.locator("#recent-amounts [data-amount]").evaluateAll(elements => elements.map(el => el.dataset.amount));
+  assert.deepEqual(await history(), ["40", "10", "25"]);
+  await place("101"); // Rejected amounts never enter history.
+  await place("invalid");
+  assert.deepEqual(await history(), ["40", "10", "25"]);
+  await page.locator('[data-amount="25"]').click();
+  assert.equal(await page.locator("#bet-amount").inputValue(), "25");
+  assert.equal(await page.locator("#bet-amount").getAttribute("aria-invalid"), null);
+  assert.equal(await page.locator("#draft-total").innerText(), "0 G");
+  assert.deepEqual(await history(), ["40", "10", "25"]);
+  await page.locator('[data-target="n1"]').click();
+  assert.deepEqual(await history(), ["25", "40", "10"]);
+  await page.reload();
+  await page.waitForSelector('[data-amount="25"]');
+  assert.deepEqual(await history(), ["25", "40", "10"]);
+  for (const width of [1600, 1280, 1101, 1051, 1024, 801, 768, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    const bounds = await page.locator(".amount-selector, #recent-amounts").evaluateAll(elements => elements.map(element => {
+      const box = element.getBoundingClientRect();
+      return { x: box.x, y: box.y, width: box.width, height: box.height };
+    }));
+    assert.ok(bounds[1].x >= bounds[0].x + bounds[0].width, `Chips must sit next to the amount at ${width}px`);
+    assert.ok(Math.abs(bounds[0].y + bounds[0].height / 2 - bounds[1].y - bounds[1].height / 2) < 1);
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    await page.screenshot({ path: `test-results/recent-chips-${width}.png`, fullPage: true });
+  }
+  let release;
+  const gate = new Promise(resolve => release = resolve);
+  await page.route("**/api/action", async route => { await gate; await route.continue(); });
+  await page.locator('[data-target="n6"]').click();
+  await page.keyboard.press("r");
+  assert.equal(await page.locator("#recent-amounts button:disabled").count(), 3);
+  release();
+  await settled(page, "330");
+  await page.locator("#settings-open").click();
+  await page.locator("#settings-restart").click();
+  await page.locator("#restart-confirm").click();
+  await settled(page, "100");
+  assert.deepEqual(await history(), ["10", "25", "40"]);
+});
+
+test("bankroll fits full exact values without changing card height, including animated counts", async t => {
+  const page = await game(t);
+  const id = (await saved(page)).id;
+  for (const width of [1280, 768, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    let height;
+    for (const gold of ["100", "999999", "1000000", "9007199254740993", "100000000000000000000000000000001"]) {
+      store.db.prepare("UPDATE players SET gold = ? WHERE id = ?").run(gold, id);
+      await page.reload();
+      await page.waitForFunction(value => document.querySelector("#gold").textContent === BigInt(value).toLocaleString("en-US"), gold);
+      const dimensions = await page.locator(".bankroll").evaluate(card => {
+        const gold = card.querySelector("#gold").getBoundingClientRect();
+        const unit = card.querySelector(".gold-unit").getBoundingClientRect();
+        const row = card.querySelector(".balance-value").getBoundingClientRect();
+        return { height: card.getBoundingClientRect().height, fits: gold.right <= unit.left && unit.right <= row.right + 1, valueHeight: gold.height, rowHeight: row.height };
+      });
+      height ??= dimensions.height;
+      assert.equal(dimensions.height, height, `${width}px / ${gold} moved the card`);
+      assert.ok(dimensions.fits, `${width}px / ${gold} overflows the card`);
+      assert.ok(dimensions.valueHeight <= dimensions.rowHeight + 1);
+      if (gold === "1000000") await page.screenshot({ path: `test-results/million-bankroll-${width}.png`, fullPage: true });
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `${width}px / ${gold}: ` + await page.evaluate(() => [...document.querySelectorAll("body *")].filter(el => el.getBoundingClientRect().right > innerWidth).map(el => el.id || el.className).join(", ")));
+    }
+    await page.screenshot({ path: `test-results/large-bankroll-${width}.png`, fullPage: true });
+  }
+  store.db.prepare("UPDATE players SET gold = ? WHERE id = ?").run("999999", id);
+  await page.reload();
+  await settled(page, "999,999");
+  await page.locator("#settings-open").click();
+  await page.locator("#motion").uncheck();
+  await page.keyboard.press("Escape");
+  const height = (await page.locator(".bankroll").boundingBox()).height;
+  await page.evaluate(() => {
+    window.cardHeights = [];
+    window.goldObserver = new MutationObserver(() => window.cardHeights.push(document.querySelector(".bankroll").getBoundingClientRect().height));
+    window.goldObserver.observe(document.querySelector("#gold"), { childList: true });
+  });
+  await page.locator('[data-target="n6"]').click();
+  await page.keyboard.press("r");
+  await settled(page, "1,000,229");
+  const heights = await page.evaluate(() => { window.goldObserver.disconnect(); return window.cardHeights; });
+  assert.ok(heights.length > 5);
+  assert.ok(heights.every(value => value === height));
+});
+
+test("results compare higher, tied and lower records and recover a lost named-restart response", async t => {
+  const page = await game(t);
+  const id = (await saved(page)).id;
+  for (const [gold, best, previous, comparison] of [
+    ["350", "350", "280", "New personal best! 70 G above your previous 280 G."],
+    ["350", "350", "350", "You matched your personal best."],
+    ["280", "350", "350", "70 G below your personal best."],
+  ]) {
+    store.db.prepare("UPDATE players SET gold = ?, best_gold = ?, previous_best_gold = ?, rolls_used = 100, has_completed_run = 1 WHERE id = ?")
+      .run(gold, best, previous, id);
+    await page.reload();
+    await page.waitForSelector("#run-dialog[open]");
+    assert.equal(await page.locator("#run-comparison").innerText(), comparison);
+    assert.equal(await page.locator("#run-best").innerText(), `${best} G`);
+  }
+  await page.locator("#run-nickname").fill("a".repeat(25));
+  await page.locator("#run-confirm").click();
+  await page.waitForFunction(() => document.querySelector("#run-error").textContent.includes("1–24"));
+  assert.equal((await saved(page)).rollsUsed, 100);
+  await page.locator("#run-nickname").fill("Recovered player");
+  const before = await saved(page);
+  const requests = [];
+  await page.route("**/api/action", async route => {
+    requests.push(route.request().postDataJSON());
+    if (requests.length === 1) {
+      await route.fetch(); // Commit the action, but lose its response.
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  await page.locator("#run-confirm").click();
+  await page.waitForFunction(() => document.querySelector("#run-confirm").textContent === "Retry & play again");
+  assert.equal(await page.locator("#run-dialog").isVisible(), true);
+  assert.match(await page.locator("#run-error").innerText(), /saved/);
+  assert.equal(await page.locator("#run-nickname").isDisabled(), true);
+  await page.locator("#run-confirm").click();
+  await settled(page, "100");
+  assert.deepEqual(requests[0], requests[1]);
+  const after = await saved(page);
+  assert.equal(after.revision, String(BigInt(before.revision) + 1n));
+  assert.equal(after.nickname, "Recovered player");
+  assert.equal(after.bestGold, "350");
+  assert.equal(after.rollsUsed, 0);
+  assert.equal(await page.locator("#run-dialog").isVisible(), false);
 });

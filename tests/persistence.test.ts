@@ -240,6 +240,68 @@ test("early bankruptcy is unranked; bankruptcy on roll 100 submits a zero score"
     store.close();
   }
 });
+test("completion preserves the previous personal best, and a named restart is atomic and retry-safe", () => {
+  const dir = mkdtempSync(join(tmpdir(), "sixfold-results-"));
+  const path = join(dir, "game.sqlite");
+  let store = new Store(path, () => 0.1);
+  try {
+    const { state, token } = store.create();
+    for (const [gold, previous, best] of [["0", null, "0"], ["250", "0", "250"], ["80", "250", "250"], ["250", "250", "250"]]) {
+      store.db.prepare("UPDATE players SET rolls_used = 99, gold = ?, probabilities = ? WHERE id = ?")
+        .run(gold === "0" ? "1" : gold, JSON.stringify(p), state.id);
+      const final = store.act(state.id, request(store.get(state.id).revision, {
+        kind: "roll", wagers: gold === "0" ? { n6: "1" } : { red: "1", black: "1" },
+      }));
+      assert.equal(final.state.gold, gold);
+      assert.equal(final.state.previousBestGold, previous);
+      assert.equal(final.state.bestGold, best);
+      store.close();
+      store = new Store(path, () => 0.1);
+      assert.deepEqual(store.session(token), final.state);
+      const confirm = request(final.state.revision, { kind: "restart", nickname: "  Finisher  " });
+      assert.throws(() => store.act(state.id, { ...confirm, action: { kind: "restart", nickname: "\n" } }), /nickname/);
+      assert.deepEqual(store.get(state.id), final.state);
+      const next = store.act(state.id, confirm);
+      assert.equal(next.state.nickname, "Finisher");
+      assert.equal(next.state.gold, "100");
+      assert.equal(next.state.rollsUsed, 0);
+      assert.equal(next.state.previousBestGold, null);
+      assert.equal(next.state.bestGold, best);
+      assert.deepEqual(store.act(state.id, confirm), next);
+      assert.equal(store.leaderboard().find(row => row.id === state.id)!.nickname, "Finisher");
+    }
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the results migration preserves competition players, scores and receipts", () => {
+  const dir = mkdtempSync(join(tmpdir(), "sixfold-results-migration-"));
+  const path = join(dir, "game.sqlite");
+  let store = new Store(path, () => 0.1);
+  try {
+    const { state, token } = store.create();
+    fixture(store, state.id, "320", "400");
+    store.db.prepare("UPDATE players SET rolls_used = 100 WHERE id = ?").run(state.id);
+    const rename = request("0", { kind: "nickname", nickname: "Existing player" });
+    const receipt = store.act(state.id, rename);
+    store.db.exec("ALTER TABLE players DROP COLUMN previous_best_gold; PRAGMA user_version = 1");
+    store.close();
+    store = new Store(path);
+    const migrated = { ...receipt.state, previousBestGold: "400" };
+    assert.deepEqual(store.session(token), migrated);
+    assert.deepEqual(store.act(state.id, rename), receipt);
+    assert.equal(store.leaderboard()[0].bestGold, "400");
+    assert.equal(store.db.prepare("PRAGMA user_version").get()!.user_version, 2);
+    store.close();
+    store = new Store(path);
+    assert.deepEqual(store.session(token), migrated);
+  } finally {
+    store.close();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
 test("large integer balances persist, settle, transport as strings and rank numerically", () => {
   const dir = mkdtempSync(join(tmpdir(), "one-six-big-"));
   const path = join(dir, "game.sqlite");

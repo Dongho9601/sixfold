@@ -16,6 +16,7 @@ export interface PlayerState {
   nickname: string;
   gold: string;
   bestGold: string;
+  previousBestGold: string | null;
   hasCompletedRun: boolean;
   rollsUsed: number;
   probabilities: number[];
@@ -29,7 +30,7 @@ export interface PlayerState {
 export type Action =
   | { kind: "roll"; wagers: Wagers }
   | { kind: "shake" }
-  | { kind: "restart" }
+  | { kind: "restart"; nickname?: string }
   | { kind: "nickname"; nickname: string };
 export interface ActionRequest {
   requestId: string;

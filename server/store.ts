@@ -25,6 +25,7 @@ interface Row {
   nickname: string;
   gold: string;
   best_gold: string;
+  previous_best_gold: string | null;
   probabilities: string;
   revision: string;
   last_roll: string | null;
@@ -82,6 +83,14 @@ export class Store {
         }
         this.db.exec("PRAGMA user_version = 1");
       }
+      if (version < 2) {
+        if (!this.db.prepare("PRAGMA table_info(players)").all().some(column => column.name === "previous_best_gold"))
+          this.db.exec("ALTER TABLE players ADD COLUMN previous_best_gold TEXT");
+        // Existing finished runs can show the saved best, but their older best
+        // was not recorded. Do not invent a 'new record' for those runs.
+        this.db.exec("UPDATE players SET previous_best_gold = best_gold WHERE has_completed_run = 1");
+        this.db.exec("PRAGMA user_version = 2");
+      }
       this.db.exec("COMMIT");
     } catch (error) {
       this.db.exec("ROLLBACK");
@@ -98,6 +107,7 @@ export class Store {
       nickname: row.nickname,
       gold: row.gold,
       bestGold: row.best_gold,
+      previousBestGold: row.previous_best_gold,
       hasCompletedRun: row.has_completed_run === 1,
       rollsUsed: row.rolls_used,
       probabilities,
@@ -209,6 +219,7 @@ export class Store {
           ? false
           : state.canShake || settled.result.net !== "0";
         if (state.rollsUsed === CONFIG.rollsPerRun) {
+          state.previousBestGold = state.hasCompletedRun ? state.bestGold : null;
           if (!state.hasCompletedRun || settled.gold > BigInt(state.bestGold))
             state.bestGold = state.gold;
           state.hasCompletedRun = true;
@@ -221,20 +232,15 @@ export class Store {
         state.probabilities = freshProbabilities(this.random);
         state.canShake = false;
       } else if (action.kind === "restart") {
+        if (action.nickname !== undefined) state.nickname = this.nickname(action.nickname);
         state.gold = CONFIG.startingGold;
         state.probabilities = freshProbabilities(this.random);
         state.lastRoll = null;
         state.canShake = false;
         state.rollsUsed = 0;
+        state.previousBestGold = null;
       } else {
-        const nickname = action.nickname.trim().normalize("NFC");
-        if (
-          nickname.length < 1 ||
-          [...nickname].length > 24 ||
-          /[\p{C}]/u.test(nickname)
-        )
-          throw new GameError("Use a nickname of 1–24 visible characters.");
-        state.nickname = nickname;
+        state.nickname = this.nickname(action.nickname);
       }
       state.revision = (BigInt(state.revision) + 1n).toString();
       state.jackpotNumber = marker(state.probabilities);
@@ -242,7 +248,7 @@ export class Store {
       state.tiltLevel = tiltLevel(state.probabilities);
       this.db
         .prepare(
-          "UPDATE players SET nickname = ?, gold = ?, best_gold = ?, probabilities = ?, revision = ?, last_roll = ?, can_shake = ?, rolls_used = ?, has_completed_run = ? WHERE id = ?",
+          "UPDATE players SET nickname = ?, gold = ?, best_gold = ?, probabilities = ?, revision = ?, last_roll = ?, can_shake = ?, rolls_used = ?, has_completed_run = ?, previous_best_gold = ? WHERE id = ?",
         )
         .run(
           state.nickname,
@@ -254,6 +260,7 @@ export class Store {
           state.canShake ? 1 : 0,
           state.rollsUsed,
           state.hasCompletedRun ? 1 : 0,
+          state.previousBestGold,
           id,
         );
       const response = { state, result };
@@ -266,6 +273,12 @@ export class Store {
       if (this.db.isTransaction) this.db.exec("ROLLBACK");
       throw error;
     }
+  }
+  private nickname(value: string) {
+    const nickname = value.trim().normalize("NFC");
+    if (!nickname || [...nickname].length > 24 || /[\p{C}]/u.test(nickname))
+      throw new GameError("Use a nickname of 1–24 visible characters.");
+    return nickname;
   }
   private validateRequest(request: ActionRequest) {
     if (
@@ -294,12 +307,14 @@ export class Store {
     const allowed =
       action.kind === "roll"
         ? ["kind", "wagers"]
-        : action.kind === "nickname"
+        : action.kind === "nickname" || action.kind === "restart"
           ? ["kind", "nickname"]
           : ["kind"];
     if (Object.keys(action).some((k) => !allowed.includes(k)))
       throw new GameError("Unexpected action field.");
     if (action.kind === "nickname" && typeof action.nickname !== "string")
+      throw new GameError("Invalid nickname.");
+    if (action.kind === "restart" && "nickname" in action && typeof action.nickname !== "string")
       throw new GameError("Invalid nickname.");
   }
 }

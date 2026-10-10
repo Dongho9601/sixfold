@@ -1,5 +1,27 @@
 # Verification report
 
+## Recent bets, stable bankroll cards, and run results — October 10, 2026
+
+Removed the two betting hints. Left-clicking or tapping a placed chip now adds the selected amount; right-click removes the target's entire wager, and Delete/Backspace remains available for a focused target. Three chip shortcuts beside the amount remember distinct successful placements in newest-first order, persist across refreshes/restarts, and select an amount without placing a bet. Empty history slots are disabled.
+
+Bankroll values remain exact and on one line. The font scales to the available width inside a fixed-height value row, including during animated balance changes. The mobile grid is constrained so a long number cannot expand its tracks before measurement.
+
+The results dialog shows final Gold, personal best, and the first-record/improvement/tie/lower-score comparison. It saves the player's chosen name and starts the next run atomically through **Confirm & play again**. It also handles early bankruptcy without posting a score. The separate New run button is removed. A completed run and its comparison survive reload; failed name validation preserves the result, and a lost confirmation response retries the same saved action. Schema version 2 preserves competition data and adds the previous-best field. Legacy completed runs use their existing saved best because their earlier best was not recorded.
+
+Verified:
+
+- `npm test`: **52 passed**, including previous-best snapshots across multiple runs/reopened databases, a valid zero first record, atomic named restarts, duplicate/stale requests, and non-destructive migration of players, scores, and receipts.
+- `npm run build`: TypeScript and production build passed. `git diff --check` passed.
+- Chromium browser suite: **15 passed**. Coverage includes chip click/tap/right-click behavior, keyboard removal, recent-amount ordering and persistence, invalid/unaffordable amounts, pending-action locks, completion/reload/name confirmation, personal-best comparisons, invalid-name recovery, and retry after a committed response is lost.
+- Controls were checked at 1600, 1280, 1101, 1051, 1024, 801, 768, 390, and 320 px. Recent chips stay beside the amount with no horizontal overflow. Bankroll tests at 1280, 768, 390, and 320 px verify identical card heights from 100 G through 31-digit exact balances. An animated 999,999 → 1,000,229 G win also preserves card height on every observed update.
+- Visually inspected fresh desktop controls, mobile controls, the one-million bankroll, and desktop/mobile results dialogs. Tests use isolated in-memory databases; touch checks use browser emulation rather than a physical phone.
+
+Restarted the normal development server at `http://localhost:5173` and verified HTTP 200. Read-only counts before and after migration matched: **three players and 339 receipts**, with schema version 1 upgraded to 2. No save or leaderboard reset was performed.
+
+Previews: [Bet controls, desktop](screenshots/recent-bets-desktop.png) · [Bet controls, mobile](screenshots/recent-bets-mobile.png) · [One-million bankroll](screenshots/million-bankroll-mobile.png) · [Results, desktop](screenshots/run-results-desktop.png) · [Results, mobile](screenshots/run-results-mobile.png).
+
+Earlier sections record previous versions of the controls and layouts.
+
 ## Six Tilt levels and longer upper-band windows — October 10, 2026
 
 Tilt now has six levels. The former middle band is split at 4.5 effective outcomes; old Tilt 4 becomes 5 and old Tilt 5 becomes 6. Transfer ranges are 4–8%, 4.2–8.4%, 4.4–8.8%, 4.6–9.2%, 4.8–9.6%, and 5–10%. The mean increases only from 6% to 7.5%, giving concentrated boards more time while keeping every ordinary paying update active. The guide, labels, arithmetic examples, README, specification, and probability model match.

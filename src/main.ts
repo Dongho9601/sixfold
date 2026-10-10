@@ -47,6 +47,14 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string) =>
 let state: PlayerState | undefined;
 let draft: Wagers = {};
 let amount = CONFIG.selectedWager as string;
+const recentAmountsKey = "sixfold-recent-bet-amounts";
+let recentAmounts: string[] = [];
+try {
+  const stored: unknown = JSON.parse(localStorage.getItem(recentAmountsKey) || "[]");
+  if (Array.isArray(stored))
+    recentAmounts = [...new Set(stored.filter((value): value is string =>
+      typeof value === "string" && /^[1-9]\d*$/.test(value)))].slice(0, 3);
+} catch { /* An unavailable or invalid preference does not prevent play. */ }
 let busy = false;
 let actionPhase = "";
 let pending: ActionRequest | null = null;
@@ -120,11 +128,10 @@ app.innerHTML = `
           </div>
         </section>
         <section class="betting-controls" aria-label="Wager controls">
-          <div class="chip-controls"><label class="control-label" for="bet-amount">Bet amount</label><div class="amount-selector"><button id="decrease" aria-label="Decrease bet by 5 Gold">−</button><input id="bet-amount" type="text" role="spinbutton" inputmode="numeric" pattern="[0-9]*" value="${CONFIG.selectedWager}" aria-valuemin="1" aria-valuenow="${CONFIG.selectedWager}" aria-label="Bet amount in Gold" aria-describedby="amount-hint" autocomplete="off" /><span>G</span><button id="increase" aria-label="Increase bet by 5 Gold">+</button></div><span id="amount-hint" class="amount-hint">Type an amount or ↑ ↓ by 5 G</span></div>
+          <div class="chip-controls"><label class="control-label" for="bet-amount">Bet amount</label><div class="amount-row"><div class="amount-selector"><button id="decrease" aria-label="Decrease bet by 5 Gold">−</button><input id="bet-amount" type="text" role="spinbutton" inputmode="numeric" pattern="[0-9]*" value="${CONFIG.selectedWager}" aria-valuemin="1" aria-valuenow="${CONFIG.selectedWager}" aria-label="Bet amount in Gold" autocomplete="off" /><span>G</span><button id="increase" aria-label="Increase bet by 5 Gold">+</button></div><div id="recent-amounts" class="recent-amounts" role="group" aria-label="Recently used bet amounts"></div></div></div>
           <div class="actions"><button id="roll" class="roll-button" aria-keyshortcuts="r">${icon("dice")}<span>Roll dice</span><kbd>R</kbd></button><button id="shake" class="shake-button" aria-keyshortcuts="s" aria-describedby="shake-hint" disabled>${icon("shake")}<span>Shake</span><kbd>S</kbd></button></div>
           <p id="shake-hint" class="shake-hint">Shake unlocks after a roll changes your bankroll.</p>
-          <p class="hint"><span class="pointer-hint">Click a space to bet · Click a chip to take it back</span><span class="touch-hint">Tap a space to bet · Tap a chip to take it back</span></p>
-          <div class="messages"><p id="run-status" class="notice" role="status" hidden></p><p id="roll-announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p><p id="notice" class="notice" role="status" aria-live="polite"></p><button id="retry" class="text-button" hidden>Retry saved action</button><button id="restart" class="restart-button" hidden>New run · 100 G</button></div>
+          <div class="messages"><p id="run-status" class="notice" role="status" hidden></p><p id="roll-announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p><p id="notice" class="notice" role="status" aria-live="polite"></p><button id="retry" class="text-button" hidden>Retry saved action</button></div>
         </section>
       </div>
       <aside id="leaderboard-rail" class="leaderboard-rail" aria-label="Leaderboard tower"></aside>
@@ -145,17 +152,31 @@ app.innerHTML = `
     <p id="restart-description" class="dialog-intro">Your current progress and bets will be discarded. Start fresh with ${formatGold(CONFIG.startingGold)} G and ${CONFIG.rollsPerRun} rolls. Your completed leaderboard score stays.</p>
     <div class="confirm-actions"><button id="restart-cancel" class="cancel-button" data-close="restart-dialog" autofocus>Cancel</button><button id="restart-confirm" class="danger-button" disabled>Restart run</button></div>
   </dialog>
+  <dialog id="run-dialog" class="run-dialog" aria-labelledby="run-title" aria-describedby="run-comparison">
+    <span id="run-eyebrow" class="eyebrow">100 rolls complete</span>
+    <div class="dialog-top"><h2 id="run-title">Run complete</h2></div>
+    <div class="run-score"><span id="run-score-label" class="control-label">Final score</span><strong id="run-score"></strong></div>
+    <p id="run-comparison" class="run-comparison"></p>
+    <div id="run-best-row" class="run-best"><span>Personal best</span><strong id="run-best"></strong></div>
+    <form id="run-form">
+      <label for="run-nickname">Your leaderboard name</label>
+      <input id="run-nickname" maxlength="48" required autocomplete="nickname" aria-describedby="run-error" autofocus />
+      <p id="run-error" class="notice error" role="alert"></p>
+      <button id="run-confirm" class="roll-button" type="submit">Confirm &amp; play again</button>
+      <p class="run-next">100 G · 100 rolls</p>
+    </form>
+  </dialog>
   <dialog id="welcome-dialog" class="welcome-dialog" aria-labelledby="welcome-title" aria-describedby="welcome-intro">
     <div class="dialog-top"><h2 id="welcome-title">How to play</h2><button class="icon-button" data-close="welcome-dialog" aria-label="Close gameplay guide">${icon("close")}</button></div>
     <p id="welcome-intro" class="dialog-intro">Each run starts with 100 G and lasts ${CONFIG.rollsPerRun} rolls. Your Gold after the final roll is your score.</p>
     <ol class="welcome-steps">
-      <li><h3>Place your bets</h3><p>Type a whole amount, then tap a number, row, column, or color to add it. Tap again to add more. You can combine bets up to your available Gold. The + / − buttons and ↑ / ↓ keys in the amount control change your selected amount by 5 G, down to 1 G.</p><p>Tap or click a placed chip to take back that target’s entire wager. Right-clicking its target does the same. With a target focused, press <kbd>Delete</kbd> or <kbd>Backspace</kbd> to remove its wager. Add a smaller amount to reduce a bet. Editing a draft never spends Gold.</p></li>
+      <li><h3>Place your bets</h3><p>Type a whole amount, then tap a number, row, column, or color to add it. Tap again to add more. You can combine bets up to your available Gold. The + / − buttons and ↑ / ↓ keys in the amount control change your selected amount by 5 G, down to 1 G. The three chips beside the amount recall your most recently placed amounts, newest first. They remember distinct amounts across runs and refreshes.</p><p>Right-click a target or its chips to take back that target’s entire wager. Clicking or tapping a chip adds another bet, just like the rest of its target. With a target focused, press <kbd>Delete</kbd> or <kbd>Backspace</kbd> to remove its wager. Add a smaller amount to reduce a bet. Editing a draft never spends Gold.</p></li>
       <li><h3>Roll & collect</h3><p><b>Roll</b> draws one outcome using the hidden odds. A number pays ×6, a column ×3, and a row or color ×2. All matching bets pay, including overlapping groups. Returns include your winning stake: a 10 G number bet returns 60 G, a 50 G gain if that was your only bet.</p></li>
     </ol>
     <div class="guide-odds">
       ${oddsGuide}
       <h3>The hidden Jackpot</h3><p>A sole wager on the least likely number pays <b>×24</b> only when that number’s chance is <b>at most 1 in 24</b> (about 4.17%). Its availability and target stay hidden. When the chance is higher, the number pays the ordinary ×6. A Jackpot hit automatically Shakes to a fresh board without using an extra roll. A 10 G Jackpot returns 240 G, a 230 G gain. The target is hidden; the lowest number breaks ties. Any other positive bet removes Jackpot eligibility, even if it covers that number too.</p>
-      <h3>Make your 100 rolls count</h3><p>Every settled Roll counts, including losses and break-even bets. Shake keeps your Gold and does not use or restore rolls. Rolls and Shakes clear your draft. After roll 100, your final Gold posts to the leaderboard if it is your best completed run. Earlier peaks do not count. Betting and Shake then stop until you choose <b>New run</b>.</p><p>If you reach zero Gold before roll 100, the run ends without posting a score. You can start again with 100 G and 100 rolls. Your best completed score stays. There is no limit on new runs.</p><p>Gold, odds, and your roll count save automatically. A refresh resumes your board but clears uncommitted bets. Your browser identifies your player; keep its game cookie to return to the same record.</p>
+      <h3>Make your 100 rolls count</h3><p>Every settled Roll counts, including losses and break-even bets. Shake keeps your Gold and does not use or restore rolls. Rolls and Shakes clear your draft. After roll 100, your final Gold posts to the leaderboard if it is your best completed run. Earlier peaks do not count. The results popup shows your score and compares it with your previous personal best. Set your leaderboard name, then choose <b>Confirm &amp; play again</b> to save the name and start a fresh run.</p><p>If you reach zero Gold before roll 100, the run ends without posting a score. The popup lets you start again with 100 G and 100 rolls. Your best completed score stays. There is no limit on new runs.</p><p>Gold, odds, and your roll count save automatically. A refresh resumes your board but clears uncommitted bets. Your browser identifies your player; keep its game cookie to return to the same record.</p>
       <h3>Keyboard controls</h3><p>Press <kbd>R</kbd> to roll and <kbd>S</kbd> to Shake, including just after placing a bet. Shortcuts pause while you type in a field or have a dialog open. Holding a key does not repeat an action. Use Tab to move between controls and Enter or Space to activate buttons.</p>
       <h3>Make yourself comfortable</h3><p>In <b>Settings</b>, choose a leaderboard name of 1–24 visible characters. <b>Sound effects</b> controls dice sounds, coin showers, and fanfares. <b>Reduce motion</b> skips dice movement and celebration effects; your system’s reduced-motion preference is respected too.</p><p><b>Show probabilities</b> is a developer option that reveals the hidden number and group odds. It changes the display only. Sound, motion, and probability visibility are remembered in this browser.</p>
     </div>
@@ -426,13 +447,13 @@ function celebrateWin(result: Settlement, nextGold: string) {
   ]).then(() => {});
 }
 function countBalance(from: bigint, to: bigint) {
-  if (shouldReduceMotion()) { $("gold").textContent = formatGold(to); return Promise.resolve(); }
+  if (shouldReduceMotion()) { showGold(to); return Promise.resolve(); }
   return new Promise<void>(resolve => {
     const start = performance.now();
     function frame(now: number) {
       const progress = shouldReduceMotion() ? 1 : Math.min(1, (now - start) / 720);
       const eased = BigInt(Math.round((1 - (1 - progress) ** 3) * 1000));
-      $("gold").textContent = formatGold(from + (to - from) * eased / 1000n);
+      showGold(from + (to - from) * eased / 1000n);
       if (progress < 1) requestAnimationFrame(frame); else resolve();
     }
     requestAnimationFrame(frame);
@@ -534,11 +555,77 @@ function centerBoardNumbers() {
   });
 }
 void document.fonts.ready.then(centerBoardNumbers);
+function fitGold() {
+  const gold = $("gold");
+  const row = gold.parentElement!;
+  gold.style.fontSize = "";
+  const available = row.clientWidth - row.querySelector<HTMLElement>(".gold-unit")!.offsetWidth
+    - parseFloat(getComputedStyle(row).gap);
+  const width = gold.getBoundingClientRect().width;
+  if (width > available && available > 0) {
+    const size = parseFloat(getComputedStyle(gold).fontSize);
+    gold.style.fontSize = `${Math.floor(size * available / width * 10) / 10}px`;
+  }
+}
+function showGold(value: string | bigint) {
+  $("gold").textContent = formatGold(value);
+  fitGold();
+}
+new ResizeObserver(fitGold).observe($("gold").parentElement!);
+void document.fonts.ready.then(fitGold);
+function renderRecentAmounts() {
+  const holder = $("recent-amounts");
+  const signature = recentAmounts.join(",");
+  if (holder.dataset.amounts !== signature) {
+    holder.dataset.amounts = signature;
+    holder.innerHTML = Array.from({ length: 3 }, (_, index) => {
+      const value = recentAmounts[index];
+      return value
+        ? `<button type="button" class="recent-chip chip-tone-${index}" data-amount="${value}" title="${formatGold(value)} G" aria-label="Set bet amount to ${formatGold(value)} Gold"><span class="chip-face ${compactGold(value).length > 5 ? "compact-chip" : ""}">${compactGold(value)}</span></button>`
+        : '<button type="button" class="recent-chip empty-chip" aria-label="No recent bet amount yet" disabled><span class="chip-face">—</span></button>';
+    }).join("");
+  }
+  holder.querySelectorAll<HTMLButtonElement>("button").forEach(button => {
+    button.disabled = !state || busy || !!pending || runEnded() || !button.dataset.amount;
+    button.setAttribute("aria-pressed", String(button.dataset.amount === amount));
+  });
+}
 const runEnded = () => !!state && (state.rollsUsed >= CONFIG.rollsPerRun || state.gold === "0");
+function renderRunDialog() {
+  const dialog = $<HTMLDialogElement>("run-dialog");
+  if (!state || !runEnded()) {
+    if (dialog.open) dialog.close();
+    return;
+  }
+  if (busy || (pending && pending.action.kind !== "restart")) return;
+  const completed = state.rollsUsed === CONFIG.rollsPerRun;
+  const previous = state.previousBestGold;
+  $("run-title").textContent = completed ? "Run complete" : "Out of Gold";
+  $("run-eyebrow").textContent = `${state.rollsUsed} ${state.rollsUsed === 1 ? "roll" : "rolls"} ${completed ? "complete" : "played"}`;
+  $("run-score-label").textContent = completed ? "Final score" : "Final bankroll";
+  $("run-score").textContent = `${formatGold(state.gold)} G`;
+  $("run-best-row").hidden = !state.hasCompletedRun;
+  $("run-best").textContent = `${formatGold(state.bestGold)} G`;
+  $("run-comparison").textContent = !completed
+    ? "This run ended before 100 rolls. No score was posted."
+    : previous === null
+    ? "Your first completed run. Personal best set!"
+    : BigInt(state.gold) > BigInt(previous ?? state.bestGold)
+    ? `New personal best! ${formatGold(BigInt(state.gold) - BigInt(previous!))} G above your previous ${formatGold(previous!)} G.`
+    : state.gold === state.bestGold
+    ? "You matched your personal best."
+    : `${formatGold(BigInt(state.bestGold) - BigInt(state.gold))} G below your personal best.`;
+  if (!dialog.open) {
+    $<HTMLInputElement>("run-nickname").value = pending?.action.kind === "restart"
+      ? pending.action.nickname ?? state.nickname : state.nickname;
+    $("run-error").textContent = pending ? announcement : "";
+    document.querySelectorAll<HTMLDialogElement>("dialog[open]").forEach(open => open.close());
+    dialog.showModal();
+  }
+}
 function render() {
   if (!state) return;
-  $("gold").textContent = formatGold(state.gold);
-  $("gold").classList.toggle("long-gold", state.gold.length > 12);
+  showGold(state.gold);
   $("rolls-remaining").textContent = String(CONFIG.rollsPerRun - state.rollsUsed);
   $("run-status").hidden = !runEnded();
   $("run-status").textContent = state.rollsUsed === CONFIG.rollsPerRun
@@ -599,12 +686,16 @@ function render() {
     busy || !!pending || runEnded() || totalDraft() === 0n;
   $<HTMLButtonElement>("save-nickname").disabled = busy || !!pending;
   $("roll").querySelector("span")!.textContent = busy ? actionPhase || "Saving…" : "Roll dice";
-  $("restart").hidden = !runEnded();
-  for (const id of ["restart", "settings-restart", "restart-confirm"])
+  for (const id of ["settings-restart", "restart-confirm"])
     $<HTMLButtonElement>(id).disabled = busy || !!pending;
+  $<HTMLButtonElement>("run-confirm").disabled = busy || (!!pending && pending.action.kind !== "restart");
+  $<HTMLInputElement>("run-nickname").disabled = busy || !!pending;
+  $("run-confirm").textContent = busy ? "Starting new run…" : pending?.action.kind === "restart" ? "Retry & play again" : "Confirm & play again";
   $("retry").hidden = !pending || busy;
   centerBoardNumbers();
   updateHighlight();
+  renderRecentAmounts();
+  renderRunDialog();
 }
 function readAmount(): bigint | null {
   const value = $<HTMLInputElement>("bet-amount").value.trim();
@@ -634,6 +725,8 @@ function addBet(id: string) {
   }
   clearResult();
   draft[id] = ((draft[id] ? BigInt(draft[id]) : 0n) + value).toString();
+  recentAmounts = [amount, ...recentAmounts.filter(recent => recent !== amount)].slice(0, 3);
+  try { localStorage.setItem(recentAmountsKey, JSON.stringify(recentAmounts)); } catch { /* Keep the in-memory history. */ }
   tossChip(id);
   announce("");
   playTone("chip");
@@ -770,6 +863,7 @@ async function perform(action?: Action) {
     $("table-status").textContent = request.action.kind === "roll" ? "No more bets" : "Fresh odds coming";
   }
   announce("");
+  $("run-error").textContent = "";
   render();
   try {
     const response = await fetch("/api/action", {
@@ -812,6 +906,7 @@ async function perform(action?: Action) {
       $("table-status").textContent = "Fresh odds. Your call.";
       announce("A fresh die. New odds are on the table.");
     } else if (request.action.kind === "restart") {
+      $<HTMLDialogElement>("run-dialog").close();
       setAmount(CONFIG.selectedWager);
       await presentNewRun(data.state);
       announce("New run. 100 Gold and 100 rolls remaining.");
@@ -851,10 +946,14 @@ async function perform(action?: Action) {
     );
     if (request.action.kind === "nickname")
       $("nickname-status").textContent = message;
+    if ($<HTMLDialogElement>("run-dialog").open)
+      $("run-error").textContent = announcement;
   } finally {
     busy = false;
     actionPhase = "";
     render();
+    if (request.action.kind === "restart" && !pending && !runEnded())
+      $("bet-amount").focus({ preventScroll: true });
   }
 }
 
@@ -868,10 +967,7 @@ app.addEventListener("contextmenu", (event) => {
 app.addEventListener("click", (event) => {
   const element = event.target as HTMLElement;
   const target = element.closest<HTMLElement>("[data-target]");
-  if (target) {
-    if (element.closest(".table-chip")) cancelBet(target.dataset.target!);
-    else addBet(target.dataset.target!);
-  }
+  if (target) addBet(target.dataset.target!);
   const close = element.closest<HTMLElement>("[data-close]");
   if (close) $<HTMLDialogElement>(close.dataset.close!).close();
 });
@@ -898,13 +994,19 @@ $("roll").addEventListener("click", () => {
   if (totalDraft() > 0n) void perform({ kind: "roll", wagers: { ...draft } });
 });
 $("shake").addEventListener("click", () => void perform({ kind: "shake" }));
-$("restart").addEventListener("click", () => void perform({ kind: "restart" }));
 $("retry").addEventListener("click", () => void perform());
 function setAmount(value: string) {
   amount = value;
   $<HTMLInputElement>("bet-amount").value = amount;
   readAmount();
+  renderRecentAmounts();
 }
+$("recent-amounts").addEventListener("click", event => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-amount]");
+  if (!button || button.disabled || busy || pending || runEnded()) return;
+  setAmount(button.dataset.amount!);
+  announce("");
+});
 function adjustAmount(step: bigint) {
   if (busy || pending) return;
   const value = readAmount();
@@ -926,6 +1028,7 @@ document.querySelector(".amount-selector")!.addEventListener("keydown", event =>
 });
 $("bet-amount").addEventListener("change", () => {
   readAmount();
+  renderRecentAmounts();
 });
 function openLeaderboard() {
   $<HTMLDialogElement>("leaderboard-dialog").showModal();
@@ -965,6 +1068,7 @@ $("restart-confirm").addEventListener("click", () => {
 });
 document.querySelectorAll("dialog").forEach((dialog) =>
   dialog.addEventListener("click", (e) => {
+    if (dialog.id === "run-dialog") return;
     if (e.target === dialog) {
       const bounds = dialog.getBoundingClientRect();
       if (
@@ -977,6 +1081,14 @@ document.querySelectorAll("dialog").forEach((dialog) =>
     }
   }),
 );
+$("run-dialog").addEventListener("cancel", event => event.preventDefault());
+$("run-form").addEventListener("submit", event => {
+  event.preventDefault();
+  if (busy || !runEnded()) return;
+  if (pending?.action.kind === "restart") { void perform(); return; }
+  if (pending) return;
+  void perform({ kind: "restart", nickname: $<HTMLInputElement>("run-nickname").value });
+});
 $("nickname-form").addEventListener("submit", (e) => {
   e.preventDefault();
   void perform({
@@ -1019,7 +1131,7 @@ $("welcome-dialog").addEventListener("close", () => {
   guideReturnFocus.focus({ preventScroll: true });
 });
 function showFirstGameGuide() {
-  if (!state || pending) return;
+  if (!state || pending || runEnded()) return;
   const key = `sixfold-guide-seen:${state.id}`;
   if (state.lastRoll) localStorage.setItem(key, "yes");
   if (!state.lastRoll && localStorage.getItem(key) !== "yes") {
