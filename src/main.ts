@@ -674,13 +674,13 @@ function render() {
       );
       button.disabled = busy || !!pending || runEnded();
       button.classList.toggle("wagered", placed !== "0");
-      if (placed !== "0") button.title = `${target.label} · ${formatGold(placed)} Gold wagered`;
+      if (placed !== "0") button.title = `${target.label} · ${formatGold(placed)} Gold wagered · Hold or right-click to remove`;
       else button.removeAttribute("title");
       button.setAttribute("aria-pressed", String(placed !== "0"));
       button.setAttribute("aria-keyshortcuts", "Delete Backspace");
       button.setAttribute(
         "aria-label",
-        `${target.label}, covers ${target.coverage.join(", ")}${showProbabilities ? `, ${percent(probability)} probability` : ""}, return ${target.multiplier} times, wager ${placed} Gold${placed !== "0" ? ". Press Delete to remove wager" : ""}`,
+        `${target.label}, covers ${target.coverage.join(", ")}${showProbabilities ? `, ${percent(probability)} probability` : ""}, return ${target.multiplier} times, wager ${placed} Gold${placed !== "0" ? ". Hold, right-click, or press Delete to remove wager" : ""}`,
       );
       if (isNumber) {
         button.innerHTML = `<svg class="number" viewBox="0 0 100 100" aria-hidden="true"><text x="50" y="50" text-anchor="middle" fill="currentColor">${target.coverage[0]}</text></svg>${showProbabilities ? `<span class="probability">${percent(probability)}</span>` : ""}${placed !== "0" ? chipPile(id, placed) : ""}`;
@@ -1075,10 +1075,64 @@ async function perform(action?: Action) {
   }
 }
 
+type BetPress = {
+  pointerId: number;
+  target: HTMLButtonElement;
+  x: number;
+  y: number;
+  timer?: ReturnType<typeof setTimeout>;
+};
+let betPress: BetPress | undefined;
+let suppressedBetClick: HTMLButtonElement | undefined;
+
+function stopBetPress(suppressClick = false) {
+  if (!betPress) return;
+  clearTimeout(betPress.timer);
+  if (suppressClick) suppressedBetClick = betPress.target;
+  betPress = undefined;
+}
+
+app.addEventListener("pointerdown", event => {
+  if (!event.isPrimary) {
+    stopBetPress(true);
+    return;
+  }
+  stopBetPress();
+  suppressedBetClick = undefined;
+  const target = (event.target as Element).closest<HTMLButtonElement>("[data-target]");
+  if (event.button !== 0 || !target || target.disabled) return;
+  const press: BetPress = { pointerId: event.pointerId, target, x: event.clientX, y: event.clientY };
+  betPress = press;
+  press.timer = setTimeout(() => {
+    if (betPress !== press) return;
+    suppressedBetClick = target;
+    cancelBet(target.dataset.target!);
+  }, 500);
+});
+document.addEventListener("pointermove", event => {
+  if (!betPress || event.pointerId !== betPress.pointerId) return;
+  const bounds = betPress.target.getBoundingClientRect();
+  if (Math.hypot(event.clientX - betPress.x, event.clientY - betPress.y) > 10 ||
+      event.clientX < bounds.left || event.clientX > bounds.right ||
+      event.clientY < bounds.top || event.clientY > bounds.bottom)
+    stopBetPress(true);
+});
+document.addEventListener("pointerup", event => {
+  if (event.pointerId === betPress?.pointerId) stopBetPress();
+});
+document.addEventListener("pointercancel", event => {
+  if (event.pointerId === betPress?.pointerId) stopBetPress(true);
+});
+window.addEventListener("blur", () => stopBetPress(true));
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) stopBetPress(true);
+});
+
 app.addEventListener("contextmenu", (event) => {
   const target = (event.target as HTMLElement).closest<HTMLElement>("[data-target]");
   if (!target) return;
   event.preventDefault();
+  stopBetPress(true);
   cancelBet(target.dataset.target!);
 });
 
@@ -1090,7 +1144,16 @@ app.addEventListener("click", (event) => {
     void refreshLeaderboard();
   }
   const target = element.closest<HTMLElement>("[data-target]");
-  if (target) addBet(target.dataset.target!);
+  if (target) {
+    // A hold removes the wager before release. Consume its generated click so
+    // release cannot immediately put it back; keyboard activation still works.
+    if (target === suppressedBetClick && event.detail !== 0) {
+      suppressedBetClick = undefined;
+      event.preventDefault();
+      return;
+    }
+    addBet(target.dataset.target!);
+  }
   const close = element.closest<HTMLElement>("[data-close]");
   if (close) $<HTMLDialogElement>(close.dataset.close!).close();
 });

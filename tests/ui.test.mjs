@@ -321,7 +321,7 @@ test("Settings stays compact and the complete guide works on desktop and mobile"
     if (!await page.locator(".guide-details").evaluate(element => element.open))
       await page.locator(".guide-details summary").click();
     const details = await page.locator(".guide-details").innerText();
-    for (const text of ["Right-click", "Earlier peaks do not count", "Sound effects", "Reduce motion", "Show probabilities", "4%–8%", "5%–10%", "37.61%"])
+    for (const text of ["Press and hold", "right-click", "Earlier peaks do not count", "Sound effects", "Reduce motion", "Show probabilities", "4%–8%", "5%–10%", "37.61%"])
       assert.ok(details.includes(text), `Details missing ${text}`);
     await page.screenshot({ path: `test-results/guide-details-${width}.png` });
     assert.equal(await page.evaluate(() => {
@@ -415,7 +415,7 @@ test("three sidebar cards highlight remaining rolls and keep the leaderboard com
     assert.deepEqual(await page.locator(".stat-card .eyebrow").allTextContents(),
       ["Bankroll", "Rolls remaining", "On the table"]);
     assert.equal(await page.locator("#rolls-remaining").innerText(), "100");
-    assert.ok(await page.locator("#rolls-remaining").evaluate(element => parseFloat(getComputedStyle(element).fontSize) >= 40));
+    assert.ok(await page.locator("#rolls-remaining").evaluate((element, minimum) => parseFloat(getComputedStyle(element).fontSize) >= minimum, width <= 650 ? 26 : 40));
     assert.equal(await page.locator("#available, #best-gold, .tower-progress, .your-record, .leaderboard-note, #edit-draft, #clear-draft, #draft-tray, #jackpot-status, .table-wager button").count(), 0);
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await page.screenshot({ path: `test-results/three-cards-${width}.png`, fullPage: true });
@@ -470,6 +470,134 @@ test("left clicks and taps on chips add bets; right-click and keyboard remove wa
   }
   assert.equal(await page.locator("#gold").innerText(), "100");
   assert.equal((await saved(page)).revision, "0");
+});
+
+test("the complete phone game fits portrait and landscape viewports during play", async t => {
+  const page = await game(t, 390, { isMobile: true, hasTouch: true });
+  const fits = async label => {
+    await page.evaluate(() => scrollTo(0, 0));
+    const layout = await page.evaluate(() => ({
+      width: innerWidth, height: innerHeight,
+      scrollWidth: document.documentElement.scrollWidth,
+      scrollHeight: document.documentElement.scrollHeight,
+      controls: [...document.querySelectorAll(".stat-card, #tilt-info, [data-target], .amount-selector, #recent-amounts, #roll, #shake, .site-information")].map(element => {
+        const bounds = element.getBoundingClientRect();
+        return { name: element.id || element.dataset.target || element.className, left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom };
+      }),
+    }));
+    assert.ok(layout.scrollWidth <= layout.width, `${label}: horizontal overflow`);
+    assert.ok(layout.scrollHeight <= layout.height + 1, `${label}: vertical overflow (${layout.scrollHeight} / ${layout.height})`);
+    for (const bounds of layout.controls) {
+      assert.ok(bounds.left >= 0 && bounds.right <= layout.width + 1 && bounds.top >= 0 && bounds.bottom <= layout.height + 1,
+        `${label}: ${bounds.name} is outside the viewport`);
+    }
+  };
+  for (const [width, height] of [[320, 568], [360, 640], [375, 667], [390, 844], [430, 932], [568, 320], [667, 375], [844, 390], [932, 430]]) {
+    await page.setViewportSize({ width, height });
+    await page.locator('[data-target="row1"]').tap();
+    await fits(`${width} × ${height}`);
+    await page.screenshot({ path: `test-results/phone-fit-${width}x${height}.png` });
+    await page.locator('[data-target="row1"]').click({ button: "right" });
+  }
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.locator('[data-target="n6"]').tap();
+  await page.locator("#roll").tap();
+  await settled(page, "330");
+  await fits("small phone after Jackpot");
+  await page.locator('[data-target="row1"]').tap();
+  await page.locator("#roll").tap();
+  await settled(page, "320");
+  await fits("small phone after an ordinary roll");
+  await page.locator("#shake").tap();
+  await page.waitForFunction(() => document.querySelector("#notice").textContent.includes("A fresh die.") && !document.querySelector('[data-target="n1"]').disabled);
+  await fits("small phone after Shake");
+  await page.locator("#settings-open").tap();
+  await page.locator("#show-probabilities").tap();
+  await page.locator("#probabilities-confirm").tap();
+  await page.waitForFunction(() => document.querySelectorAll(".probability, .group-odds").length === 13 && !document.querySelector("#show-probabilities").disabled);
+  await page.locator('[data-close="settings-dialog"]').tap();
+  await fits("small phone with probabilities");
+  await page.screenshot({ path: "test-results/phone-fit-probabilities.png" });
+});
+
+test("mouse and touch holds remove only the chosen wager and consume the release click", async t => {
+  for (const input of ["mouse", "touch"]) {
+    const page = await game(t, input === "mouse" ? 1280 : 390, {
+      hasTouch: input === "touch", isMobile: input === "touch",
+      viewport: { width: input === "mouse" ? 1280 : 390, height: input === "mouse" ? 900 : 667 },
+    });
+    const session = input === "touch" ? await page.context().newCDPSession(page) : undefined;
+    const activate = locator => input === "touch" ? locator.tap() : locator.click();
+    const start = async locator => {
+      const bounds = await locator.boundingBox();
+      const point = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+      if (session) await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ ...point, id: 1 }] });
+      else { await page.mouse.move(point.x, point.y); await page.mouse.down(); }
+    };
+    const release = async () => {
+      if (session) await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+      else await page.mouse.up();
+    };
+    await activate(page.locator('[data-target="n6"]'));
+    for (const id of ["n1", "row0", "col1", "black"]) {
+      const target = page.locator(`[data-target="${id}"]`);
+      for (const onChip of [false, true]) {
+        await activate(target);
+        await activate(target);
+        assert.equal(await page.locator("#draft-total").textContent(), "30 G");
+        await start(onChip ? target.locator(".table-chip:last-child") : target);
+        await page.waitForFunction(() => document.querySelector("#draft-total").textContent === "10 G");
+        await release();
+        assert.equal(await page.locator("#draft-total").textContent(), "10 G", `${input}: release restored ${id}`);
+        assert.equal(await target.getAttribute("aria-pressed"), "false");
+      }
+    }
+    // Holding an empty target must not place a new wager on release either.
+    const empty = page.locator('[data-target="n1"]');
+    await start(empty);
+    await page.waitForTimeout(650);
+    await release();
+    assert.equal(await page.locator("#draft-total").textContent(), "10 G");
+    await activate(empty);
+    assert.equal(await page.locator("#draft-total").textContent(), "20 G");
+    assert.equal(await page.locator("#gold").innerText(), "100");
+    assert.equal((await saved(page)).revision, "0");
+    await session?.detach();
+  }
+});
+
+test("short presses add bets while dragging, cancelled touches, and lost focus abort a hold", async t => {
+  const page = await game(t, 390, { hasTouch: true });
+  const target = page.locator('[data-target="n1"]');
+  await target.click();
+  await target.click({ delay: 100 });
+  assert.equal(await page.locator("#draft-total").textContent(), "20 G");
+  const bounds = await target.boundingBox();
+  const point = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+  await page.mouse.move(point.x, point.y);
+  await page.mouse.down();
+  await page.mouse.move(point.x + 20, point.y);
+  await page.waitForTimeout(650);
+  await page.mouse.up();
+  assert.equal(await page.locator("#draft-total").textContent(), "20 G");
+  const session = await page.context().newCDPSession(page);
+  for (const finish of ["touchMove", "touchCancel"]) {
+    await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ ...point, id: 1 }] });
+    await session.send("Input.dispatchTouchEvent", { type: finish, touchPoints: finish === "touchCancel" ? [] : [{ x: point.x + 20, y: point.y, id: 1 }] });
+    await page.waitForTimeout(650);
+    if (finish === "touchMove") await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+    assert.equal(await page.locator("#draft-total").textContent(), "20 G");
+  }
+  await session.detach();
+  await page.mouse.move(point.x, point.y);
+  await page.mouse.down();
+  await page.evaluate(() => window.dispatchEvent(new Event("blur")));
+  await page.waitForTimeout(650);
+  await page.mouse.up();
+  assert.equal(await page.locator("#draft-total").textContent(), "20 G");
+  await target.focus();
+  await page.keyboard.press("Enter");
+  assert.equal(await page.locator("#draft-total").textContent(), "30 G");
 });
 
 test("the table and guide display all six Tilt levels", async t => {
