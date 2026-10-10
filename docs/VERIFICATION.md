@@ -1,5 +1,36 @@
 # Verification report
 
+## Additional 1.5× Tilt speed increase — October 10, 2026
+
+Increased every transfer-rate bound by 1.5× relative to the preceding tuning. Tilt levels 1–5 now use **6–12%, 9–18%, 12–24%, 15–30%, and 18–36%** of the paying face's probability above the 2% floor. This is the 3× original-baseline profile in the pacing experiment. The spec, README, probability model, exact arithmetic tests, and browser guide assertions now match. The guide reads its rates and example directly from configuration.
+
+Reran `npm run test:balance` with 10,000 identical seeded Tilt 2–5 starting boards per profile/policy. The configured result matches the 3× baseline profile: rotating 1 G group bets reach Tilt 1 in a median **16 rolls**, compared with 23 under the preceding tuning; **69.0% reach it within 20 rolls**, compared with 40.5%. The median first level change is five rolls, and the initial strongest-face opportunity window (at least 30% probability) is 13 rolls, down from 21. Full-coverage median arrival is seven rolls, down from 11. These are policy-specific pacing measurements, not guaranteed roll counts.
+
+`npm test` passed all **45 tests**, including the revised 1,000-board pacing regression, exact transfer arithmetic, probability floor and conservation checks. All **six Chromium browser tests** passed, including the guide's new 6–12% / 18–36% ranges and its 34.87% example at desktop/mobile sizes. TypeScript, the production build, and `git diff --check` passed. Tests used isolated stores. The [desktop Tilt guide preview](screenshots/tilt-guide-oct10-1280.jpg) reflects the updated ranges.
+
+## Current spec, quicker Tilt, shortcuts, and one guide — October 10, 2026 (initial tuning)
+
+Replaced the historical `spec.md` with a specification of the current implementation: board mapping, hidden odds, entropy-based Tilt, earned Shake, Jackpot, accounting, persistence, layout, input, API, and current balance settings. Updated the README and probability model to match.
+
+Compared five probability-transfer profiles (1×, 1.5×, 2×, 3×, 4× the preceding ranges) on 10,000 paired seeded Tilt 2–5 starting boards per policy, using 80 rolls per board. The experiment calls the actual probability rules with both rotating 1 G group bets and full coverage, without using a database. Selected 2×: ranges are now 4–8%, 6–12%, 8–16%, 10–20%, and 12–24% of the paying face's probability above the floor. The configured profile reproduced the 2× results exactly. Under group exploration, median first Tilt change improved from 13 to six rolls, first Tilt 1 from 47 to 23, and the proportion reaching Tilt 1 within 40 rolls from 36.9% to 89.7%. The median initial opportunity window (strongest starting face remaining at least 30%, for qualifying starts) was 21 rolls, versus 46 previously and 13/eight for 3×/4×. See [the model and limitations](PROBABILITY_MODEL.md#which-pace-preserves-opportunity-and-tension).
+
+Reproduced the shortcut bug before fixing it: clicking number 6 left that button focused, and pressing R left revision 0, bankroll 100 G, and the 10 G draft unchanged. The handler excluded every button. It now accepts R/S from buttons while preserving text-editing, dialog, modifier, repeat, composition, disabled-action, and pending-action guards.
+
+Moved the full rules and preference explanations from Settings to How to Play. Settings now contains the nickname form, three switches, and a guide link. The guide retains its white surface, serif reading text, expandable example, sticky close control, print styling, and focus restoration. Transfer ranges and example arithmetic in the guide derive from `CONFIG`.
+
+Executed checks:
+
+- `npm test`: **45 passed**, including all existing settlement, persistence, HTTP, and startup tests; updated exact transfer arithmetic; and a new 1,000-board settlement pacing regression that checks both Tilt 1 arrival and opportunity duration.
+- `npm run build`: TypeScript and the production Vite build passed.
+- `npm run test:balance`: all five candidates plus the configured profile completed on both policies; the detailed reproducible results are in the probability model.
+- `PLAYWRIGHT_CHROMIUM_EXECUTABLE='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' npm run test:ui`: **six browser tests passed**. The suite starts its own in-memory API/Vite server on an available port. It checks click → R, Enter → R, uppercase R, Jackpot settlement and Tilt 1, locked/unlocked S, text fields and dialogs, modifiers/repeats/composition/consumed keys/editable text, prevention of a second action during a pending request, and Settings/guide behavior at 1280, 390, and 320 px. No page errors occurred.
+- Visual inspection of desktop and mobile Settings, guide, and expanded probability example found no horizontal overflow. The Tilt link scrolled to an unobscured heading beneath the sticky title and returned focus on close. The Settings link opened only one dialog and returned focus to Settings. Nickname saving and probability visibility still worked.
+- Print-media inspection confirmed that the game is hidden, the guide flows with visible overflow, its header is static, and its reading text remains 18 px. `git diff --check` passed.
+
+Previews: [Settings on mobile](screenshots/settings-oct10-390.jpg) · [How to Play on mobile](screenshots/how-to-play-oct10-390.jpg) · [Tilt guide on desktop](screenshots/tilt-guide-oct10-1280.jpg).
+
+Tests and browser fixtures used isolated memory/temporary stores; the normal player database was not changed. Browser coverage is desktop Chromium at resized viewports, not physical phones, Safari, or Firefox. Simulation measures pacing under two specified policies; it does not prove human enjoyment or cover all betting and Shake strategies.
+
 ## Startup port conflicts and group bet typography — October 9, 2026
 
 Development startup now catches bind errors and, when no explicit `PORT` is set, tries up to 20 subsequent ports. The printed local and network URLs use the actual bound port. Explicit ports and production startup stay strict and exit with a concise explanation when the port is occupied. Failed startup closes Vite and SQLite resources.

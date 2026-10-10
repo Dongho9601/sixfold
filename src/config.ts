@@ -6,12 +6,13 @@ export const CONFIG = {
   selectedWager: "10",
   probabilityFloor: 0.02,
   // Indexed by the board's Tilt before the roll, from level 1 through 5.
+  // Tuned with scripts/tune-tilt.ts; see docs/PROBABILITY_MODEL.md.
   transferRates: [
-    { min: 0.02, max: 0.04 },
-    { min: 0.03, max: 0.06 },
-    { min: 0.04, max: 0.08 },
-    { min: 0.05, max: 0.10 },
     { min: 0.06, max: 0.12 },
+    { min: 0.09, max: 0.18 },
+    { min: 0.12, max: 0.24 },
+    { min: 0.15, max: 0.30 },
+    { min: 0.18, max: 0.36 },
   ],
   // Effective-outcome cutoffs, from nearly even to strongly concentrated.
   tiltThresholds: [5.4, 4.8, 4.2, 3.6],

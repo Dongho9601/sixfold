@@ -71,6 +71,12 @@ try {
   sessionStorage.removeItem("one-of-six-pending");
 }
 
+const transferRange = (level: number) => {
+  const { min, max } = CONFIG.transferRates[level - 1];
+  return `${percent(min)}–${percent(max)}`;
+};
+const exampleRate = (CONFIG.transferRates[1].min + CONFIG.transferRates[1].max) / 2;
+const exampleTransfer = exampleRate * (0.4 - CONFIG.probabilityFloor);
 const oddsGuide = `
   <h3>Every board is different</h3>
   <p>A fresh board draws a new random set of hidden odds. Every number keeps at least a <b>2% chance</b>, but some can be much more likely than others. Red and Black are not necessarily a 50–50 bet.</p>
@@ -80,9 +86,9 @@ const oddsGuide = `
   <p><b>High Tilt · levels 4–5.</b> More of the chance is concentrated on fewer numbers, so some faces are much more likely than others. Tilt does not reveal which ones. Payouts move the odds faster here, so a pattern you discover may fade sooner.</p>
   <p><b>Level 3 is in between.</b> Combine the level with the results you see, and keep observing after payouts. High Tilt does not guarantee a better bet, and low Tilt does not make every bet fair.</p>
   <h3>Payouts change the odds</h3>
-  <p>After a payout other than a Jackpot, the rolled number gives up a small random share of its probability above the <b>2% minimum</b>. The transfer rate rises with the Tilt shown before the roll: <b>2–4% at level 1, up to 6–12% at level 5</b>. The other five numbers receive random shares of that amount.</p>
+  <p>After a payout other than a Jackpot, the rolled number gives up a random share of its probability above the <b>2% minimum</b>. The transfer rate rises with the Tilt shown before the roll: <b>${transferRange(1)} at level 1, up to ${transferRange(5)} at level 5</b>. The other five numbers receive random shares of that amount.</p>
   <p>One transfer happens per paying roll, regardless of wager size or how many bets pay. Even on a high-Tilt board, a rare number has little probability to give away. Tilt can rise, fall, or stay at the same level; faster changes do not guarantee that it falls.</p>
-  <details class="odds-example"><summary>See one possible change</summary><p>On a Tilt 2 board, the transfer rate is 3–6%. A number at 40% has 38 percentage points above the minimum. If this roll transfers 4.5% of that surplus, the number falls to 38.29%. The other five share the 1.71 percentage points randomly. The next payout draws a new rate and new shares. This happens even when your total return leaves the roll at break-even or a net loss. If no wager pays, the odds stay the same. A Jackpot instead brings in a fresh die and a new board.</p></details>
+  <details class="odds-example"><summary>See one possible change</summary><p>On a Tilt 2 board, the transfer rate is ${transferRange(2)}. A number at 40% has 38 percentage points above the minimum. If this roll transfers ${percent(exampleRate)} of that surplus, the number falls to ${percent(0.4 - exampleTransfer)}. The other five share the ${(exampleTransfer * 100).toFixed(2)} percentage points randomly. The next payout draws a new rate and new shares. This happens even when your total return leaves the roll at break-even or a net loss. If no wager pays, the odds stay the same. A Jackpot instead brings in a fresh die and a new board.</p></details>
   <h3>Earn your next Shake</h3>
   <p><b>Shake</b> costs no Gold, but a roll must first change your settled bankroll: any gain or loss counts, even 1 G. A break-even roll does not count. Betting 10 G on all six numbers returns 60 G and does not unlock Shake. Editing bets does not count either.</p>
   <p>Once unlocked, Shake stays available until you use it. It draws fresh odds, clears your bets, and locks again. A new game or a Jackpot’s automatic Shake also starts locked. Start with small bets and use the Tilt and results to decide whether to keep exploring the board.</p>
@@ -115,7 +121,7 @@ app.innerHTML = `
         </section>
         <section class="betting-controls" aria-label="Wager controls">
           <div class="chip-controls"><label class="control-label" for="bet-amount">Bet amount</label><div class="amount-selector"><button id="decrease" aria-label="Decrease bet by 5 Gold">−</button><input id="bet-amount" type="text" role="spinbutton" inputmode="numeric" pattern="[0-9]*" value="${CONFIG.selectedWager}" aria-valuemin="1" aria-valuenow="${CONFIG.selectedWager}" aria-label="Bet amount in Gold" aria-describedby="amount-hint" autocomplete="off" /><span>G</span><button id="increase" aria-label="Increase bet by 5 Gold">+</button></div><span id="amount-hint" class="amount-hint">Type an amount or ↑ ↓ by 5 G</span></div>
-          <div class="actions"><button id="roll" class="roll-button">${icon("dice")}<span>Roll dice</span><kbd>R</kbd></button><button id="shake" class="shake-button" aria-describedby="shake-hint" disabled>${icon("shake")}<span>Shake</span><kbd>S</kbd></button></div>
+          <div class="actions"><button id="roll" class="roll-button" aria-keyshortcuts="r">${icon("dice")}<span>Roll dice</span><kbd>R</kbd></button><button id="shake" class="shake-button" aria-keyshortcuts="s" aria-describedby="shake-hint" disabled>${icon("shake")}<span>Shake</span><kbd>S</kbd></button></div>
           <p id="shake-hint" class="shake-hint">Shake unlocks after a roll changes your bankroll.</p>
           <p class="hint"><span class="pointer-hint">Click a space to bet · Right-click to take it back</span><span class="touch-hint">Tap a space to bet · Edit bets to take it back</span></p>
           <div class="messages"><p id="roll-announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p><p id="notice" class="notice" role="status" aria-live="polite"></p><button id="retry" class="text-button" hidden>Retry saved action</button><button id="restart" class="restart-button" hidden>Start again with 100 G</button></div>
@@ -129,12 +135,27 @@ app.innerHTML = `
   <dialog id="leaderboard-dialog" class="leaderboard-dialog" aria-labelledby="leaderboard-title"><div id="leaderboard-content"><div class="tower-heading"><div><span class="eyebrow">HIGHEST BANKROLLS</span><h2 id="leaderboard-title">Leaderboard</h2></div><button class="icon-button" data-close="leaderboard-dialog" aria-label="Close leaderboard">${icon("close")}</button></div><div class="tower-floors"><ol id="leaders" aria-label="Players ranked by personal best"></ol></div><div class="tower-progress"><span id="tower-position">Your climb</span><p id="tower-next">Play to raise your personal best.</p><div id="tower-meter" class="tower-meter" role="progressbar" aria-label="Progress toward the next rank" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div></div><div class="your-record"><span id="your-nickname"></span><strong id="your-best"></strong></div><p class="leaderboard-note">Ranked by each player’s personal best.</p></div></dialog>
   <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title"><div class="dialog-top"><div><h2 id="settings-title">Settings</h2></div><button class="icon-button" data-close="settings-dialog" aria-label="Close settings">${icon("close")}</button></div>
     <form id="nickname-form"><label for="nickname">Your leaderboard name</label><div class="nickname-row"><input id="nickname" maxlength="48" required autocomplete="nickname"/><button type="submit" id="save-nickname">Save</button></div><p id="nickname-status" role="status"></p></form>
-    <label class="sound-control"><span>Sound effects<small>Coin showers, fanfares, and dice sounds</small></span><input id="sound" type="checkbox" role="switch" ${sound ? "checked" : ""}/></label>
-    <label class="sound-control"><span>Reduce motion<small>Skip dice movement and celebration effects</small></span><input id="motion" type="checkbox" role="switch" ${shouldReduceMotion() ? "checked" : ""}/></label>
-    <label class="sound-control"><span>Show probabilities<small>Developer option · Reveal the hidden odds</small></span><input id="show-probabilities" type="checkbox" role="switch" ${showProbabilities ? "checked" : ""}/></label>
-    <div class="instructions"><h3>Place a wager</h3><p>Enter a whole amount, then tap any number or group to add it. The + / − buttons and ↑ / ↓ keys in the amount field change it by 5 G. Right-click a target to remove its entire wager, or use <b>Edit bets</b> to reduce or remove wagers on any device. You can bet on several spaces, up to your available Gold.</p><h3>Roll & collect</h3><p><b>Roll</b> draws one outcome using the hidden odds. Each winning wager pays its total return: number ×6, column ×3, row or color ×2. Returns include the winning stake: a 10 G number bet returns 60 G, a 50 G gain if that was your only bet.</p>${oddsGuide}<h3>The hidden Jackpot</h3><p>A sole wager on the least likely number pays <b>×24</b> on a hit instead of ×6, then automatically Shakes to a fresh board. The target is hidden; the lowest number breaks ties.</p><h3>Your Gold stays with you</h3><p>Shake keeps your Gold. Rolls and Shakes clear your draft. At zero Gold, start again with 100 G; your personal best stays.</p><p>Gold and odds save automatically. A refresh resumes your board but clears uncommitted bets. On desktop, <kbd>R</kbd> rolls and <kbd>S</kbd> shakes. All controls also work with Tab and Enter.</p><p>Play Gold only. No real money.</p></div>
+    <label class="sound-control"><span>Sound effects</span><input id="sound" type="checkbox" role="switch" ${sound ? "checked" : ""}/></label>
+    <label class="sound-control"><span>Reduce motion</span><input id="motion" type="checkbox" role="switch" ${shouldReduceMotion() ? "checked" : ""}/></label>
+    <label class="sound-control"><span>Show probabilities (developer)</span><input id="show-probabilities" type="checkbox" role="switch" ${showProbabilities ? "checked" : ""}/></label>
+    <button id="settings-guide" class="text-button">How to play ${icon("chevron")}</button>
   </dialog>
-  <dialog id="welcome-dialog" class="welcome-dialog" aria-labelledby="welcome-title" aria-describedby="welcome-intro"><div class="dialog-top"><h2 id="welcome-title">How to play</h2><button class="icon-button" data-close="welcome-dialog" aria-label="Close gameplay guide">${icon("close")}</button></div><p id="welcome-intro" class="dialog-intro">You have 100 G to play with. Make a call and see where the die lands.</p><ol class="welcome-steps"><li><h3>Place your bets</h3><p>Type a whole amount, then tap a number, row, column, or color. Tap again to add more. Use <b>Edit bets</b> to take chips back before rolling.</p></li><li><h3>Roll & collect</h3><p>A number pays ×6, a column ×3, and a row or color ×2. Returns include your winning stake. A sole bet on the hidden, least likely number pays a Jackpot ×24 if it hits.</p></li></ol><div class="guide-odds">${oddsGuide}</div><button id="welcome-start" class="roll-button">Let’s play ${icon("chevron")}</button><p class="welcome-footnote">Play Gold only · Full rules in Settings</p></dialog>
+  <dialog id="welcome-dialog" class="welcome-dialog" aria-labelledby="welcome-title" aria-describedby="welcome-intro">
+    <div class="dialog-top"><h2 id="welcome-title">How to play</h2><button class="icon-button" data-close="welcome-dialog" aria-label="Close gameplay guide">${icon("close")}</button></div>
+    <p id="welcome-intro" class="dialog-intro">Each new game starts with 100 G. Make a call and see where the die lands.</p>
+    <ol class="welcome-steps">
+      <li><h3>Place your bets</h3><p>Type a whole amount, then tap a number, row, column, or color to add it. Tap again to add more. You can combine bets up to your available Gold. The + / − buttons and ↑ / ↓ keys in the amount control change your selected amount by 5 G, down to 1 G.</p><p>Right-click a target to remove its entire wager, or use <b>Edit bets</b> to reduce or remove wagers on any device. <b>Clear</b> takes every chip back. Editing a draft never spends Gold.</p></li>
+      <li><h3>Roll & collect</h3><p><b>Roll</b> draws one outcome using the hidden odds. A number pays ×6, a column ×3, and a row or color ×2. All matching bets pay, including overlapping groups. Returns include your winning stake: a 10 G number bet returns 60 G, a 50 G gain if that was your only bet.</p></li>
+    </ol>
+    <div class="guide-odds">
+      ${oddsGuide}
+      <h3>The hidden Jackpot</h3><p>A sole wager on the least likely number pays <b>×24</b> on a hit instead of ×6, then automatically Shakes to a fresh board. A 10 G Jackpot returns 240 G, a 230 G gain. The target is hidden; the lowest number breaks ties. Any other positive bet removes Jackpot eligibility, even if it covers that number too.</p>
+      <h3>Your Gold stays with you</h3><p>Shake keeps your Gold. Rolls and Shakes clear your draft. At zero Gold, <b>Start again</b> restores 100 G; your personal best stays. The leaderboard ranks players by their highest settled bankroll, so later losses never erase a record.</p><p>Gold and odds save automatically. A refresh resumes your board but clears uncommitted bets. Your browser identifies your player; keep its game cookie to return to the same record.</p>
+      <h3>Keyboard controls</h3><p>Press <kbd>R</kbd> to roll and <kbd>S</kbd> to Shake, including just after placing a bet. Shortcuts pause while you type in a field or have a dialog open. Holding a key does not repeat an action. Use Tab to move between controls and Enter or Space to activate buttons.</p>
+      <h3>Make yourself comfortable</h3><p>In <b>Settings</b>, choose a leaderboard name of 1–24 visible characters. <b>Sound effects</b> controls dice sounds, coin showers, and fanfares. <b>Reduce motion</b> skips dice movement and celebration effects; your system’s reduced-motion preference is respected too.</p><p><b>Show probabilities</b> is a developer option that reveals the hidden number and group odds. It changes the display only. Sound, motion, and probability visibility are remembered in this browser.</p>
+    </div>
+    <button id="welcome-start" class="roll-button">Let’s play ${icon("chevron")}</button><p class="welcome-footnote">Play Gold only · No real money</p>
+  </dialog>
 `;
 
 function targetButton(id: string, classes: string, style = "") {
@@ -1020,6 +1041,10 @@ function openGuide(trigger: HTMLElement, showTilt = false) {
   } else guide.scrollTop = 0;
 }
 $("guide-open").addEventListener("click", () => openGuide($("guide-open")));
+$("settings-guide").addEventListener("click", () => {
+  $<HTMLDialogElement>("settings-dialog").close();
+  openGuide($("settings-open"));
+});
 $("tilt-info").addEventListener("click", () => openGuide($("tilt-info"), true));
 $("welcome-dialog").addEventListener("close", () => {
   if (state) localStorage.setItem(`sixfold-guide-seen:${state.id}`, "yes");
@@ -1052,17 +1077,25 @@ reducedMotion.addEventListener("change", () => {
   $<HTMLInputElement>("motion").checked = shouldReduceMotion();
 });
 document.addEventListener("keydown", (event) => {
+  const target = event.target;
   if (
+    event.defaultPrevented ||
+    event.isComposing ||
     event.ctrlKey ||
     event.metaKey ||
     event.altKey ||
     event.repeat ||
     document.querySelector("dialog[open]") ||
-    (event.target as HTMLElement).matches("input,textarea,select,button")
+    (target instanceof HTMLElement &&
+      (target.closest("input,textarea,select") || target.isContentEditable))
   )
     return;
-  if (event.key.toLowerCase() === "r") $("roll").click();
-  if (event.key.toLowerCase() === "s") $("shake").click();
+  const action = { r: "roll", s: "shake" }[event.key.toLowerCase()];
+  if (!action) return;
+  const button = $<HTMLButtonElement>(action);
+  if (button.disabled) return;
+  event.preventDefault();
+  button.click();
 });
 
 async function sync() {

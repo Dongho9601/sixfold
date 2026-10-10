@@ -85,7 +85,7 @@ test("ordinary hit uses one outcome draw, one rate draw and five recipient draws
   assert.equal(draws, 7);
   assert.equal(result.gold, 150n);
   assert.equal(result.result.net, "50");
-  near(result.probabilities, [0.3829, 0.20342, 0.15342, 0.10342, 0.10342, 0.05342]);
+  near(result.probabilities, [0.3487, 0.21026, 0.16026, 0.11026, 0.11026, 0.06026]);
 });
 test("miss settles 90 and leaves probabilities unchanged", () => {
   const result = settle(100n, p, { n1: "10" }, land(2));
@@ -129,16 +129,16 @@ test("overlapping number, row, column, and color add returns with one transfer",
 test("fixed randomness gives reproducible transfers and uniform boards also move", () => {
   const once = transfer(p, 1, steady);
   const twice = transfer(once, 1, steady);
-  near(once, [0.3829, 0.20342, 0.15342, 0.10342, 0.10342, 0.05342]);
-  near(twice, [0.3665695, 0.2066861, 0.1566861, 0.1066861, 0.1066861, 0.0566861]);
+  near(once, [0.3487, 0.21026, 0.16026, 0.11026, 0.11026, 0.06026]);
+  near(twice, [0.3043255, 0.2191349, 0.1691349, 0.1191349, 0.1191349, 0.0691349]);
   near(
     transfer(Array(6).fill(1 / 6), 1, steady),
-    [0.16226666666666667, ...Array(5).fill(0.16754666666666665)],
+    [0.15346666666666667, ...Array(5).fill(0.16930666666666666)],
   );
 });
 test("ordinary win on a rare number transfers only its surplus, without Shake", () => {
   const r = settle(100n, p, all, land(6));
-  near(r.probabilities, [0.40027, 0.20027, 0.15027, 0.10027, 0.10027, 0.04865]);
+  near(r.probabilities, [0.40081, 0.20081, 0.15081, 0.10081, 0.10081, 0.04595]);
   assert.equal(r.result.jackpot, false);
 });
 test("sole 10 G Jackpot from 100 finishes at 330 G, then a fresh random board", () => {
@@ -206,8 +206,8 @@ test("random transfers vary both amount and recipient shares within configured b
       validBoard(next);
       const delta = p[n - 1] - next[n - 1];
       amounts.add(delta);
-      assert.ok(delta >= 0.03 * (p[n - 1] - 0.02) - 1e-12);
-      assert.ok(delta <= 0.06 * (p[n - 1] - 0.02) + 1e-12);
+      assert.ok(delta >= 0.09 * (p[n - 1] - 0.02) - 1e-12);
+      assert.ok(delta <= 0.18 * (p[n - 1] - 0.02) + 1e-12);
       const gains = next.flatMap((v, i) => i === n - 1 ? [] : [v - p[i]]);
       assert.ok(gains.every((gain) => gain > 0));
       assert.ok(new Set(gains).size > 1);
@@ -215,7 +215,7 @@ test("random transfers vary both amount and recipient shares within configured b
     }
   }
   assert.equal(amounts.size, 600);
-  near(transfer(p, 1, () => 0), [0.3886, 0.20228, 0.15228, 0.10228, 0.10228, 0.05228]);
+  near(transfer(p, 1, () => 0), [0.3658, 0.20684, 0.15684, 0.10684, 0.10684, 0.05684]);
   const legacy = [0.01, 0.19, 0.2, 0.2, 0.2, 0.2];
   near(transfer(legacy, 1, random), legacy);
 });
@@ -236,9 +236,9 @@ test("Tilt is a coarse concentration clue, independent of labels and float norma
   assert.equal(seen.size, 5);
   assert.equal(tiltLevel(p), tiltLevel([0.39, 0.21, 0.15, 0.1, 0.1, 0.05]));
 });
-test("paying updates accelerate with pre-roll Tilt but remain slower than the old range", () => {
+test("paying updates use the tuned range for pre-roll Tilt", () => {
   const peaks = [1 / 6, 0.4, 0.5, 0.55, 0.7];
-  const expectedBounds = [[0.02, 0.04], [0.03, 0.06], [0.04, 0.08], [0.05, 0.10], [0.06, 0.12]];
+  const expectedBounds = [[0.06, 0.12], [0.09, 0.18], [0.12, 0.24], [0.15, 0.30], [0.18, 0.36]];
   let previousRate = 0;
   peaks.forEach((peak, index) => {
     const board = [peak, ...Array(5).fill((1 - peak) / 5)];
@@ -249,7 +249,6 @@ test("paying updates accelerate with pre-roll Tilt but remain slower than the ol
       validBoard(next);
       const rate = (peak - next[0]) / (peak - 0.02);
       assert.ok(Math.abs(rate - (min + (max - min) * draw)) < 1e-12);
-      assert.ok(rate < 0.25); // Even the largest update is below the old mean.
     }
     const midpointRate = (peak - transfer(board, 1, steady)[0]) / (peak - 0.02);
     assert.ok(midpointRate > previousRate);
@@ -262,7 +261,41 @@ test("paying updates accelerate with pre-roll Tilt but remain slower than the ol
   assert.equal(tiltLevel(edge), 5);
   const after = transfer(edge, 1, steady);
   assert.ok(tiltLevel(after) < 5);
-  assert.ok(Math.abs((edge[0] - after[0]) / 0.62 - 0.09) < 1e-12);
+  assert.ok(Math.abs((edge[0] - after[0]) / 0.62 - 0.27) < 1e-12);
+});
+test("small group bets reach Tilt 1 within a session while preserving an opportunity window", () => {
+  const groups = TARGETS.filter(target => target.kind !== "number");
+  const firstLow: number[] = [];
+  const opportunities: number[] = [];
+  for (let trial = 0; trial < 1000; trial++) {
+    const random = seeded(20261010 + trial * 7919);
+    let board = freshProbabilities(random);
+    while (tiltLevel(board) === 1) board = freshProbabilities(random);
+    const strongest = board.indexOf(Math.max(...board));
+    const hadOpportunity = board[strongest] >= 0.3;
+    let lowAt = 81;
+    let opportunityEnds = 81;
+    let gold = 100n;
+    for (let roll = 1; roll <= 80; roll++) {
+      const draws = Array.from({ length: 7 }, random);
+      let draw = 0;
+      const target = groups[Math.floor((roll - 1) / 3) % groups.length];
+      const result = settle(gold, board, { [target.id]: "1" }, () => draws[draw++]);
+      gold = result.gold;
+      board = result.probabilities;
+      if (tiltLevel(board) === 1 && lowAt === 81) lowAt = roll;
+      if (board[strongest] < 0.3 && opportunityEnds === 81) opportunityEnds = roll;
+    }
+    firstLow.push(lowAt);
+    if (hadOpportunity) opportunities.push(opportunityEnds);
+  }
+  const median = (values: number[]) => values.sort((a, b) => a - b)[Math.floor(values.length / 2)];
+  const reachBy20 = firstLow.filter(roll => roll <= 20).length / firstLow.length;
+  assert.ok(reachBy20 >= 0.6, `Only ${reachBy20 * 100}% reached Tilt 1 within 20 rolls`);
+  const lowMedian = median(firstLow);
+  assert.ok(lowMedian >= 13 && lowMedian <= 19, `Tilt 1 median: ${lowMedian}`);
+  const opportunityMedian = median(opportunities);
+  assert.ok(opportunityMedian >= 10 && opportunityMedian <= 16, `Opportunity median: ${opportunityMedian}`);
 });
 test("weighted sampling boundaries use the committed weights", () => {
   assert.equal(

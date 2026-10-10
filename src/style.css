@@ -271,10 +271,10 @@ dialog::backdrop {
 .welcome-steps { list-style: decimal-leading-zero; padding-left: 26px; margin: 0; }
 .welcome-steps li { padding-left: 10px; margin-bottom: 24px; }
 .welcome-steps li::marker { color: #aab69e; font-size: 12px; }
-.welcome-steps h3, .guide-odds h3, .instructions h3 { margin: 28px 0 10px; font-size: 16px; line-height: 1.4; font-weight: 500; color: #eee9dc; }
+.welcome-steps h3, .guide-odds h3 { margin: 28px 0 10px; font-size: 16px; line-height: 1.4; font-weight: 500; color: #eee9dc; }
 .welcome-steps h3 { margin-top: 0; }
-.welcome-steps p, .guide-odds p, .instructions p { margin: 0 0 14px; color: #bec7b8; font-size: 15px; line-height: 1.7; }
-.welcome-dialog b, .instructions b { color: #e5e6d7; font-weight: 500; }
+.welcome-steps p, .guide-odds p { margin: 0 0 14px; color: #bec7b8; font-size: 15px; line-height: 1.7; }
+.welcome-dialog b { color: #e5e6d7; font-weight: 500; }
 .odds-example { margin: 18px 0 24px; }
 .odds-example summary { width: fit-content; cursor: pointer; color: #d8c594; font-size: 14px; line-height: 1.6; }
 .odds-example p { margin: 12px 0 0; }
@@ -336,11 +336,7 @@ dialog::backdrop {
   flex-direction: column;
   gap: 5px;
 }
-.sound-control small {
-  font-size: 12px;
-  line-height: 1.6;
-  color: #a6b49d;
-}
+#settings-guide { display: inline-flex; align-items: center; gap: 8px; margin-top: 12px; }
 .sound-control input {
   width: 20px;
   height: 20px;

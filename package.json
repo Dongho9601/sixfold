@@ -11,10 +11,13 @@
     "start": "tsx server/index.ts --production",
     "build": "tsc --noEmit && vite build",
     "test": "tsx --test tests/*.test.ts",
+    "test:ui": "tsx --test tests/ui.test.mjs",
+    "test:balance": "tsx scripts/tune-tilt.ts",
     "preview:fixture": "tsx scripts/fixture-server.ts"
   },
   "devDependencies": {
     "@types/node": "^22.19.0",
+    "playwright": "^1.64.0",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0",
     "vite": "^7.1.0"

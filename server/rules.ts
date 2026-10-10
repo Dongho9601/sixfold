@@ -84,8 +84,13 @@ export function sample(p: readonly number[], random: Random): number {
   return 6;
 }
 
-export function transfer(p: readonly number[], outcome: number, random: Random): number[] {
-  const { min, max } = CONFIG.transferRates[tiltLevel(p) - 1];
+export function transfer(
+  p: readonly number[],
+  outcome: number,
+  random: Random,
+  rates: readonly { min: number; max: number }[] = CONFIG.transferRates,
+): number[] {
+  const { min, max } = rates[tiltLevel(p) - 1];
   const rate = min + (max - min) * random();
   // Older saved boards can contain probabilities below the new floor. Preserve
   // those boards; their rare faces donate nothing until they receive more mass.

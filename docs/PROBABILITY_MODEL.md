@@ -22,13 +22,13 @@ First sample and settle exactly one outcome using the board before the roll. If 
 
 | Pre-roll Tilt | Random transfer rate | Mean rate |
 |---|---:|---:|
-| 1 | 2–4% | 3% |
-| 2 | 3–6% | 4.5% |
-| 3 | 4–8% | 6% |
-| 4 | 5–10% | 7.5% |
-| 5 | 6–12% | 9% |
+| 1 | 6–12% | 9% |
+| 2 | 9–18% | 13.5% |
+| 3 | 12–24% | 18% |
+| 4 | 15–30% | 22.5% |
+| 5 | 18–36% | 27% |
 
-These rates slow changes across the board relative to the earlier 10–40% range. High-Tilt boards still change faster than low-Tilt boards: they transfer a larger fraction of the rolled face's available probability. The actual amount also depends on that face's probability, so a rare face on a high-Tilt board can give away less than a common face on a low-Tilt board. If a transfer crosses a Tilt boundary, the new range applies on the next paying roll. This preserves the meaning of the level the player saw when committing a wager.
+These rates are 1.5× the immediately preceding tuning, or 3× the original baseline. They implement the request to reach low Tilt sooner, with a shorter opportunity window before a concentrated board changes. High-Tilt boards transfer a larger fraction of the rolled face's available probability. The actual amount also depends on that face's probability, so a rare face on a high-Tilt board can give away less than a common face on a low-Tilt board. If a transfer crosses a Tilt boundary, the new range applies on the next paying roll. This preserves the meaning of the level the player saw when committing a wager.
 
 For rolled face `i`:
 
@@ -40,7 +40,7 @@ p'[j] = p[j] + delta × q[j]     for each of the other five faces
 
 Both the transfer amount and the receiving shares change randomly. The mean rate increases with Tilt, and each recipient's expected share is one fifth. Each realized update preserves the total, keeps a new-model board above its floor, and usually reduces the rolled face. A face already at the floor gives nothing away. Older saved boards may contain smaller probabilities; those faces also give nothing away until they have received enough mass. Migration does not silently replace an existing board.
 
-For example, take `[40, 20, 15, 10, 10, 5]%`, a Tilt 2 board. An ordinary payout on face 1 with rate 4.5% transfers `4.5% × (40% − 2%) = 1.71 percentage points`. If the random recipient shares happen to be `[40, 25, 15, 12, 8]%`, the next board is `[38.29, 20.684, 15.4275, 10.2565, 10.2052, 5.1368]%`. This is one possible update, not a fixed sequence.
+For example, take `[40, 20, 15, 10, 10, 5]%`, a Tilt 2 board. An ordinary payout on face 1 with rate 13.5% transfers `13.5% × (40% − 2%) = 5.13 percentage points`. If the random recipient shares happen to be `[40, 25, 15, 12, 8]%`, the next board is `[34.87, 22.052, 16.2825, 10.7695, 10.6156, 5.4104]%`. This is one possible update, not a fixed sequence.
 
 Apply one update per paying roll, regardless of the wager amount or number of matching targets. A paying roll can still lose Gold overall or break even. This can make a board more even when a common face pays, but reducing a rare face can make it less even; equal odds are not a guaranteed destination.
 
@@ -83,4 +83,31 @@ Betting 10 G on every face spends 60 G and returns 60 G. The ordinary probabilit
 
 Roll keeps its tumbling die animation. Manual Shake and the automatic reset after a Jackpot slide the old die out and bring a fresh die in from the other side. The animation only presents the already-saved reset; it does not sample another outcome. Reduced motion skips the replacement movement, and temporary decorative dice are removed on completion or cancellation.
 
-The floor, per-level rate ranges, and Tilt thresholds live in `src/config.ts`. They are initial tuning choices and can be adjusted independently after playtesting.
+## Which pace preserves opportunity and tension?
+
+On October 10, the transfer ranges were compared at 1×, 1.5×, 2×, 3×, and 4× the original baseline rates. The current **3× baseline profile** is in `src/config.ts`, a further 1.5× increase over the preceding 2× tuning. This follows the request for faster progression after reviewing the earlier 40-roll results. Neither the Tilt thresholds nor the fresh-board distribution changed; Tilt 1 remains the same measure of concentration.
+
+Run `npm run test:balance` to reproduce the experiment in [`scripts/tune-tilt.ts`](../scripts/tune-tilt.ts). It calls the production fresh-board, sampling, Tilt, and transfer functions. Candidate ranges are supplied only to the offline transfer call; live API clients cannot choose a range or seed. The script also runs the currently configured rates, so future tuning can be compared with the same baseline.
+
+Each profile uses the same 10,000 seeded fresh boards that start at Tilt 2–5, followed for 80 rolls without Shake. Starting boards already at Tilt 1 are excluded so they do not inflate success rates. Every roll consumes a paired tape of seven random draws, even when a miss does not use its transfer draws, keeping the comparison repeatable. There are two policies:
+
+- **Group exploration:** wager 1 G on one group, cycling Top, Bottom, Left, Middle, Right, Red, and Black every three rolls. This uses no hidden probability information, gives every face opportunities to pay, and can afford all 80 rolls from 100 G even if every bet loses.
+- **Full coverage:** wager 1 G on each face. Every roll returns 6 G and triggers a transfer. This measures pacing when every outcome pays, with no bankroll risk and no Jackpot. It does not unlock Shake.
+
+For an opportunity measure, track the initially strongest face until its chance first falls below 30%, restricting that measurement to starts at or above 30%. A 30% face still offers a substantial ordinary number opportunity relative to the ×6 break-even chance of 1/6. The player cannot see this statistic; it is a diagnostic measure of how long a strong starting chance persists, not proof that a player will discover or profit from it. It also does not measure group or Jackpot opportunities.
+
+| Profile vs. original baseline | Group rolls to first Tilt change, median | Group rolls to first Tilt 1, median | Reach Tilt 1 within 20 group rolls | Starting opportunity window, median group rolls | Full-coverage rolls to first Tilt 1, median |
+|---|---:|---:|---:|---:|---:|
+| Original, 1× | 13 | 47 | 12.5% | 46 | 21 |
+| 1.5× | 8 | 31 | 23.8% | 29 | 14 |
+| Preceding tuning, 2× | 6 | 23 | 40.5% | 21 | 11 |
+| **Current, 3×** | **5** | **16** | **69.0%** | **13** | **7** |
+| 4× | 4 | 12 | 83.8% | 8 | 5 |
+
+The current profile prioritizes shorter sessions: the median first Tilt 1 falls from 23 to 16 group rolls, and the proportion reaching it within 20 rolls rises from 40.5% to 69.0%. The initially strongest face's median opportunity falls from 21 to 13 rolls. That tradeoff leaves less time to gather evidence about hidden odds, but makes the board react within fewer bets. A 4× baseline profile would shorten the opportunity further to eight rolls. Rate multipliers do not translate exactly into arrival-time multipliers because outcomes, misses, redistribution, and Tilt boundaries also determine the path.
+
+Faster transfer also makes low Tilt more persistent under these policies. For the selected profile, 89.0% of group-play observations on rolls 21–40 are at Tilt 1, compared with 69.8% under the preceding tuning. Full coverage spends 99.9% of that interval at Tilt 1. This model therefore offers tension through a changing initial opportunity and the choice to Shake for another board; it does not create endless spontaneous swings back to high Tilt. A player who always bets the same group may evolve the board differently, because uncovered outcomes never transfer.
+
+These results establish repeatable pacing differences, not a scientifically proven “most fun” setting. The two policies do not model human learning, larger-stake bankruptcy, Jackpot hunting, or strategic Shake timing. Human playtesting should check whether the 13-roll opportunity proxy leaves enough time to recognize a pattern and whether low-Tilt play still feels engaging. The regular rule suite includes a smaller 1,000-board settlement simulation that guards the current pace: most boards reach Tilt 1 within 20 group rolls, with a median opportunity window of 10–16 rolls.
+
+The floor, per-level rate ranges, and Tilt thresholds live in `src/config.ts` and can be adjusted independently after playtesting. Existing saves and action receipts retain their committed odds and results; the selected rates apply at the next new ordinary paying roll. How to Play derives its displayed ranges and numerical example from the same configuration.

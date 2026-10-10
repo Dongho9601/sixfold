@@ -1,331 +1,272 @@
-# Dice Betting Game — MVP Specification
+# Sixfold — Current Implementation Specification
 
-> Historical design reference. Current random odds, Tilt, and Shake eligibility are documented in [docs/PROBABILITY_MODEL.md](docs/PROBABILITY_MODEL.md); the implementation also uses the board mapping in `src/config.ts`.
+**Version:** 0.3
 
-**Version:** 0.1  
-**Date:** October 9, 2026  
-**Platform:** Web browser  
-**Status:** Initial implementation specification; balance values remain tunable.
+**Updated:** October 10, 2026
 
-## 1. Purpose and Design Status
+**Platform:** Web browser
 
-Build a small, endless dice-betting game inspired by American roulette. Players wager Gold on a six-number board, roll a weighted die, and grow their balance to place their name on a shared leaderboard.
+**Status:** Implemented local prototype. The values below describe the current build; balance can be tuned after playtesting.
 
-The central decision is how much to wager on a favorable board, when to pursue its Jackpot opportunity, and when to Shake for a fresh probability distribution.
+## 1. Purpose and play loop
 
-This document distinguishes two kinds of decisions:
+Sixfold is an endless game of wagering play Gold on a weighted six-sided die. Players build a bankroll and compete on a shared leaderboard ranked by personal best. There is no turn budget, time limit, mandatory cash-out, or completion target.
 
-- **Core rules** capture the agreed game design and the direction accepted in the latest discussion.
-- **Prototype defaults** make the first implementation concrete where a value or detail was not explicitly decided. They are proposals, not validated balance settings. Keep them easy to change.
+Each board has hidden, unequal probabilities. Players choose a wager amount, place one or more bets, and Roll. A paying ordinary outcome changes the odds; a complete miss preserves them. The visible **Tilt 1–5** describes how concentrated the probabilities are without identifying a favored number. Players can observe results, adjust their bets, or use an unlocked **Shake** to replace the board.
 
-In particular, the initial distribution, transfer rate, Jackpot multiplier, starting Gold, and leaderboard record policy remain provisional.
+The intended tension comes from an opportunity that lasts long enough to explore but changes as it pays. Stronger concentration produces faster probability transfers. Neither high Tilt nor a short run of repeated outcomes proves that a particular wager is favorable. A hidden Jackpot offers a larger return for an exclusive wager on the least likely face.
 
-## 2. Core Design
+This file is the current specification, not the earlier design proposal. Rule constants and coverage are defined in [`src/config.ts`](src/config.ts); settlement is in [`server/rules.ts`](server/rules.ts). The probability model and pacing experiment are explained in [`docs/PROBABILITY_MODEL.md`](docs/PROBABILITY_MODEL.md).
 
-1. Play is endless. There is no turn budget, time limit, mandatory cash-out, or completion target.
-2. Playing longer can produce a higher record. This is intentional; scores are not normalized by playtime or action count.
-3. The three gameplay actions are **Bet**, **Roll**, and **Shake**.
-4. Shake is free and unlimited. It does not consume Gold, an item, or a limited action resource.
-5. Die outcomes have visible, nonuniform probabilities. The displayed board represents the probabilities actually used to resolve the next Roll.
-6. Any paying wager triggers a probability update, even if the complete Roll breaks even or loses Gold overall.
-7. A normal probability update reduces the actual rolled number's probability and transfers that amount to the other five numbers.
-8. The transfer does not depend on wager size, payout size, net profit, or the number of matching wagers.
-9. A Jackpot requires a wager exclusively on the single marked Jackpot number.
-10. A successful Jackpot pays its reward and forces a Shake. Earned Gold is retained.
+## 2. Board, targets, and payouts
 
-The intended flow is to earn Gold from favorable probabilities, reconsider bets as those probabilities move, and pursue a Jackpot when its opportunity becomes attractive. A voluntary Shake discards the current distribution, including any improvement in the Jackpot opportunity.
+The fixed board has two rows and three columns:
 
-## 3. Board and Bet Targets
-
-The board has **two rows and three columns**, containing exactly six outcomes: 1 through 6. It uses roulette-style bet groups with a weighted six-sided die as the result generator.
-
-| | Column A | Column B | Column C |
+| | Left | Middle | Right |
 |---|---|---|---|
-| Top row | 1 — Red | 2 — Black | 3 — Red |
-| Bottom row | 4 — Black | 5 — Red | 6 — Black |
+| Top | 1 — Red | 3 — Black | 5 — Red |
+| Bottom | 2 — Black | 4 — Red | 6 — Black |
 
-Numbers and colors remain in these positions. Shake changes their probabilities, not their labels or colors. Horizontally and vertically adjacent cells have alternating colors; diagonal neighbors have the same color.
+Shake changes probabilities, never positions or colors. All group coverage derives from this mapping.
 
-### 3.1 Supported wagers
-
-| Target type | Available targets | Covered outcomes | Normal total return |
+| Target | ID | Covered outcomes | Total return |
 |---|---|---|---:|
-| Single number | 1, 2, 3, 4, 5, 6 | The selected number | ×6 |
-| Row | Top, Bottom | {1,2,3} or {4,5,6} | ×2 |
-| Column | A, B, C | {1,4}, {2,5}, or {3,6} | ×3 |
-| Color | Red, Black | {1,3,5} or {2,4,6} | ×2 |
+| Single number | `n1` … `n6` | That number | ×6 |
+| Top row | `row0` | 1, 3, 5 | ×2 |
+| Bottom row | `row1` | 2, 4, 6 | ×2 |
+| Left column | `col0` | 1, 2 | ×3 |
+| Middle column | `col1` | 3, 4 | ×3 |
+| Right column | `col2` | 5, 6 | ×3 |
+| Red | `red` | 1, 4, 5 | ×2 |
+| Black | `black` | 2, 3, 6 | ×2 |
+| Exclusive Jackpot hit | The current least likely number | See Section 6 | ×24 |
 
-These are the starting payout values carried forward from the design discussion. Keep them configurable for balancing. Every multiplier includes the original stake: a winning 10 Gold single-number wager returns 60 Gold, for a net gain of 50 Gold on that wager.
+All multipliers include the winning stake. A sole ordinary 10 G number hit returns 60 G, a net gain of 50 G. Overlapping bets are allowed and each matching target pays. Repeated additions to one target combine into one wager.
 
-Players may combine targets, overlap their coverage, and adjust the amount on each target. Wagers on the same target are combined into one amount.
+## 3. Gold and player actions
 
-### 3.2 Gold and draft wagers
+### 3.1 Bet
 
-- Gold is the player's spendable in-game balance.
-- **Prototype default:** Gold and wagers use whole-number units, with a minimum positive wager of 1 Gold.
-- A target with a zero wager is inactive.
-- The total wager cannot exceed the player's available balance. Borrowing and negative balances are not part of the MVP.
-- Editing or clearing uncommitted wagers does not spend Gold.
-- **Prototype default:** Roll requires at least one positive wager.
+A new player starts with **100 G**. Gold and wagers are exact whole numbers, with a minimum positive wager of **1 G** and no gameplay cap. The total draft cannot exceed the settled bankroll. Zero wagers are inactive; borrowing and negative balances are disallowed.
 
-Display the settled balance, total draft wager, and amount remaining after that wager clearly. Do not deduct the same stake both while editing and again during settlement.
+The amount control starts at **10 G**. Players may type any valid whole amount. The + / − buttons and ↑ / ↓ while the amount control is focused adjust it by 5 G, with a floor of 1 G. Clicking a target adds the selected amount. Right-click removes that target's entire draft wager. **Edit bets** exposes reduction and removal controls for touch and keyboard users; reduction uses the selected amount. **Clear** removes the entire draft.
 
-## 4. Player Actions
+Draft edits spend no Gold. The interface separately shows settled Bankroll, On the table, and Available after the draft. Each target shows its coverage, total-return multiplier where applicable, and placed amount. Number payouts are also stated in the board key and table footer. Hovered, focused, and wagered groups highlight their covered numbers.
 
-### 4.1 Bet
+### 3.2 Roll
 
-Select targets and adjust their Gold amounts. Show each target's coverage, payout multiplier, and placed amount. Players can revise the draft freely before rolling.
+Roll requires at least one positive wager within the bankroll. The server validates the draft, samples exactly one outcome using the current probabilities, and resolves every wager against it. The server commits settlement before the client animates the result. A die animation cannot select or modify an outcome.
 
-The game must make Jackpot eligibility visible while the player edits wagers.
+Inputs that change the game are disabled while an action is pending or being presented. An action's expected revision prevents another tab from silently changing its committed board. The draft clears after successful settlement.
 
-### 4.2 Roll
+### 3.3 Shake
 
-Commit the current wagers and sample one outcome from the current six probabilities. Resolve every wager against that same outcome, pay the result, and apply the appropriate probability update or forced Shake.
+Shake costs **0 G**, but each fresh board begins locked. Any settled roll with a **nonzero net gain or loss** unlocks one Shake, including a 1 G change. A paying break-even roll changes probabilities but does not unlock Shake. Draft edits, nickname changes, and refreshes do not qualify.
 
-The die animation displays the sampled result. It must not generate a separate result or imply that the six outcomes are equally likely.
+Once earned, the entitlement stays available until a reset. A later break-even roll does not revoke it, and gains followed by losses still qualify even if the bankroll returns to its earlier amount. Entitlements do not accumulate.
 
-Bet and Shake cannot modify a Roll already being resolved. Restore input as soon as resolution is complete; this is an atomic-action requirement, not a gameplay cooldown.
+An available Shake samples fresh probabilities, clears draft bets, retains Gold and personal best, and locks again. There is no fee or additional gameplay cooldown. A Jackpot's automatic reset and a bankruptcy restart also begin locked. The server validates and persists this eligibility; a disabled button is its presentation.
 
-### 4.3 Shake
+### 3.4 Restart
 
-Generate a fresh initial probability distribution and update the Jackpot marker.
+At exactly zero Gold, **Start again** restores 100 G, samples a fresh board, clears the last roll, resets the selected wager to 10 G, and locks Shake. It preserves player identity, nickname, and historical personal best. Restart cannot add Gold to a positive bankroll.
 
-- No Gold charge, usage limit, escalating fee, or gameplay cooldown applies.
-- The player keeps their settled Gold and leaderboard record.
-- The existing distribution is replaced, including any accumulated change in the Jackpot opportunity.
-- Manual Shake does not count as a Roll or a win.
-- The forced Shake after a Jackpot uses the same initial-distribution generator.
+## 4. Fresh probabilities and Tilt
 
-**Prototype draft policy:** Clear uncommitted wagers after either settlement or Shake. Clearing a draft never forfeits Gold. This UI policy can be changed later without changing the game economy.
+### 4.1 Fresh boards
 
-## 5. Initial Probabilities
-
-Each number has a probability `p[i]`. All six probabilities must be positive, finite, and sum to 1.
-
-The final generation method has not been decided. Free Shake intentionally permits repeated board selection; the generator determines how favorable or extreme an initial board can become.
-
-### 5.1 Prototype default
-
-Use the following initial probability template, randomly permuted across the six fixed numbers on each new board:
+A new game, manual Shake, or Jackpot reset draws a symmetric Dirichlet(1,1,1,1,1,1) vector and reserves a 2% floor for every face:
 
 ```text
-[0.40, 0.20, 0.15, 0.10, 0.10, 0.05]
+x[i] = -ln(1 - u[i])                 six independent uniform draws
+w[i] = x[i] / sum(x)
+p[i] = 0.02 + 0.88 × w[i]
 ```
 
-This gives a reproducible starting balance range while allowing different row, column, and color probabilities. The numbers above are an example template, not a permanent rule.
+All six probabilities vary. There is no fixed template or favored face. Each fresh probability is at least 2% and can approach 90%; their sum is 1, subject to floating-point roundoff. The generator clamps only RNG endpoints to avoid degenerate exponential weights. The playable server uses cryptographic randomness.
 
-The generator may later choose among several templates or sample different distributions within a chosen range. Keep that decision separate from the probability-transfer rule so either can be tuned independently.
+Existing saved boards are preserved when constants change. Older boards below the 2% floor are not replaced or clipped by migration. Their rare faces cannot donate probability until they have received enough to exceed the floor. Their next reset uses the current generator.
 
-## 6. Normal Probability Transfer
+### 4.2 Hidden odds and visible Tilt
 
-### 6.1 Trigger
+Number probabilities, group probabilities, the Jackpot target, and Jackpot eligibility are hidden in ordinary play. Settings has a **Show probabilities (developer)** switch, off by default, which reveals number and group percentages. It does not reveal a Jackpot marker or alter the rules. Hidden percentages are also omitted from target accessible names and tooltips.
 
-After a non-Jackpot Roll, update probabilities if at least one positive wager covered the rolled number and therefore paid out.
+This is presentation hiding: the state API still returns the probabilities and Jackpot number. It is not a secrecy boundary against browser inspection.
 
-The trigger is **a paying wager**, not positive net profit for the Roll.
-
-- A break-even Roll can update probabilities.
-- A Roll with a net loss can update probabilities.
-- Several matching wagers still cause exactly one update.
-- If no wager paid, leave probabilities unchanged.
-
-### 6.2 Transfer algorithm
-
-The working algorithm follows the accepted direction of moving probability away from the winning number toward the other five numbers.
-
-Let `i` be the rolled number and `alpha` be the transfer rate. Use the probability snapshot from before the Roll:
+Tilt is computed from the current unrounded probabilities. Normalize by their stored sum for the calculation, then compute Shannon entropy and its effective number of outcomes:
 
 ```text
-delta = alpha * p[i]
+H = -sum(p[i] × ln(p[i]))
+N = exp(H)
+```
+
+| Effective outcomes N | Tilt |
+|---|---:|
+| N ≥ 5.4 | 1 |
+| 4.8 ≤ N < 5.4 | 2 |
+| 4.2 ≤ N < 4.8 | 3 |
+| 3.6 ≤ N < 4.2 | 4 |
+| N < 3.6 | 5 |
+
+Higher Tilt means concentration on fewer faces. Relabeling faces does not change it. Tilt does not identify those faces, group odds, Jackpot odds, or expected profit. A paying update may change the hidden odds without crossing a level boundary; Tilt can rise, fall, or stay the same.
+
+A prominent gold Tilt control opens How to Play at its Tilt explanation and regains focus when closed. Low levels receive gentler transfers to preserve continuity after the board becomes more even. The thresholds and fresh-board generator are unchanged by the October 10 pacing adjustment.
+
+## 5. Ordinary probability transfers
+
+### 5.1 Trigger and order
+
+After any non-Jackpot roll with at least one paying wager, apply exactly one probability transfer. This includes net-loss and break-even results. Wager size, payout size, and overlapping wins do not affect that transfer. If every wager misses, leave the odds unchanged.
+
+Use the board and Tilt **before** the roll to choose a transfer rate. A new Tilt level affects the next roll, not the one just resolved.
+
+### 5.2 Current transfer rates
+
+Draw a uniform random rate `a` from the applicable range:
+
+| Pre-roll Tilt | Transfer range | Mean |
+|---|---:|---:|
+| 1 | 6–12% | 9% |
+| 2 | 9–18% | 13.5% |
+| 3 | 12–24% | 18% |
+| 4 | 15–30% | 22.5% |
+| 5 | 18–36% | 27% |
+
+Draw an independent Dirichlet(1,1,1,1,1) vector `q` for the receiving shares. For rolled face `i`:
+
+```text
+delta = a × max(0, p[i] - 0.02)
 pNext[i] = p[i] - delta
-
-For each j != i:
-    pNext[j] = p[j] + delta / 5
+pNext[j] = p[j] + delta × q[j]       for each j ≠ i
 ```
 
-**Prototype default:** `alpha = 0.25`.
+The rate applies to the rolled face's probability above the floor, not to the whole board and not as a percentage-point subtraction. The other five receive random shares, with an expected share of one fifth each. Ordinary settlement uses one outcome draw, one rate draw, and five recipient draws. Misses use only the outcome draw; a Jackpot instead uses six fresh-board draws after its outcome.
 
-This is 25% of the winning number's current probability, not a subtraction of 25 percentage points. A 1 Gold win and a 100 Gold win on the same number produce exactly the same probability change.
+The transfer preserves total probability and the floor on current-model boards. It does not force every face toward 1/6. A rare paying face becomes rarer, and an exactly even board also changes after a payout.
 
-For positive initial probabilities and `0 < alpha < 1`, the rule preserves positive probabilities and a total of 1 in exact arithmetic. Implementations must retain sufficient internal precision and avoid feeding rounded display percentages back into the model.
+### 5.3 Arithmetic example
 
-### 6.3 Worked example
-
-For this example only, assign the template to numbers 1 through 6 in order:
+For `[40, 20, 15, 10, 10, 5]%` (Tilt 2), an ordinary payout on face 1 at the mean 13.5% rate transfers `0.135 × (0.40 − 0.02) = 0.0513`, or 5.13 percentage points. Equal recipient shares, which can be injected for a deterministic test, give:
 
 | State | 1 | 2 | 3 | 4 | 5 | 6 |
 |---|---:|---:|---:|---:|---:|---:|
-| Initial | 40% | 20% | 15% | 10% | 10% | 5% |
-| After a paying Roll of 1 | 30% | 22% | 17% | 12% | 12% | 7% |
-| After another paying Roll of 1 | 22.5% | 23.5% | 18.5% | 13.5% | 13.5% | 8.5% |
+| Before | 40% | 20% | 15% | 10% | 10% | 5% |
+| After paying face 1 | 34.87% | 21.026% | 16.026% | 11.026% | 11.026% | 6.026% |
+| After another paying face 1 at the same rate/shares | 30.43255% | 21.91349% | 16.91349% | 11.91349% | 11.91349% | 6.91349% |
 
-Number 2 becomes more likely than number 1. Meanwhile, the initially rare number 6 becomes more likely, creating an improving Jackpot opportunity.
+Actual play draws a new rate and recipient shares each time. This example fixes randomness to demonstrate arithmetic.
 
-### 6.4 Meaning of “normalization”
+### 5.4 Pacing rationale
 
-This algorithm is **winner-local probability transfer**, not guaranteed movement toward a perfectly uniform distribution on every win.
+The current rates are 1.5× the immediately preceding tuning, or 3× the original 2–4%, 3–6%, 4–8%, 5–10%, and 6–12% baseline. This implements the request for a shorter path to low Tilt. An offline experiment compares 1×, 1.5×, 2×, 3×, and 4× the original baseline on 10,000 identical seeded starting boards per policy, excluding boards already at Tilt 1, over 80 rolls without Shake.
 
-Repeated wins on high-probability numbers can reduce the initial imbalance. However, a low-probability number can also win through an ordinary wager; reducing it makes that number rarer. Even an exactly uniform board changes after a normal paying Roll: with `alpha = 0.25`, the rolled number becomes 12.5% and each other number becomes 17.5%.
+For 1 G group bets cycling through all seven groups every three rolls, the current profile reaches the first visible Tilt change in a median of five rolls and Tilt 1 in 16 rolls, compared with six and 23 under the preceding tuning. Within 20 rolls, 69.0% of boards reach Tilt 1, up from 40.5%. With full coverage, the median falls from 11 to seven rolls.
 
-This continuing movement is part of the working design. Do not silently substitute an algorithm that moves every number toward 1/6 or suppresses updates for below-average winning numbers. Strict convergence to uniformity would be a different design decision.
+The initially strongest face stays at or above 30% for a median of 13 group rolls, compared with 21 previously, among starts at or above that threshold. This gives a shorter opportunity to observe and act before the board changes. The 30% threshold is an experimental proxy, not an in-game promise or disclosed chance. A 1.5× rate increase does not guarantee exactly 1.5× faster Tilt arrival: outcomes, misses, random redistribution, and level boundaries also affect it. Reproduce the comparison with `npm run test:balance`; the model document records the full results and limitations.
 
-## 7. Jackpot
+## 6. Jackpot
 
-### 7.1 Target
+The Jackpot target is the face with the lowest current internal probability; the lowest numerical label breaks exact ties. It is recomputed after transfers and resets but remains fixed throughout a roll's settlement.
 
-The Jackpot is associated with the least-probable outcome, not necessarily the lowest numerical face value.
+A roll qualifies only if its sole positive wager is on that target's single number. Several additions on the same target remain one wager. Any other positive wager removes eligibility, even if it overlaps the target. Zero entries are ignored.
 
-**Prototype marker policy:** Mark the number with the lowest current internal probability. Recompute the marker after a normal probability update or Shake. If several numbers tie for the minimum, select the lowest numerical label among them so exactly one number is marked.
+A qualifying hit pays **×24 total return**, replacing ×6, and immediately commits a fresh random board. Earned Gold and records remain; Shake is locked on the new board. The client shows the Jackpot reward before presenting the die replacement. A sole 10 G Jackpot from 100 G ends at `100 − 10 + 240 = 330 G`.
 
-Determine the target from internal probabilities, not rounded labels. Keep the target fixed for the entire resolution of a Roll.
+A missed exclusive attempt loses the stake and preserves probabilities. A noneligible roll on the least likely face pays ordinary covered targets and applies the normal transfer if anything pays. The target and eligibility have no normal-play marker.
 
-### 7.2 Eligibility
+## 7. Settlement, precision, and persistence
 
-A Roll is Jackpot-eligible only when:
-
-1. There is a positive single-number wager on the currently marked Jackpot number.
-2. There are no other positive wagers anywhere on the board.
-
-Any additional number, row, column, or color wager removes Jackpot eligibility, including another wager that also covers the marked number. Combining several chips on the same single-number target remains one wager and is eligible.
-
-### 7.3 Payment and forced Shake
-
-If an eligible Roll lands on the marked number:
-
-1. Pay the Jackpot total-return multiplier on that wager.
-2. Retain the resulting Gold balance.
-3. Immediately generate a fresh board through forced Shake.
-4. Show the newly selected Jackpot number.
-
-The Jackpot return replaces the normal single-number return; it is not added on top of ×6.
-
-**Prototype default:** Jackpot total return is a fixed **×24**, including the stake. This is a proposed balancing value, not an agreed or tested final amount. With a 10 Gold Jackpot wager, the return is 240 Gold and the net gain is 230 Gold.
-
-The fixed multiplier does not shrink as the Jackpot probability improves. The forced Shake ends that board's Jackpot opportunity after a successful payout.
-
-If the eligible wager misses, lose its stake and leave probabilities unchanged because no wager paid. If the marked number appears during a noneligible Roll, settle ordinary wagers normally and apply one ordinary probability transfer when any wager paid. Do not award a Jackpot or force a Shake in that case.
-
-## 8. Settlement and Accounting
-
-For each Roll, define:
+For settled bankroll `B`, total committed stakes `S`, and total return `P`:
 
 ```text
-B = settled Gold before the Roll
-S = sum of all committed stakes
-P = total payout, including returned stakes
-
 BNext = B - S + P
 NetChange = P - S
+BestGold = max(previous BestGold, BNext)
 ```
 
-Normal payout is the sum of the winning wagers' individual returns. Jackpot payout follows Section 7.
+The server transaction checks request identity and revision, validates wagers, snapshots probabilities and Jackpot target, samples one outcome, settles all payouts, updates probabilities and Shake eligibility, updates the record, increments the revision, and stores the full response receipt together.
 
-### 8.1 Resolution order
+Gold, wagers, returns, records, and revisions use **BigInt** internally and canonical decimal **strings** in JSON and SQLite. Probability values remain unrounded doubles. The sampler multiplies a uniform draw by the stored probability sum to absorb rounding drift; it does not smooth the board. Developer labels show up to two decimals and never feed settlement. Large displayed chip amounts may be abbreviated; tooltips, accessible names, and the bet editor retain exact wagers.
 
-1. Validate the draft and snapshot the Gold balance, wagers, probabilities, and Jackpot target.
-2. Lock that Roll against further editing and sample exactly one weighted outcome.
-3. Compute all payouts using the snapshot and calculate the new settled Gold balance.
-4. On a successful Jackpot, perform forced Shake. Otherwise, apply one normal probability transfer if any wager paid.
-5. Refresh the Jackpot marker and record the settled balance and score.
-6. Persist the completed state, clear the draft under the prototype policy, and return to betting.
+Player state and receipts are durable in SQLite. The default database is `data/one-of-six.sqlite`, using WAL, FULL synchronous mode, and `BEGIN IMMEDIATE` action transactions. An anonymous 256-bit session cookie identifies a player; only its hash is stored. Clearing the cookie creates a new player and does not delete the old score.
 
-Commit the result as one consistent action. Retrying a request, refreshing the page, or completing an animation must not deduct or pay the same Roll twice.
+Every action includes a unique request ID and expected revision. Replaying the same ID with the same revision/action returns the original receipt without resettling. Reusing an ID for different data is rejected. A stale revision returns the latest state without settling; the client clears the stale draft. Receipts are retained indefinitely.
 
-### 8.2 Full-coverage betting is permitted
+Uncommitted drafts belong to the current tab and clear on refresh, settlement, Shake, or a detected cross-tab update. The client stores pending actions in session storage before sending them. An uncertain network result can be retried with the same request after interruption or reload. State and leaderboard synchronize every five seconds and on window focus, with synchronization deferred while an action is busy or pending.
 
-With ×6 single-number returns, wagering 10 Gold on every number commits 60 Gold. Any outcome returns 60 Gold, so Gold is unchanged. The rolled number still triggers one probability transfer.
+## 8. Leaderboard and identity
 
-This intentionally allows players to preserve Gold while spending time changing the board. It does not award a Jackpot because more than one target was wagered on. The Jackpot probability is not guaranteed to rise on every such Roll.
+A player's score is their highest settled Gold balance across games, starting at 100 G. It is neither gross payout nor cumulative spending. Later losses and bankruptcy restarts do not erase a record; break-even returns do not raise it.
 
-Do not add a positive-net-profit requirement to prevent this behavior.
+The shared leaderboard lists the top 50 players by best Gold descending. Exact decimal strings sort by length, then lexical value; ties use stable ascending player ID. There is no score cap. Players outside the visible top 50 remain stored.
 
-## 9. Endless Play, Persistence, and Leaderboard
+Nicknames are trimmed and normalized to NFC, must contain 1–24 visible Unicode code points, and reject control/format characters. Names need not be unique. A nickname change uses the same revision and receipt mechanism as other actions.
 
-### 9.1 Balance and recovery
+## 9. Interface and input
 
-**Prototype default:** A new game starts with 100 Gold.
+### 9.1 Layout and feedback
 
-There is no forced ending while the player can afford a valid wager. If the balance reaches zero, the player cannot wager but may begin a new game with the starting amount. Restart replaces the active game state; it does not add starting Gold to an existing balance. Previous best records remain.
+Wide screens show Bankroll, Personal Best, and wager accounting to the left; the felt table in the center; and a leaderboard tower to the right. Smaller screens provide the leaderboard through a trophy button and right-side drawer. All 13 targets remain available on narrow screens.
 
-Persist the active balance and current probability distribution so an endless game can continue after a reload. A reload is not a Shake. Preserve the consistency of a completed Roll across saving and resuming.
+Draft wagers appear as tossed chip piles, with up to five visible chips per target and the top chip displaying the total. Grid tracks remain fixed as bets change. A six-faced CSS die tumbles for Roll; Shake slides the old die out and a fresh one in. Ordinary roll timing is 1,100 ms and die replacement is 800 ms, with additional result presentation. These timings do not alter committed rules or add a cooldown after completion.
 
-### 9.2 Record policy
+Paying targets glow and show returns. Net-positive results receive a gain banner, coin flights, particles, and fanfares. Break-even and net-loss returns retain accurate net labels without a victory banner. Jackpot uses a larger celebration followed by the die replacement. A live region announces results and action errors.
 
-**Prototype default:** A player's leaderboard score is their highest settled Gold balance reached across their games.
+### 9.2 Keyboard
 
-```text
-BestGold = max(previous BestGold, current settled Gold)
-```
+- Tab navigates controls; Enter and Space activate buttons.
+- **R** rolls a valid draft and **S** uses an available Shake, including when a betting target or another game button has focus.
+- Uppercase R/S work. Ctrl, Command, and Alt combinations, held-key repeats, IME composition, and already-consumed events do not trigger actions.
+- Shortcuts are inactive while an input, textarea, select, or editable text region is being edited, and while any dialog is open.
+- Disabled actions and pending settlements cannot be activated through shortcuts.
+- ↑ / ↓ in the amount control adjust by 5 G. Escape closes dialogs and can close the bet editor.
 
-Record a new high after settlement; players do not have to end a game or cash out. Later losses do not erase a previous record.
+### 9.3 Settings and How to Play
 
-Score is not cumulative gross payouts. Returning a 60 Gold stake on a break-even Roll does not increase wealth or the record. Do not award leaderboard points merely for rolling, shaking, betting, or spending time.
+Settings contains the nickname form, **Sound effects**, **Reduce motion**, and **Show probabilities (developer)** controls, plus a link to How to Play. Rule descriptions and explanations of these preferences live in **How to Play**.
 
-### 9.3 Minimal leaderboard
+The guide includes wager editing, payouts and overlap, random odds, low/high Tilt, probability transfer and an expandable numerical example, Shake eligibility, Jackpot exclusivity, persistence, personal best, keyboard controls, and preference descriptions. It uses a white reading surface, dark 18 px serif body text, simple headings, and a sticky close control. The Tilt control opens it at the appropriate section; closing restores focus to its trigger. The Settings link closes Settings before opening the guide and returns focus to the Settings button afterward.
 
-Provide a persistent, shared leaderboard showing rank, display name, and best Gold balance. Sort by best Gold descending. Use a persistent player identifier so the same player can update their record without creating a new entry for every high score. The identity mechanism is an implementation choice; an elaborate account system is not required by this spec.
+The guide opens automatically for a player with no previous roll who has not dismissed it. Dismissal is saved per player in the browser and survives refreshes and restarts. How to Play can reopen it at any time.
 
-Preserve exact integer Gold values, including large balances, through storage, transport, comparisons, and display. Do not introduce a score cap as a gameplay ending condition.
+Sound defaults to on after a user interaction; a saved mute stays muted, and disabling sound stops scheduled notes. Reduced motion follows the system preference or the manual switch and skips movement and particle effects. Sound, manual motion preference, and probability visibility save in browser local storage.
 
-For a public ranked build, compute or validate submitted results against trusted game state. A local-only high-score list can support development, but does not fulfill the shared leaderboard requirement. Framework, backend provider, and hosting choices remain open.
+## 10. Runtime and API
 
-## 10. Minimum Interface
+The application uses TypeScript, HTML/CSS/SVG, Vite, a Node HTTP server, SQLite, and procedural Web Audio. It requires Node.js 22.16 or later. After installation, `npm run dev` serves the client and API together, normally at port 5173. With no explicit port, development startup tries up to 20 subsequent ports if needed and prints the actual local and network URLs. `npm run build` checks TypeScript and builds the client; `npm start` serves that build.
 
-Keep the main play screen compact and usable with mouse or touch. It must show:
+`HOST`, `PORT`, and `DB_PATH` override defaults. Development binds all IPv4 interfaces for same-Wi-Fi access; production binds loopback unless overridden. Explicit ports and production startup are strict on conflicts.
 
-- Settled Gold and the current total wager.
-- The six fixed numbered/color cells and each current probability.
-- A clearly marked Jackpot target, its multiplier, and current eligibility.
-- Individual, row, column, and color betting targets with placed amounts.
-- Wager amount controls, Roll, and Shake.
-- The die result and the most recent payout or net Gold change.
-- Access to the leaderboard and the player's best record.
-
-Use number labels and explicit Red/Black group labels so color is not the only way to understand a wager. Highlight the numbers covered by a selected group. Show an understandable reason when Roll is unavailable, such as an empty wager or insufficient Gold.
-
-Animate the die, settlement, and probability movement briefly enough to support repeated play. After a Jackpot, clearly show the reward before presenting the fresh distribution. Avoid hiding a probability change behind an unexplained refresh.
-
-## 11. Prototype Configuration
-
-These defaults make the first build playable. They are adjustable and have not been validated through playtesting.
-
-| Setting | Starting value or policy |
+| Endpoint | Purpose |
 |---|---|
-| Starting Gold | 100 |
-| Minimum positive wager | 1 Gold |
-| Initial probabilities | Random permutation of [40%, 20%, 15%, 10%, 10%, 5%] |
-| Probability transfer rate | 25% of the rolled number's current probability |
-| Redistribution | Equal shares to the other five numbers |
-| Normal total returns | Number ×6; row ×2; column ×3; color ×2 |
-| Jackpot total return | Fixed ×24; replaces normal return |
-| Jackpot target | Current minimum probability; lowest label breaks ties |
-| Leaderboard score | Highest settled Gold balance per player |
-| Draft after settlement or Shake | Clear without an additional Gold charge |
-| Bankruptcy recovery | Free new game; preserve the historical best |
+| `GET /api/state` | Resume a session or create a new anonymous player; return current state and last roll. |
+| `GET /api/leaderboard` | Return top-50 rank, nickname, player ID, and best Gold. |
+| `POST /api/action` | Apply `roll`, `shake`, `restart`, or `nickname` using request ID and revision. |
 
-The main unresolved balance decisions are the initial-distribution family, transfer rate, and Jackpot multiplier. They determine the relative appeal of immediate Shake, ordinary profit-seeking bets, full-coverage preparation, and a Jackpot attempt. Tune these before expanding the feature set.
+The API does not accept authoritative balances, scores, probability vectors, or random seeds from the client. Actions require JSON and a valid session; explicit cross-origin actions are rejected. The playable server contains no fixture or test-seed endpoint.
 
-## 12. Acceptance Examples
+## 11. Acceptance examples and checks
 
-Unless stated otherwise, use 100 starting Gold, the example distribution in Section 6.3, Jackpot target 6, and the prototype payout settings.
+Unless otherwise stated, examples start with 100 G and `[40, 20, 15, 10, 10, 5]%`, with hidden Jackpot target 6.
 
-1. **Normal payout:** Start with 100 Gold and wager 10 on number 1. Rolling 1 with ×6 return leaves 150 Gold and updates number 1's probability once.
-2. **Complete miss:** The same wager followed by a roll of 2 leaves 90 Gold. The probability distribution is unchanged.
-3. **Break-even still updates:** Start with 100 Gold and wager 10 on each number. Any result leaves 100 Gold and updates the rolled number once. No Jackpot is possible.
-4. **Net loss still updates:** Wager 1 Gold on number 1 and 20 on number 2. A roll of 1 pays 6 Gold against 21 staked, losing 15 Gold overall, but still updates number 1 once.
-5. **Overlapping wins:** Wager 10 each on number 1, Top row, and Red. A roll of 1 returns 60 + 20 + 20 = 100 Gold against 30 staked. Apply exactly one probability transfer.
-6. **Amount independence:** Two identical boards with different positive wagers on the same ordinary winning target produce identical next probabilities.
-7. **Transfer arithmetic:** With the example distribution, two successive paying rolls of 1 produce the values in Section 6.3, including number 2 becoming the most likely outcome.
-8. **Low-probability ordinary win:** With full-coverage wagers on the example distribution, a roll of 6 reduces its probability from 5% to 3.75%; each other number gains 0.25 percentage points. No Jackpot applies. Do not apply strict-uniformity behavior instead.
-9. **Jackpot success:** With 6 marked, a sole 10 Gold wager on 6 and a result of 6 pays the configured Jackpot, preserves the resulting Gold, and forces a fresh distribution.
-10. **Jackpot eligibility:** Adding any other positive wager to that Jackpot wager removes eligibility. A result of 6 then follows ordinary settlement and probability transfer.
-11. **Free Shake:** Repeated manual Shakes leave settled Gold and the best record unchanged, replace the distribution, and never consume a limited resource.
-12. **One marker:** Tied minimum probabilities produce exactly one visible Jackpot target. The marked target at commit time determines that Roll's eligibility and result.
-13. **Record integrity:** Break-even returns do not increase BestGold. A later loss or restart does not erase a higher previously recorded settled balance.
-14. **Resume and retry:** Reloading preserves the completed game state. Retrying an already completed Roll cannot change its outcome or pay it again.
+1. **Ordinary hit:** 10 G on 1, outcome 1 → 150 G, one transfer, Shake unlocked.
+2. **Complete miss:** 10 G on 1, outcome 2 → 90 G, identical probabilities, Shake unlocked.
+3. **Break-even:** 10 G on every number, any outcome → 100 G and one transfer, no Jackpot. A locked Shake stays locked; an already-earned Shake remains available.
+4. **Net-loss payout:** 1 G on 1 and 20 G on 2, outcome 1 → 85 G, one transfer and Shake unlocked.
+5. **Overlap:** 10 G each on 1, Top, and Red, outcome 1 → 100 G return, 170 G bankroll, exactly one transfer.
+6. **Amount independence:** Identical boards and random draws with different positive ordinary stakes produce identical next probabilities.
+7. **Rare ordinary hit:** Full-coverage bets, outcome 6, rate 13.5%, equal recipient shares → face 6 falls from 5% to 4.595%; each other face gains 0.081 percentage points. No Jackpot applies.
+8. **Jackpot:** Sole 10 G on 6, outcome 6 → 330 G, fresh board, Shake locked. Any additional positive target removes eligibility.
+9. **Earned Shake:** A nonzero settlement unlocks Shake; using it preserves Gold and best, resets odds, clears the draft, and locks it again. A second immediate Shake is rejected.
+10. **Restart:** Zero Gold restores to 100 G with fresh odds; a historical higher record remains.
+11. **Precision and retry:** Huge integer balances survive storage and ranking; a retried action cannot sample or pay twice; stale-tab actions cannot settle.
+12. **Keyboard regression:** Click or keyboard-activate a target, then press R without moving focus → exactly one Roll. S works from the same kind of focus after unlocking. Text editing, dialogs, and modifier combinations cannot trigger gameplay.
+13. **Guide location:** Settings contains controls; How to Play contains the complete explanations, including current transfer rates. The guide and expanded example fit desktop and mobile, and Tilt navigation retains a reachable close control.
 
-## 13. MVP Boundary
+`npm test` covers rules, pacing, persistence, concurrency, HTTP validation, and startup. `npm run test:ui` runs isolated Chromium browser regressions; `npm run test:balance` runs the pacing comparison. Browser setup and exact verification results are documented in [`README.md`](README.md) and [`docs/VERIFICATION.md`](docs/VERIFICATION.md). Tests use in-memory or temporary databases, never normal player data.
 
-The first build consists of the six-number betting board, weighted Roll, probability transfer, free Shake, exclusive Jackpot with forced Shake, persistent Gold, and a simple shared leaderboard.
+## 12. Prototype boundary
 
-Keep implementation focused on that loop. Progression trees, collectible items, additional board sizes, missions, and separate game modes are outside this initial specification. The next design work is balancing the existing choices and observing whether players change their wager amounts, targets, and Shake timing as the board evolves.
+The implemented loop is the fixed six-number board, hidden weighted outcomes with visible Tilt, probability transfers, earned free Shake, exclusive Jackpot, persistent Gold, and a shared leaderboard. Progression trees, items, missions, extra board sizes, and additional modes are outside the current build.
+
+This is a local prototype without account recovery, moderation, rate limiting, public deployment configuration, or receipt-retention cleanup. Existing verification uses Chromium; physical phones, Safari, and Firefox are not claimed. Probability tuning is supported by repeatable simulation and regression checks, with player enjoyment and broader strategic balance still subject to playtesting.
