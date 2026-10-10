@@ -1,5 +1,5 @@
 import "./style.css";
-import { BOARD, CONFIG, TARGETS, TARGET_BY_ID } from "./config";
+import { BOARD, CONFIG, TARGET_BY_ID } from "./config";
 import type {
   Action,
   ActionRequest,
@@ -47,6 +47,7 @@ let state: PlayerState | undefined;
 let draft: Wagers = {};
 let amount = CONFIG.selectedWager as string;
 let busy = false;
+let actionPhase = "";
 let pending: ActionRequest | null = null;
 let hoverTarget: string | null = null;
 let sound = localStorage.getItem("one-of-six-sound") === "on";
@@ -66,33 +67,41 @@ try {
 
 app.innerHTML = `
   <div class="workspace">
-    <header class="header">
-      <a class="wordmark" href="/" aria-label="${CONFIG.title} home">${CONFIG.title}</a>
-      <div class="header-actions"><button id="leaderboard-open" class="icon-button" aria-label="Open leaderboard" aria-expanded="false">${icon("trophy")}</button><button id="settings-open" class="icon-button" aria-label="Settings">${icon("settings")}</button></div>
-    </header>
     <main id="game" aria-label="${CONFIG.title} game">
-      <section class="stage" aria-label="Gold and die">
-        <div class="balance"><span class="eyebrow">Gold</span><div class="balance-value"><span id="gold">—</span><span class="gold-unit">G</span></div></div>
-        <div class="die-area"><div id="die" class="die" role="img" aria-label="Die, ready to roll">${Array.from({ length: 9 }, (_, i) => `<span class="pip" data-pip="${i}"></span>`).join("")}</div></div>
-        <div class="personal-best"><span class="eyebrow">Best</span><span id="best-gold" class="best-value">— G</span></div>
-      </section>
-      <section class="table-area" aria-label="Betting table">
-        <div id="board" class="board"></div>
-        <div class="color-bets" id="color-bets"></div>
-        <div class="jackpot-line" id="jackpot-line"><span id="jackpot-text">Loading…</span></div>
-      </section>
-      <section class="betting-controls" aria-label="Wager controls">
-        <div class="accounting"><span>Total <strong id="draft-total">0 G</strong></span><span>Available <strong id="available">— G</strong></span><button id="edit-draft" aria-expanded="false" aria-controls="draft-tray">Edit bets <span id="draft-count">0</span></button><button id="clear-draft">Clear</button></div>
-        <div id="draft-tray" class="draft-tray" hidden></div>
-        <div class="actions"><div class="amount-selector"><button id="decrease" aria-label="Decrease bet by 5 Gold">−</button><label for="bet-amount">Bet</label><input id="bet-amount" type="text" inputmode="numeric" pattern="[0-9]*" value="10" aria-label="Bet amount in Gold" autocomplete="off" /><span>G</span><button id="increase" aria-label="Increase bet by 5 Gold">+</button></div><button id="roll" class="roll-button"><span>Roll</span></button><button id="shake" class="shake-button"><span>Shake</span></button></div>
-        <p class="hint"><span class="pointer-hint">Click to bet · Right-click to remove</span><span class="touch-hint">Tap to bet · Edit bets to remove</span></p>
-        <p id="roll-announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
-        <p id="notice" class="notice" role="status" aria-live="polite"></p>
-        <button id="retry" class="text-button" hidden>Retry saved action</button>
-        <button id="restart" class="restart-button" hidden>Start again with 100 G</button>
-      </section>
+      <aside class="sidebar" aria-label="Your game">
+        <header class="header"><a class="wordmark" href="/" aria-label="${CONFIG.title} home">${icon("dice")}${CONFIG.title}<span>PLAY THE ODDS</span></a></header>
+        <section class="bankroll" aria-label="Your Gold">
+          <div class="balance"><span class="eyebrow">Bankroll</span><div class="balance-value"><span id="gold">—</span><span class="gold-unit">G</span></div></div>
+          <div class="personal-best"><span>Personal best</span><span id="best-gold" class="best-value">— G</span></div>
+        </section>
+        <div class="jackpot-line" id="jackpot-line"><span class="eyebrow">The long shot</span><span id="jackpot-text">Loading…</span></div>
+        <section class="accounting" aria-label="Your wagers"><div><span>On the table</span><strong id="draft-total">0 G</strong></div><div><span>Available</span><strong id="available">— G</strong></div><div class="draft-actions"><button id="edit-draft" aria-expanded="false" aria-controls="draft-tray">Edit bets <span id="draft-count">0</span></button><button id="clear-draft">Clear</button></div></section>
+        <div class="sidebar-bottom"><div class="header-actions"><button id="leaderboard-open" class="utility-button" aria-label="Open leaderboard" aria-expanded="false">${icon("trophy")}<span>Leaderboard</span></button><button id="settings-open" class="utility-button" aria-label="Settings">${icon("settings")}<span>Settings</span></button></div><span class="play-note">A little luck. A little strategy.</span></div>
+      </aside>
+      <div class="playfield">
+        <section class="table-area" aria-label="Betting table">
+          <div class="felt">
+            <section class="stage" aria-label="Die and result">
+              <div class="table-heading"><span class="eyebrow">MAKE YOUR CALL</span><span id="table-status">Place your bets</span></div>
+              <div class="die-area"><div id="die-shadow" class="die-shadow"></div><div id="die-mover" class="die-mover"><div id="die" class="die" role="img" aria-label="Die, ready to roll"></div></div><div id="landing-ring" class="landing-ring"></div></div>
+              <div id="result-display" class="result-display" aria-hidden="true"><span class="result-label">ONE ROLL. SIX POSSIBILITIES.</span><strong class="result-value">Good luck.</strong><span class="result-detail">Every number has its odds.</span></div>
+            </section>
+            <div id="board" class="board"></div>
+            <div class="color-bets" id="color-bets"></div>
+            <div class="table-footer"><span>NUMBER ×6 <i>·</i> COLUMN ×3 <i>·</i> ROW & COLOR ×2</span><span>PLAY GOLD ONLY</span></div>
+          </div>
+        </section>
+        <section class="betting-controls" aria-label="Wager controls">
+          <div class="chip-controls"><span class="control-label">Choose your bet</span><div class="denominations" role="group" aria-label="Quick bet amounts">${[1, 5, 10, 25].map(value => `<button class="denomination" data-amount="${value}" aria-label="Bet amount ${value} Gold" aria-pressed="${value === 10}"><span>${value}</span></button>`).join("")}</div><div class="amount-selector"><button id="decrease" aria-label="Decrease bet by 5 Gold">−</button><label class="sr-only" for="bet-amount">Bet amount in Gold</label><input id="bet-amount" type="text" inputmode="numeric" pattern="[0-9]*" value="10" aria-label="Bet amount in Gold" autocomplete="off" /><span>G</span><button id="increase" aria-label="Increase bet by 5 Gold">+</button></div></div>
+          <div class="actions"><button id="roll" class="roll-button">${icon("dice")}<span>Roll dice</span><kbd>R</kbd></button><button id="shake" class="shake-button">${icon("shake")}<span>Shake</span><kbd>S</kbd></button></div>
+          <p class="hint"><span class="pointer-hint">Click a space to bet · Right-click to take it back</span><span class="touch-hint">Tap a space to bet · Edit bets to take it back</span></p>
+          <div class="messages"><p id="roll-announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p><p id="notice" class="notice" role="status" aria-live="polite"></p><button id="retry" class="text-button" hidden>Retry saved action</button><button id="restart" class="restart-button" hidden>Start again with 100 G</button></div>
+        </section>
+      </div>
+      <section id="draft-tray" class="draft-tray" aria-label="Edit your bets" hidden><div class="draft-top"><h2>On the table</h2><button id="close-draft" class="icon-button" aria-label="Close bet editor">${icon("close")}</button></div><div id="draft-rows"></div></section>
     </main>
   </div>
+  <div id="effects" class="effects" aria-hidden="true"></div>
   <dialog id="leaderboard-dialog" class="leaderboard-dialog" aria-labelledby="leaderboard-title"><div class="dialog-top"><div><h2 id="leaderboard-title">Leaderboard</h2></div><button class="icon-button" data-close="leaderboard-dialog" aria-label="Close leaderboard">${icon("close")}</button></div><p class="dialog-intro">Your highest settled Gold.</p><div class="ranking-labels"><span>PLAYER</span><span>BEST GOLD</span></div><ol id="leaders"></ol><p class="leaderboard-note">Highest Gold across all games.</p><div class="your-record"><span id="your-nickname"></span><strong id="your-best"></strong></div></dialog>
   <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title"><div class="dialog-top"><div><h2 id="settings-title">Settings & how to play</h2></div><button class="icon-button" data-close="settings-dialog" aria-label="Close settings">${icon("close")}</button></div>
     <form id="nickname-form"><label for="nickname">Your leaderboard name</label><div class="nickname-row"><input id="nickname" maxlength="48" required autocomplete="nickname"/><button type="submit" id="save-nickname">Save</button></div><p id="nickname-status" role="status"></p></form>
@@ -135,23 +144,182 @@ $("color-bets").innerHTML = ["red", "black"]
   .map((c) => targetButton(c, `group color-target ${c}-group`))
   .join("");
 
+const pipPositions: Record<number, number[]> = {
+  1: [4], 2: [0, 8], 3: [0, 4, 8], 4: [0, 2, 6, 8],
+  5: [0, 2, 4, 6, 8], 6: [0, 2, 3, 5, 6, 8],
+};
+// Opposite faces add to seven, just like a physical die.
+const faceRotations: Record<number, [number, number]> = {
+  1: [0, 0], 2: [0, 90], 3: [-90, 0], 4: [90, 0], 5: [0, -90], 6: [0, 180],
+};
+$("die").innerHTML = Object.entries(faceRotations).map(([face, [x, y]]) =>
+  `<span class="die-face" style="transform:rotateX(${x}deg) rotateY(${y}deg) translateZ(var(--die-half))">${Array.from({length: 9}, (_, i) => `<span class="pip ${pipPositions[Number(face)].includes(i) ? "visible" : ""}"></span>`).join("")}</span>`,
+).join("");
+let dieRotation = "";
+function diePose(number: number, turns = 0) {
+  const [x, y] = faceRotations[number];
+  return `rotateX(-16deg) rotateY(22deg) rotateY(${-y + turns * 360}deg) rotateX(${-x + turns * 360}deg)`;
+}
 function setDie(number: number) {
-  const pips: Record<number, number[]> = {
-    1: [4],
-    2: [0, 8],
-    3: [0, 4, 8],
-    4: [0, 2, 6, 8],
-    5: [0, 2, 4, 6, 8],
-    6: [0, 2, 3, 5, 6, 8],
-  };
-  $("die")
-    .querySelectorAll<HTMLElement>(".pip")
-    .forEach((pip, i) =>
-      pip.classList.toggle("visible", pips[number].includes(i)),
-    );
+  dieRotation = diePose(number);
+  $("die").style.transform = dieRotation;
   $("die").setAttribute("aria-label", `Die showing ${number}`);
 }
 setDie(1);
+
+// All motion is decorative. The server settles the roll before presentation begins.
+const activeAnimations = new Set<Animation>();
+function motion(element: HTMLElement, frames: Keyframe[], options: KeyframeAnimationOptions) {
+  if (shouldReduceMotion()) return Promise.resolve();
+  const animation = element.animate(frames, options);
+  activeAnimations.add(animation);
+  return animation.finished.catch(() => {}).finally(() => {
+    activeAnimations.delete(animation);
+    animation.cancel();
+  });
+}
+function stopMotion() {
+  activeAnimations.forEach(animation => animation.cancel());
+  $("effects").replaceChildren();
+}
+async function rollDie(outcome: number, shake = false) {
+  if (shouldReduceMotion()) { setDie(outcome); return; }
+  $("die").setAttribute("aria-label", shake ? "Die shaking" : "Die rolling");
+  const duration = shake ? 700 : CONFIG.animationMs;
+  const finalRotation = diePose(outcome, 2);
+  await Promise.all([
+    motion($("die"), [
+      {transform: dieRotation, offset: 0},
+      {transform: "rotateX(230deg) rotateY(290deg) rotateZ(-24deg)", offset: .38},
+      {transform: "rotateX(510deg) rotateY(570deg) rotateZ(14deg)", offset: .69},
+      {transform: finalRotation, offset: 1},
+    ], {duration, easing: "cubic-bezier(.18,.62,.28,1)"}),
+    motion($("die-mover"), [
+      {transform: "translate3d(0,0,0)", offset: 0},
+      {transform: "translate3d(-34px,-38px,24px)", offset: .22},
+      {transform: "translate3d(18px,4px,0)", offset: .54},
+      {transform: "translate3d(6px,-15px,8px)", offset: .7},
+      {transform: "translate3d(0,2px,0)", offset: .86},
+      {transform: "translate3d(0,0,0)", offset: 1},
+    ], {duration, easing: "ease-in-out"}),
+    motion($("die-shadow"), [
+      {transform: "scale(1)", opacity: .4},
+      {transform: "translateX(-20px) scale(.65)", opacity: .15, offset: .22},
+      {transform: "translateX(12px) scale(1.2)", opacity: .5, offset: .54},
+      {transform: "scale(.85)", opacity: .25, offset: .7},
+      {transform: "scale(1)", opacity: .4},
+    ], {duration}),
+  ]);
+  setDie(outcome);
+  playTone("chip");
+  void motion($("landing-ring"), [{transform: "scale(.55)", opacity: .65}, {transform: "scale(1.6)", opacity: 0}], {duration: 400, easing: "ease-out"});
+}
+function compactGold(value: string) {
+  if (value.length <= 5) return formatGold(value);
+  const units = [[18, "Qi"], [15, "Q"], [12, "T"], [9, "B"], [6, "M"], [3, "K"]] as const;
+  if (value.length > 21) return `${value[0]}.${value.slice(1, 3)}e${value.length - 1}`;
+  const [power, suffix] = units.find(([power]) => value.length > power)!;
+  const scaled = BigInt(value) * 10n / (10n ** BigInt(power));
+  return `${scaled / 10n}${scaled % 10n ? `.${scaled % 10n}` : ""}${suffix}`;
+}
+function coinStack(value: string) {
+  const count = Math.min(5, Math.max(1, value.length + (BigInt(value) >= 20n ? 1 : 0)));
+  return `<span class="coin-stack" title="${formatGold(value)} Gold wagered" aria-hidden="true">${Array.from({length: count}, (_, i) => `<i class="stack-coin" style="--coin-index:${i}"></i>`).join("")}<span class="coin-value" style="--coin-index:${count - 1}">${compactGold(value)}</span></span>`;
+}
+function targetElement(id: string) {
+  return document.querySelector<HTMLElement>(`[data-target="${id}"]`)!;
+}
+function clearResult() {
+  document.querySelectorAll(".hit, .paid, .missed").forEach(el => el.classList.remove("hit", "paid", "missed"));
+  $("result-display").className = "result-display";
+  $("result-display").innerHTML = '<span class="result-label">ONE ROLL. SIX POSSIBILITIES.</span><strong class="result-value">Good luck.</strong><span class="result-detail">Every number has its odds.</span>';
+  $("table-status").textContent = "Place your bets";
+}
+function coinFlight(from: HTMLElement, to: HTMLElement, count = 1) {
+  if (shouldReduceMotion()) return Promise.resolve();
+  const a = from.getBoundingClientRect(), b = to.getBoundingClientRect();
+  return Promise.all(Array.from({length: count}, (_, i) => {
+    const coin = document.createElement("span");
+    coin.className = "flying-coin";
+    coin.textContent = "✦";
+    const x = a.left + a.width / 2, y = a.top + a.height / 2;
+    const dx = b.left + b.width / 2 - x, dy = b.top + b.height / 2 - y;
+    coin.style.left = `${x}px`; coin.style.top = `${y}px`;
+    $("effects").append(coin);
+    return motion(coin, [
+      {transform: "translate(-50%,-50%) scale(.65)", opacity: 0},
+      {transform: `translate(calc(-50% + ${dx * .25 + (i - count / 2) * 12}px), calc(-50% + ${Math.min(-65, dy * .6)}px)) rotate(-90deg) scale(1)`, opacity: 1, offset: .42},
+      {transform: `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) rotate(30deg) scale(.55)`, opacity: 0},
+    ], {duration: 620, delay: i * 65, easing: "cubic-bezier(.3,.05,.55,1)"}).finally(() => coin.remove());
+  })).then(() => {});
+}
+function rewardBurst(element: HTMLElement, jackpot: boolean) {
+  if (shouldReduceMotion()) return Promise.resolve();
+  const bounds = element.getBoundingClientRect();
+  const count = jackpot ? 16 : 7;
+  return Promise.all(Array.from({length: count}, (_, i) => {
+    const spark = document.createElement("span");
+    spark.className = "reward-spark";
+    spark.textContent = i % 3 === 0 ? "✦" : "·";
+    spark.style.left = `${bounds.left + bounds.width / 2}px`;
+    spark.style.top = `${bounds.top + bounds.height / 2}px`;
+    $("effects").append(spark);
+    const angle = i / count * Math.PI * 2;
+    const distance = jackpot ? 65 + (i % 3) * 15 : 45;
+    return motion(spark, [
+      {transform: "translate(-50%,-50%) scale(.4)", opacity: 0},
+      {opacity: 1, offset: .15},
+      {transform: `translate(${Math.cos(angle) * distance}px, ${Math.sin(angle) * distance}px) scale(1.1)`, opacity: 0},
+    ], {duration: jackpot ? 1050 : 700, easing: "ease-out"}).finally(() => spark.remove());
+  })).then(() => {});
+}
+function countBalance(from: bigint, to: bigint) {
+  if (shouldReduceMotion()) { $("gold").textContent = formatGold(to); return Promise.resolve(); }
+  return new Promise<void>(resolve => {
+    const start = performance.now();
+    function frame(now: number) {
+      const progress = shouldReduceMotion() ? 1 : Math.min(1, (now - start) / 720);
+      const eased = BigInt(Math.round((1 - (1 - progress) ** 3) * 1000));
+      $("gold").textContent = formatGold(from + (to - from) * eased / 1000n);
+      if (progress < 1) requestAnimationFrame(frame); else resolve();
+    }
+    requestAnimationFrame(frame);
+  });
+}
+async function revealResult(result: Settlement, wagers: Wagers, nextGold: string) {
+  const hasReturn = BigInt(result.totalReturn) > 0n;
+  targetElement(`n${result.outcome}`).classList.add("hit");
+  Object.keys(wagers).forEach(id => targetElement(id).classList.add(result.paidTargets.includes(id) ? "paid" : "missed"));
+  $("table-status").textContent = `Rolled ${result.outcome}`;
+  $("result-display").className = `result-display ${hasReturn ? "won" : "lost"} ${result.jackpot ? "jackpot" : ""}`;
+  $("result-display").innerHTML = `<span class="result-label">${result.jackpot ? "JACKPOT!" : hasReturn ? "RETURN" : "NO HIT THIS ROLL"}</span><strong class="result-value">${hasReturn ? `${formatGold(result.totalReturn)} G` : "Next roll."}</strong><span class="result-detail">${hasReturn ? `${signed(result.net)} G net${result.jackpot ? " · ×24" : ""}` : `−${formatGold(result.stake)} G`}</span>`;
+  announceRoll(result);
+  if (hasReturn) playTone(result.jackpot ? "jackpot" : "win");
+  const reveals = result.paidTargets.map((id, i) => {
+    const element = targetElement(id);
+    const payout = BigInt(wagers[id] || "0") * BigInt(result.jackpot ? CONFIG.multipliers.jackpot : TARGET_BY_ID.get(id)!.multiplier);
+    const label = document.createElement("span");
+    label.className = "payout-label";
+    label.textContent = `+${compactGold(payout.toString())} G`;
+    element.append(label);
+    return motion(label, [{opacity: 0, transform: "translateY(8px)"}, {opacity: 1, transform: "translateY(-8px)", offset: .25}, {opacity: 1, transform: "translateY(-12px)", offset: .75}, {opacity: 0, transform: "translateY(-26px)"}], {duration: result.jackpot ? 1250 : 900, delay: i * 90, fill: "backwards"}).finally(() => label.remove());
+  });
+  const goldBefore = BigInt(state!.gold);
+  await Promise.all([
+    ...reveals,
+    ...result.paidTargets.map(id => rewardBurst(targetElement(id), result.jackpot)),
+    ...result.paidTargets.map(id => motion(targetElement(id), [
+      {boxShadow: "inset 0 0 0 2px #ffe7a2, inset 0 0 55px #ffde6a66"},
+      {boxShadow: "inset 0 0 0 2px #ffe7a288, inset 0 0 20px #ffde6a11"},
+      {boxShadow: "inset 0 0 0 2px #ffe7a2, inset 0 0 40px #ffde6a44"},
+    ], {duration: 700, easing: "ease-in-out"})),
+    ...result.paidTargets.map(id => coinFlight(targetElement(id).querySelector<HTMLElement>(".coin-stack") || targetElement(id), $("gold"), result.jackpot ? 9 : 4)),
+    countBalance(goldBefore, BigInt(nextGold)),
+    motion($("result-display"), [{opacity: .2, transform: "translateY(8px)"}, {opacity: 1, transform: "translateY(0)"}], {duration: 420, easing: "ease-out"}),
+    ...(hasReturn ? [motion($("gold"), [{color: "#fff8c9", textShadow: "0 0 22px #eebc6388"}, {color: "#efcf89", textShadow: "0 0 0px transparent"}], {duration: 1000})] : []),
+  ]);
+}
+
 
 function totalDraft() {
   return Object.values(draft).reduce((sum, value) => sum + BigInt(value), 0n);
@@ -209,7 +377,6 @@ function render() {
       );
       button.disabled = busy || !!pending || state!.gold === "0";
       button.classList.toggle("wagered", placed !== "0");
-      button.classList.toggle("large-wager", placed.length > (isNumber ? 3 : 12));
       button.classList.toggle("marked", marked);
       button.setAttribute("aria-pressed", String(placed !== "0"));
       button.setAttribute(
@@ -217,18 +384,18 @@ function render() {
         `${target.label}, covers ${target.coverage.join(", ")}, ${percent(probability)} probability, return ${target.multiplier} times${marked ? ", Jackpot 24 times when wagered alone" : ""}, wager ${placed} Gold`,
       );
       if (isNumber) {
-        button.innerHTML = `${marked ? '<span class="jackpot-marker" title="Jackpot ×24 when wagered alone">×24</span>' : ""}<span class="number">${target.coverage[0]}</span><span class="probability" title="Chance to roll">${percent(probability)}</span>${placed !== "0" ? `<span class="wager-amount" title="${formatGold(placed)} Gold wagered">${formatGold(placed)} G</span>` : ""}`;
+        button.innerHTML = `${marked ? '<span class="jackpot-marker" title="Jackpot ×24 when wagered alone">×24</span>' : ""}<span class="number">${target.coverage[0]}</span><span class="probability" title="Chance to roll">${percent(probability)}</span>${placed !== "0" ? coinStack(placed) : ""}`;
       } else {
         const name = target.kind === "color"
           ? target.label
           : target.coverage.join(" · ");
-        button.innerHTML = `<span class="group-title"><span>${name}</span><b>×${target.multiplier}</b></span><span class="group-odds">${percent(probability)}</span>${placed !== "0" ? `<span class="wager-amount">${formatGold(placed)} G</span>` : ""}`;
+        button.innerHTML = `<span class="group-title"><span>${name}</span><b>×${target.multiplier}</b></span><span class="group-odds">${percent(probability)}</span>${placed !== "0" ? coinStack(placed) : ""}`;
       }
     });
   $("jackpot-line").classList.toggle("eligible", eligible);
   $("jackpot-text").innerHTML = eligible
-    ? `<b>Jackpot · ${state.jackpotNumber} ×24</b><span>Ready</span>`
-    : `<b>Jackpot · ${state.jackpotNumber} ×24</b><span>Bet on ${state.jackpotNumber} only</span>`;
+    ? `<b><span class="jackpot-number">${state.jackpotNumber}</span> Jackpot ×24</b><span>You’re in. Make it count.</span>`
+    : `<b><span class="jackpot-number">${state.jackpotNumber}</span> Jackpot ×24</b><span>Bet on ${state.jackpotNumber} only to qualify.</span>`;
   for (const id of [
     "shake",
     "increase",
@@ -241,7 +408,11 @@ function render() {
   $<HTMLButtonElement>("roll").disabled =
     busy || !!pending || totalDraft() === 0n;
   $<HTMLButtonElement>("save-nickname").disabled = busy || !!pending;
-  $("roll").querySelector("span")!.textContent = busy ? "Rolling…" : "Roll";
+  $("roll").querySelector("span")!.textContent = busy ? actionPhase || "Saving…" : "Roll dice";
+  document.querySelectorAll<HTMLButtonElement>("[data-amount]").forEach(button => {
+    button.disabled = busy || !!pending;
+    button.setAttribute("aria-pressed", String(button.dataset.amount === amount));
+  });
   $("restart").hidden = state.gold !== "0";
   $<HTMLButtonElement>("restart").disabled = busy || !!pending;
   $("retry").hidden = !pending || busy;
@@ -251,7 +422,7 @@ function render() {
   updateHighlight();
 }
 function renderDraft() {
-  $("draft-tray").innerHTML =
+  $("draft-rows").innerHTML =
     Object.entries(draft)
       .map(
         ([id, value]) =>
@@ -281,6 +452,7 @@ function addBet(id: string) {
     );
     return;
   }
+  clearResult();
   draft[id] = ((draft[id] ? BigInt(draft[id]) : 0n) + value).toString();
   if (draft[id].length > 12) {
     $("draft-tray").hidden = false;
@@ -289,6 +461,8 @@ function addBet(id: string) {
   announce("");
   playTone("chip");
   render();
+  const stack = targetElement(id).querySelector<HTMLElement>(".coin-stack")!;
+  void motion(stack, [{transform: "translateY(-18px) rotate(-12deg)", opacity: .2}, {transform: "translateY(3px) rotate(3deg)", opacity: 1, offset: .65}, {transform: "translateY(0) rotate(0)"}], {duration: 330, easing: "ease-out"});
 }
 
 function cancelBet(id: string) {
@@ -370,6 +544,11 @@ async function perform(action?: Action) {
   if (!pending) return;
   const request = pending;
   busy = true;
+  actionPhase = request.action.kind === "roll" ? "Rolling…" : request.action.kind === "shake" ? "Shaking…" : "Saving…";
+  if (request.action.kind !== "nickname") clearResult();
+  if (request.action.kind === "roll" || request.action.kind === "shake") {
+    $("table-status").textContent = request.action.kind === "roll" ? "No more bets" : "Fresh odds coming";
+  }
   announce("");
   render();
   try {
@@ -397,31 +576,15 @@ async function perform(action?: Action) {
     // Settlement is already committed. This animation only presents its stored outcome.
     if (data.result) {
       playTone("roll");
-      $("die").classList.add("rolling");
-      if (!shouldReduceMotion())
-        await new Promise((resolve) => setTimeout(resolve, CONFIG.animationMs));
-      $("die").classList.remove("rolling");
-      setDie(data.result.outcome);
-      announceRoll(data.result);
-      if (data.result.jackpot) {
-        announce("Jackpot!");
-        playTone("jackpot");
-        if (!shouldReduceMotion())
-          await new Promise((resolve) =>
-            setTimeout(resolve, CONFIG.jackpotRevealMs),
-          );
-        announce("Jackpot! Fresh odds.");
-      } else if (data.result.transferred) {
-        announce("");
-        playTone("win");
-      } else {
-        announce("");
-      }
+      await rollDie(data.result.outcome);
+      actionPhase = "Settling…";
+      $("roll").querySelector("span")!.textContent = actionPhase;
+      await revealResult(data.result, request.action.kind === "roll" ? request.action.wagers : {}, data.state.gold);
+      if (data.result.jackpot) announce("Jackpot! Fresh odds are on the table.");
     } else if (request.action.kind === "shake") {
-      announce("");
-      $("die").classList.remove("shaking");
-      void $("die").offsetWidth;
-      $("die").classList.add("shaking");
+      playTone("roll");
+      await rollDie(1, true);
+      $("table-status").textContent = "Fresh odds. Your call.";
     } else if (request.action.kind === "restart") {
       amount = CONFIG.selectedWager;
       $<HTMLInputElement>("bet-amount").value = amount;
@@ -447,6 +610,7 @@ async function perform(action?: Action) {
     ) {
       state = current;
       draft = {};
+      clearResult();
       setDie(1);
       announce(
         "Another tab has updated the game. The latest saved board is shown.",
@@ -454,6 +618,7 @@ async function perform(action?: Action) {
     }
     void refreshLeaderboard();
   } catch (error) {
+    $("table-status").textContent = pending ? "Waiting to reconnect" : "Place your bets";
     const message =
       error instanceof Error ? error.message : "Connection interrupted.";
     announce(
@@ -466,7 +631,7 @@ async function perform(action?: Action) {
       $("nickname-status").textContent = message;
   } finally {
     busy = false;
-    $("die").classList.remove("rolling");
+    actionPhase = "";
     render();
   }
 }
@@ -496,6 +661,14 @@ app.addEventListener("click", (event) => {
       $("draft-tray")
         .querySelector<HTMLButtonElement>(`[data-reduce="${id}"]`)!
         .focus();
+  }
+  const denomination = element.closest<HTMLElement>("[data-amount]");
+  if (denomination && !busy && !pending) {
+    amount = denomination.dataset.amount!;
+    $<HTMLInputElement>("bet-amount").value = amount;
+    $<HTMLInputElement>("bet-amount").removeAttribute("aria-invalid");
+    render();
+    playTone("chip");
   }
   const close = element.closest<HTMLElement>("[data-close]");
   if (close) $<HTMLDialogElement>(close.dataset.close!).close();
@@ -538,6 +711,15 @@ $("edit-draft").addEventListener("click", () => {
     "aria-expanded",
     String(!$("draft-tray").hidden),
   );
+  if (!$("draft-tray").hidden) $("close-draft").focus({preventScroll: true});
+});
+$("close-draft").addEventListener("click", () => {
+  $("draft-tray").hidden = true;
+  $("edit-draft").setAttribute("aria-expanded", "false");
+  $("edit-draft").focus();
+});
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape" && !$("draft-tray").hidden) $("close-draft").click();
 });
 for (const [id, step] of [
   ["increase", 5n],
@@ -548,12 +730,12 @@ for (const [id, step] of [
     if (value !== null) {
       amount = (value + step < 1n ? 1n : value + step).toString();
       $<HTMLInputElement>("bet-amount").value = amount;
-      renderDraft();
+      render();
     }
   });
 $("bet-amount").addEventListener("change", () => {
   readAmount();
-  renderDraft();
+  render();
 });
 function openLeaderboard() {
   $<HTMLDialogElement>("leaderboard-dialog").showModal();
@@ -605,9 +787,11 @@ $("motion").addEventListener("change", () => {
     "reduce-motion",
     manualReducedMotion,
   );
+  if (shouldReduceMotion()) stopMotion();
   $<HTMLInputElement>("motion").checked = shouldReduceMotion();
 });
 reducedMotion.addEventListener("change", () => {
+  if (shouldReduceMotion()) stopMotion();
   $<HTMLInputElement>("motion").checked = shouldReduceMotion();
 });
 document.addEventListener("keydown", (event) => {
@@ -642,6 +826,7 @@ async function sync() {
       const existed = !!state;
       state = latest;
       draft = {};
+      clearResult();
       setDie(1);
       render();
       if (existed)

@@ -1,5 +1,26 @@
 # Verification report
 
+## Casino table and animation refinement — October 9, 2026
+
+The current design uses Balatro-inspired placement: a left information rail, a stationary felt table, and wager/roll controls below it. Bets are coin stacks with a landing animation. The die has six physical faces and a 1.1-second toss with a bounce, shadow, and landing ring. Winning targets glow and show rising returns; coins and sparks accompany the bankroll count-up. Jackpot celebrations use more coins and sparks. The server still settles all results before animation begins.
+
+Verified in this pass:
+
+- `npm test`: all 34 tests passed. `npm run build` and `git diff --check` passed.
+- Chrome inspected at its normal desktop size and at 1280×800, 768×800, 390×844, and 320×740. Mobile uses vertical scrolling; 320px and 390px checks showed no horizontal overflow after fixes.
+- At 320px, all 13 targets held 1 G wagers with visible odds and coin labels. The board retained its exact document position, width, and height before and after those additions.
+- The bet editor opens over the game. Reduction, removal, right-click cancellation, denomination selection, and exact-amount entry worked. The amount, Roll, and Shake controls remain outside the fixed betting grid.
+- A motion-enabled sole 10 G wager on 6 returned 240 G, settled at 330 G, and refreshed the Jackpot marker to 5. The final desktop board remained at document top 149px, width 896px, and height 342px before and after the Jackpot. During the celebration the DOM contained nine flying coins and sixteen sparks.
+- Captured the die during its tumble. An ordinary 10 G column win showed a +30 G floating return, four flying coins, seven sparks, and the animated balance. Overlapping number/column/color bets returned 110 G from a 30 G stake. A separate net-loss hit reported 5 G return and −5 G net accurately.
+- Keyboard Enter on Roll, a complete miss, bankruptcy, restart, free Shake, mobile Settings, and the leaderboard worked. Restart restored 100 G and kept the 495 G record; Shake cleared wagers and kept Gold.
+- The separate large-balance fixture wagered exactly 9,007,199,254,740,993 G and returned exactly 54,043,195,528,445,958 G. The mobile board stayed at document top 400px, width 325px, and height 344px through settlement. Compact coin text retains the exact amount in its tooltip, accessible target name, and editor.
+- The existing Reduce motion preference skipped roll and celebration movement while still settling correctly. Motion was enabled for animation review, then the fixture preference was restored. A Chrome message-channel listener error appeared during development reloads; no application stack trace or game failure accompanied it.
+
+Previews: [Desktop](screenshots/casino-desktop.jpg) · [Mobile](screenshots/casino-mobile.jpg) · [Jackpot animation frame](screenshots/casino-reward.jpg).
+
+Browser tests used the isolated in-memory fixture, not the normal game database. Physical phones, Safari, Firefox, and subjective sound quality were not tested. Earlier entries below describe superseded designs.
+
+
 Verified on October 9, 2026, using Node 26.4.0 and the available Chrome browser tools. The normal game is served at `http://localhost:5173`. Browser QA used both the Vite development client and the built production client.
 
 ## Minimal board and right-click cancellation — October 9, 2026

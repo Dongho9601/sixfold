@@ -24,11 +24,11 @@ npm start
 
 ## Play
 
-The initial selected amount is 10 G. Tap any target to add that amount; wagers on the same target combine. The amount field accepts exact whole numbers. Arrow buttons change the selected amount by 5 G, down to 1 G. **Right-click a target** to cancel its entire draft wager. **Edit bets** exposes reduction and removal controls for touch and keyboard users; **Clear** clears all wagers without spending Gold.
+The initial selected amount is 10 G. Choose a 1 / 5 / 10 / 25 G coin or enter an exact amount. Tap any target to add that amount; wagers on the same target combine. The amount field accepts exact whole numbers. Arrow buttons change the selected amount by 5 G, down to 1 G. **Right-click a target** to cancel its entire draft wager. **Edit bets** exposes reduction and removal controls for touch and keyboard users; **Clear** clears all wagers without spending Gold.
 
 **Roll** commits the draft. **Shake** is free and unlimited; it changes the probabilities and clears the draft. Hovering or focusing a group highlights its numbers; selected groups stay highlighted. A sole wager on the marked number qualifies for Jackpot ×24. A Jackpot hit keeps earned Gold and automatically Shakes. At zero Gold, **Start again** restores 100 G and keeps the previous best.
 
-Use the header trophy button for the leaderboard and the gear button for Settings for nickname, sound, motion, and rules. Tab/Enter operate the controls; R and S work when focus is outside buttons or text fields. System reduced-motion preferences and the game's Reduce motion setting skip die movement. Sound starts muted and uses procedural Web Audio tones.
+Use the left-rail trophy button for the leaderboard and the gear button for Settings (both move to the header on mobile) for nickname, sound, motion, and rules. Tab/Enter operate the controls; R and S work when focus is outside buttons or text fields. System reduced-motion preferences and the game's Reduce motion setting skip die movement. Sound starts muted and uses procedural Web Audio tones.
 
 ## Configuration and code
 
@@ -42,7 +42,7 @@ Use the header trophy button for the leaderboard and the gear button for Setting
 
 ## Implementation decisions
 
-The supplied `spec.md` is retained unchanged. The task's explicit board mapping overrides Section 3; row, column, and color coverage and tests use the replacement mapping. The hand-drawn image was not available in the task files, so the interface follows the arrangement described in the task: left leaderboard rail, Gold above the die, center board with edge group bets, Red/Black below, then amount/Roll/Shake. The current refinement uses a compact header, a horizontal Gold/die/Best row, flat board colors, larger text, and no last-roll panel or board marker.
+The supplied `spec.md` is retained unchanged. The task's explicit board mapping overrides Section 3; row, column, and color coverage and tests use the replacement mapping. The hand-drawn image was not available in the task files, so the interface follows the arrangement described in the task: left leaderboard rail, Gold above the die, center board with edge group bets, Red/Black below, then amount/Roll/Shake. The current refinement takes its information and action placement from Balatro: bankroll, record, Jackpot, and utilities on the left, a stationary casino table on the right, and wager/roll controls below. The green felt and red/black grid retain the casino theme. Wagers appear as stacked gold coins; fixed grid tracks, overlaid effects, and an overlay bet editor keep interactions from resizing the table. A six-faced CSS die tumbles and bounces before the server outcome appears. Paying targets glow, returns rise, coins fly to the bankroll, and an exact BigInt count-up presents the new balance. Reduced motion skips these effects. Large coin labels are abbreviated; the target’s accessible name, tooltip, and bet editor retain the exact wager.
 
 Gold, wagers, returns, records, and revisions use **BigInt** internally and canonical decimal **strings** in JSON and SQLite. Scores sort by decimal string length, then lexical value, so ranking works beyond both JavaScript's safe integer range and SQLite's 64-bit integer range. No gameplay score cap is imposed. Probability values use unrounded IEEE-754 doubles; labels show up to two decimals. Labels never feed settlement. The outcome sampler uses the stored weights' sum to absorb floating-point roundoff; it does not smooth the probabilities.
 
