@@ -49,7 +49,6 @@ let amount = CONFIG.selectedWager as string;
 let busy = false;
 let pending: ActionRequest | null = null;
 let hoverTarget: string | null = null;
-let lastDeltas: number[] | null = null;
 let sound = localStorage.getItem("one-of-six-sound") === "on";
 let audioContext: AudioContext | undefined;
 let announcement = "";
@@ -66,48 +65,40 @@ try {
 }
 
 app.innerHTML = `
-  <aside class="rail" aria-label="Leaderboard rail">
-    <span class="rail-symbol">${icon("dice")}</span>
-    <button id="leaderboard-open" class="rail-button" aria-label="Open leaderboard" aria-expanded="false">${icon("trophy")}<span>Leaderboard</span>${icon("chevron")}</button>
-    <span class="rail-foot">PLAY THE ODDS</span>
-  </aside>
   <div class="workspace">
     <header class="header">
-      <a class="wordmark" href="/" aria-label="${CONFIG.title} home">${CONFIG.title}<span>A LITTLE LUCK. A LITTLE STRATEGY.</span></a>
-      <div class="header-actions"><button id="mobile-leaderboard" class="icon-button" aria-label="Open leaderboard">${icon("trophy")}</button><button id="settings-open" class="settings-button" aria-label="Settings">${icon("settings")}<span>Settings</span></button></div>
+      <a class="wordmark" href="/" aria-label="${CONFIG.title} home">${CONFIG.title}</a>
+      <div class="header-actions"><button id="leaderboard-open" class="icon-button" aria-label="Open leaderboard" aria-expanded="false">${icon("trophy")}</button><button id="settings-open" class="icon-button" aria-label="Settings">${icon("settings")}</button></div>
     </header>
     <main id="game" aria-label="${CONFIG.title} game">
       <section class="stage" aria-label="Gold and die">
-        <div class="balance"><span class="eyebrow">YOUR GOLD</span><div class="balance-value"><span id="gold">—</span><span class="gold-unit">G</span></div></div>
-        <div class="stage-detail stage-left"><span class="eyebrow">YOUR PERSONAL BEST</span><span id="best-gold" class="best-value">— G</span><span class="subtle">Every high is yours to keep.</span></div>
-        <div class="die-area"><div class="die-shadow"></div><div id="die" class="die" role="img" aria-label="Die, ready to roll">${Array.from({ length: 9 }, (_, i) => `<span class="pip" data-pip="${i}"></span>`).join("")}</div></div>
-        <div class="stage-detail stage-right"><span class="eyebrow">ONE DIE. ENDLESS POSSIBILITIES.</span><span class="subtle">The odds move when you win.<br>Make your next move count.</span></div>
+        <div class="balance"><span class="eyebrow">Gold</span><div class="balance-value"><span id="gold">—</span><span class="gold-unit">G</span></div></div>
+        <div class="die-area"><div id="die" class="die" role="img" aria-label="Die, ready to roll">${Array.from({ length: 9 }, (_, i) => `<span class="pip" data-pip="${i}"></span>`).join("")}</div></div>
+        <div class="personal-best"><span class="eyebrow">Best</span><span id="best-gold" class="best-value">— G</span></div>
       </section>
       <section class="table-area" aria-label="Betting table">
-        <div class="table-heading"><span>PLACE YOUR BETS</span><span>Returns include your stake</span></div>
         <div id="board" class="board"></div>
         <div class="color-bets" id="color-bets"></div>
-        <div class="jackpot-line" id="jackpot-line"><span class="jackpot-star">✧</span><span id="jackpot-text">Loading your board…</span></div>
+        <div class="jackpot-line" id="jackpot-line"><span id="jackpot-text">Loading…</span></div>
       </section>
       <section class="betting-controls" aria-label="Wager controls">
-        <div class="accounting"><span>Draft <strong id="draft-total">0 G</strong></span><span class="accounting-dot">·</span><span>Available <strong id="available">— G</strong></span><button id="edit-draft" aria-expanded="false" aria-controls="draft-tray">Edit bets <span id="draft-count">0</span></button><button id="clear-draft">Clear</button></div>
+        <div class="accounting"><span>Total <strong id="draft-total">0 G</strong></span><span>Available <strong id="available">— G</strong></span><button id="edit-draft" aria-expanded="false" aria-controls="draft-tray">Edit bets <span id="draft-count">0</span></button><button id="clear-draft">Clear</button></div>
         <div id="draft-tray" class="draft-tray" hidden></div>
-        <div class="actions"><div class="amount-selector"><button id="decrease" aria-label="Decrease bet by 5 Gold">‹</button><label for="bet-amount">Bet:</label><input id="bet-amount" type="text" inputmode="numeric" pattern="[0-9]*" value="10" aria-label="Bet amount in Gold" autocomplete="off" /><span>G</span><button id="increase" aria-label="Increase bet by 5 Gold">›</button></div><button id="roll" class="roll-button">${icon("dice")}<span>Roll</span><kbd>R</kbd></button><button id="shake" class="shake-button">${icon("shake")}<span>Shake<small>Free · unlimited</small></span></button></div>
-        <p id="hint" class="hint">Tap a target to add your bet. Combine any targets.</p>
-        <div id="result" class="result" aria-live="polite" aria-atomic="true"><span class="result-idle">Six numbers. Find your opening.</span></div>
+        <div class="actions"><div class="amount-selector"><button id="decrease" aria-label="Decrease bet by 5 Gold">−</button><label for="bet-amount">Bet</label><input id="bet-amount" type="text" inputmode="numeric" pattern="[0-9]*" value="10" aria-label="Bet amount in Gold" autocomplete="off" /><span>G</span><button id="increase" aria-label="Increase bet by 5 Gold">+</button></div><button id="roll" class="roll-button"><span>Roll</span></button><button id="shake" class="shake-button"><span>Shake</span></button></div>
+        <p class="hint"><span class="pointer-hint">Click to bet · Right-click to remove</span><span class="touch-hint">Tap to bet · Edit bets to remove</span></p>
+        <p id="roll-announcement" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></p>
         <p id="notice" class="notice" role="status" aria-live="polite"></p>
         <button id="retry" class="text-button" hidden>Retry saved action</button>
         <button id="restart" class="restart-button" hidden>Start again with 100 G</button>
       </section>
     </main>
-    <footer><span>${CONFIG.title} <span class="footer-dot">·</span> THE WEIGHTED DICE GAME</span><span>Just play Gold. No real money.</span></footer>
   </div>
-  <dialog id="leaderboard-dialog" class="leaderboard-dialog" aria-labelledby="leaderboard-title"><div class="dialog-top"><div><span class="eyebrow">THE HIGH ROLLERS</span><h2 id="leaderboard-title">Leaderboard</h2></div><button class="icon-button" data-close="leaderboard-dialog" aria-label="Close leaderboard">${icon("close")}</button></div><p class="dialog-intro">Your highest settled Gold, across every game.</p><div class="ranking-labels"><span>PLAYER</span><span>BEST GOLD</span></div><ol id="leaders"></ol><p class="leaderboard-note">Shared with everyone on this server.<br>Records refresh every 5 seconds.</p><div class="your-record"><span id="your-nickname"></span><strong id="your-best"></strong></div></dialog>
-  <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title"><div class="dialog-top"><div><span class="eyebrow">MAKE YOURSELF AT HOME</span><h2 id="settings-title">Settings & how to play</h2></div><button class="icon-button" data-close="settings-dialog" aria-label="Close settings">${icon("close")}</button></div>
+  <dialog id="leaderboard-dialog" class="leaderboard-dialog" aria-labelledby="leaderboard-title"><div class="dialog-top"><div><h2 id="leaderboard-title">Leaderboard</h2></div><button class="icon-button" data-close="leaderboard-dialog" aria-label="Close leaderboard">${icon("close")}</button></div><p class="dialog-intro">Your highest settled Gold.</p><div class="ranking-labels"><span>PLAYER</span><span>BEST GOLD</span></div><ol id="leaders"></ol><p class="leaderboard-note">Highest Gold across all games.</p><div class="your-record"><span id="your-nickname"></span><strong id="your-best"></strong></div></dialog>
+  <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title"><div class="dialog-top"><div><h2 id="settings-title">Settings & how to play</h2></div><button class="icon-button" data-close="settings-dialog" aria-label="Close settings">${icon("close")}</button></div>
     <form id="nickname-form"><label for="nickname">Your leaderboard name</label><div class="nickname-row"><input id="nickname" maxlength="48" required autocomplete="nickname"/><button type="submit" id="save-nickname">Save</button></div><p id="nickname-status" role="status"></p></form>
     <label class="sound-control"><span>Sound effects<small>Soft, procedural dice and win tones</small></span><input id="sound" type="checkbox" role="switch" ${sound ? "checked" : ""}/></label>
     <label class="sound-control"><span>Reduce motion<small>Skip dice movement and celebration effects</small></span><input id="motion" type="checkbox" role="switch" ${shouldReduceMotion() ? "checked" : ""}/></label>
-    <div class="instructions"><h3>A board that moves with you.</h3><p>Select an amount, then tap any number or group to add a wager. Open <b>Edit bets</b> to reduce or remove individual wagers. Overlapping bets are welcome.</p><p><b>Roll</b> samples one outcome using the displayed odds. Each winning wager pays its total return: number ×6, row ×2, column ×3, color ×2.</p><p>When any wager pays, the rolled number gives 25% of its probability to the other five equally—even on a break-even or net-loss Roll. A complete miss leaves the odds unchanged.</p><p><b>Jackpot ×24:</b> wager only on the marked number. A hit pays ×24 instead of ×6, then automatically Shakes to a fresh board. The lowest probability is marked; the lowest number breaks ties.</p><p><b>Shake</b> is free and unlimited. It refreshes the probabilities and clears your draft. Gold stays yours. Rolls also clear your draft. At zero Gold, start again; your best record stays.</p><p>Gold and odds save automatically. A refresh resumes your board. Uncommitted drafts are local to this tab and clear on refresh. On desktop, <kbd>R</kbd> rolls and <kbd>S</kbd> shakes. All controls also work with Tab and Enter. Reduced-motion preferences are respected.</p></div>
+    <div class="instructions"><h3>How to play</h3><p>Play Gold only. No real money.</p><p>Select an amount, then tap any number or group to add a wager. Right-click a target to remove its entire wager. Use <b>Edit bets</b> to reduce or remove wagers on any device. Overlapping bets are welcome.</p><p><b>Roll</b> samples one outcome using the displayed odds. Each winning wager pays its total return: number ×6, row ×2, column ×3, color ×2.</p><p>When any wager pays, the rolled number gives 25% of its probability to the other five equally—even on a break-even or net-loss Roll. A complete miss leaves the odds unchanged.</p><p><b>Jackpot ×24:</b> wager only on the marked number. A hit pays ×24 instead of ×6, then automatically Shakes to a fresh board. The lowest probability is marked; the lowest number breaks ties.</p><p><b>Shake</b> is free and unlimited. It refreshes the probabilities and clears your draft. Gold stays yours. Rolls also clear your draft. At zero Gold, start again; your best record stays.</p><p>Gold and odds save automatically. A refresh resumes your board. Uncommitted drafts are local to this tab and clear on refresh. On desktop, <kbd>R</kbd> rolls and <kbd>S</kbd> shakes. All controls also work with Tab and Enter. Reduced-motion preferences are respected.</p></div>
   </dialog>
 `;
 
@@ -115,6 +106,7 @@ function targetButton(id: string, classes: string, style = "") {
   return `<button class="target ${classes}" data-target="${id}" ${style ? `style="${style}"` : ""}></button>`;
 }
 $("board").innerHTML = [
+  '<div class="board-key" aria-hidden="true"><span>Number</span><strong>×6</strong></div>',
   ...[0, 1, 2].map((i) =>
     targetButton(
       `col${i}`,
@@ -195,7 +187,7 @@ function render() {
   $("best-gold").classList.toggle("long-record", state.bestGold.length > 12);
   $("game").classList.toggle(
     "vast-balance",
-    state.gold.length > 30 || state.bestGold.length > 30,
+    state.gold.length > 12 || state.bestGold.length > 12,
   );
   $("draft-total").textContent = `${formatGold(totalDraft())} G`;
   $("available").textContent =
@@ -215,41 +207,28 @@ function render() {
         (sum, n) => sum + state!.probabilities[n - 1],
         0,
       );
-      const delta =
-        isNumber && lastDeltas ? lastDeltas[target.coverage[0] - 1] : 0;
       button.disabled = busy || !!pending || state!.gold === "0";
       button.classList.toggle("wagered", placed !== "0");
-      button.classList.toggle("large-wager", placed.length > 12);
+      button.classList.toggle("large-wager", placed.length > (isNumber ? 3 : 12));
       button.classList.toggle("marked", marked);
-      button.classList.toggle(
-        "last-outcome",
-        !!state!.lastRoll &&
-          state!.lastRoll.outcome === target.coverage[0] &&
-          isNumber,
-      );
       button.setAttribute("aria-pressed", String(placed !== "0"));
       button.setAttribute(
         "aria-label",
         `${target.label}, covers ${target.coverage.join(", ")}, ${percent(probability)} probability, return ${target.multiplier} times${marked ? ", Jackpot 24 times when wagered alone" : ""}, wager ${placed} Gold`,
       );
       if (isNumber) {
-        button.innerHTML = `<span class="cell-top"><span class="cell-color">${BOARD.flat().find((c) => c.number === target.coverage[0])!.color}</span>${marked ? '<span class="jackpot-marker">✧ JACKPOT</span>' : '<span class="cell-multiplier">×6</span>'}</span><span class="number">${target.coverage[0]}</span><span class="cell-bottom"><span class="probability ${delta > 1e-12 ? "up" : delta < -1e-12 ? "down" : ""}" title="${(probability * 100).toPrecision(12)}% internal probability">${delta > 1e-12 ? "↑ " : delta < -1e-12 ? "↓ " : ""}${percent(probability)}</span><span class="wager-chip">${formatGold(placed)} G</span></span><span class="probability-track"><span style="width:${probability * 100}%"></span></span>`;
+        button.innerHTML = `${marked ? '<span class="jackpot-marker" title="Jackpot ×24 when wagered alone">×24</span>' : ""}<span class="number">${target.coverage[0]}</span><span class="probability" title="Chance to roll">${percent(probability)}</span>${placed !== "0" ? `<span class="wager-amount" title="${formatGold(placed)} Gold wagered">${formatGold(placed)} G</span>` : ""}`;
       } else {
-        const name =
-          target.kind === "column"
-            ? ["LEFT", "MIDDLE", "RIGHT"][Number(id.slice(3))]
-            : target.kind === "row"
-              ? id === "row0"
-                ? "TOP"
-                : "BOTTOM"
-              : target.label.toUpperCase();
-        button.innerHTML = `<span class="group-title">${target.kind === "color" ? `<i class="color-dot ${id}"></i>` : ""}${name}<b>×${target.multiplier}</b></span><span class="coverage">${target.coverage.join(" · ")}<span class="group-odds">${percent(probability)}</span>${target.kind !== "row" && placed !== "0" ? `<span class="group-wager-inline">${formatGold(placed)} G</span>` : ""}</span>${target.kind === "row" ? `<span class="group-wager">${formatGold(placed)} G</span>` : ""}`;
+        const name = target.kind === "color"
+          ? target.label
+          : target.coverage.join(" · ");
+        button.innerHTML = `<span class="group-title"><span>${name}</span><b>×${target.multiplier}</b></span><span class="group-odds">${percent(probability)}</span>${placed !== "0" ? `<span class="wager-amount">${formatGold(placed)} G</span>` : ""}`;
       }
     });
   $("jackpot-line").classList.toggle("eligible", eligible);
   $("jackpot-text").innerHTML = eligible
-    ? `<b>Jackpot ready · ${state.jackpotNumber}</b><span>Only this number. A hit returns ×24.</span>`
-    : `<b>Jackpot ×24 on ${state.jackpotNumber}</b><span>Bet on this number alone to qualify.</span>`;
+    ? `<b>Jackpot · ${state.jackpotNumber} ×24</b><span>Ready</span>`
+    : `<b>Jackpot · ${state.jackpotNumber} ×24</b><span>Bet on ${state.jackpotNumber} only</span>`;
   for (const id of [
     "shake",
     "increase",
@@ -263,15 +242,6 @@ function render() {
     busy || !!pending || totalDraft() === 0n;
   $<HTMLButtonElement>("save-nickname").disabled = busy || !!pending;
   $("roll").querySelector("span")!.textContent = busy ? "Rolling…" : "Roll";
-  $("hint").textContent = busy
-    ? "Resolving your saved wager…"
-    : pending
-      ? "An action is waiting for confirmation. Retry safely below."
-      : state.gold === "0"
-        ? "Out of Gold. Your personal best is safe."
-        : totalDraft() === 0n
-          ? "Tap a target to add your bet. Combine any targets."
-          : `Ready to roll ${formatGold(totalDraft())} G. Use Edit bets to reduce or remove wagers.`;
   $("restart").hidden = state.gold !== "0";
   $<HTMLButtonElement>("restart").disabled = busy || !!pending;
   $("retry").hidden = !pending || busy;
@@ -321,6 +291,13 @@ function addBet(id: string) {
   render();
 }
 
+function cancelBet(id: string) {
+  if (!state || busy || pending || !draft[id]) return;
+  delete draft[id];
+  announce("");
+  render();
+}
+
 function playTone(kind: "chip" | "roll" | "win" | "jackpot") {
   if (!sound) return;
   try {
@@ -350,19 +327,9 @@ function playTone(kind: "chip" | "roll" | "win" | "jackpot") {
   }
 }
 
-function showResult(result: Settlement | null) {
-  if (!result) {
-    $("result").innerHTML =
-      '<span class="result-idle">Six numbers. Find your opening.</span>';
-    $("result").classList.remove("is-jackpot");
-    setDie(1);
-    return;
-  }
-  const net = BigInt(result.net);
-  $("result").classList.toggle("is-jackpot", result.jackpot);
-  $("result").innerHTML =
-    `<span class="result-face">${result.outcome}</span><div class="result-copy"><strong>${result.jackpot ? "Jackpot!" : result.totalReturn === "0" ? "A miss. Another possibility awaits." : net > 0n ? "A good roll." : net === 0n ? "Even Gold. New odds." : "A paying wager. A net loss."}</strong><span>Return ${formatGold(result.totalReturn)} G <span class="result-separator">·</span> <b class="${net >= 0n ? "positive" : "negative"}">${signed(result.net)} G net</b></span></div>`;
-  setDie(result.outcome);
+function announceRoll(result: Settlement) {
+  $("roll-announcement").textContent =
+    `Rolled ${result.outcome}. ${result.jackpot ? "Jackpot. " : ""}Return ${formatGold(result.totalReturn)} Gold. Net ${signed(result.net)} Gold.`;
 }
 async function getState() {
   const response = await fetch("/api/state", { cache: "no-store" });
@@ -419,8 +386,7 @@ async function perform(action?: Action) {
         if (payload.state) {
           state = payload.state;
           draft = {};
-          lastDeltas = null;
-          showResult(state!.lastRoll);
+          setDie(1);
         }
       }
       throw new Error(
@@ -436,49 +402,34 @@ async function perform(action?: Action) {
         await new Promise((resolve) => setTimeout(resolve, CONFIG.animationMs));
       $("die").classList.remove("rolling");
       setDie(data.result.outcome);
-      showResult(data.result);
+      announceRoll(data.result);
       if (data.result.jackpot) {
-        $("game").classList.add("celebrating");
-        announce(
-          `Jackpot! ${formatGold(data.result.totalReturn)} G returned. An automatic Shake follows…`,
-        );
+        announce("Jackpot!");
         playTone("jackpot");
         if (!shouldReduceMotion())
           await new Promise((resolve) =>
             setTimeout(resolve, CONFIG.jackpotRevealMs),
           );
-        announce(
-          `Jackpot! ${formatGold(data.result.totalReturn)} G returned. Automatic Shake complete — a fresh board is ready.`,
-        );
-        setTimeout(() => $("game").classList.remove("celebrating"), 1800);
+        announce("Jackpot! Fresh odds.");
       } else if (data.result.transferred) {
-        lastDeltas = data.result.probabilitiesAfter.map(
-          (p, i) => p - data.result!.probabilitiesBefore[i],
-        );
-        announce(
-          `Odds moved: ${data.result.outcome} gave 25% of its probability to the other five.`,
-        );
+        announce("");
         playTone("win");
       } else {
-        lastDeltas = null;
-        announce("No paying wager. The odds stay the same.");
+        announce("");
       }
     } else if (request.action.kind === "shake") {
-      lastDeltas = null;
-      announce("Fresh odds. Draft cleared. Your Gold stays yours.");
+      announce("");
       $("die").classList.remove("shaking");
       void $("die").offsetWidth;
       $("die").classList.add("shaking");
     } else if (request.action.kind === "restart") {
-      lastDeltas = null;
       amount = CONFIG.selectedWager;
       $<HTMLInputElement>("bet-amount").value = amount;
-      announce("A fresh start. Your best record is safe.");
-      showResult(null);
+      announce("");
+      setDie(1);
     } else {
       $("nickname-status").textContent = "Name saved.";
     }
-    if (data.result?.jackpot) lastDeltas = null;
     state = data.state;
     if (request.action.kind !== "nickname") {
       draft = {};
@@ -496,8 +447,7 @@ async function perform(action?: Action) {
     ) {
       state = current;
       draft = {};
-      lastDeltas = null;
-      showResult(current.lastRoll);
+      setDie(1);
       announce(
         "Another tab has updated the game. The latest saved board is shown.",
       );
@@ -520,6 +470,13 @@ async function perform(action?: Action) {
     render();
   }
 }
+
+app.addEventListener("contextmenu", (event) => {
+  const target = (event.target as HTMLElement).closest<HTMLElement>("[data-target]");
+  if (!target) return;
+  event.preventDefault();
+  cancelBet(target.dataset.target!);
+});
 
 app.addEventListener("click", (event) => {
   const element = event.target as HTMLElement;
@@ -571,7 +528,7 @@ $("retry").addEventListener("click", () => void perform());
 $("clear-draft").addEventListener("click", () => {
   if (!busy && !pending) {
     draft = {};
-    announce("Draft cleared. No Gold spent.");
+    announce("");
     render();
   }
 });
@@ -604,7 +561,6 @@ function openLeaderboard() {
   void refreshLeaderboard();
 }
 $("leaderboard-open").addEventListener("click", openLeaderboard);
-$("mobile-leaderboard").addEventListener("click", openLeaderboard);
 $("leaderboard-dialog").addEventListener("close", () =>
   $("leaderboard-open").setAttribute("aria-expanded", "false"),
 );
@@ -686,8 +642,7 @@ async function sync() {
       const existed = !!state;
       state = latest;
       draft = {};
-      lastDeltas = null;
-      showResult(latest.lastRoll);
+      setDie(1);
       render();
       if (existed)
         announce(
@@ -712,7 +667,7 @@ async function sync() {
 async function initialize() {
   try {
     state = await getState();
-    showResult(state.lastRoll);
+    setDie(1);
     render();
     void refreshLeaderboard();
     if (pending) {

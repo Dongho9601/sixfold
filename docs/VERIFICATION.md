@@ -2,6 +2,44 @@
 
 Verified on October 9, 2026, using Node 26.4.0 and the available Chrome browser tools. The normal game is served at `http://localhost:5173`. Browser QA used both the Vite development client and the built production client.
 
+## Minimal board and right-click cancellation — October 9, 2026
+
+Replaced the decorative frame, gradients, gold chips, serif numerals, sidebar, slogans, and repeated labels with a flat green table and larger sans-serif text. Number text is 68–72px on desktop and 58px on mobile; number probabilities are 22px and 19px respectively. Group buttons show their covered numbers, return multiplier, probability, and any wager. Full rules remain in Settings.
+
+Right-click clears the entire draft wager on the clicked target. The handler only intercepts context menus on betting targets, ignores empty targets, and respects the existing busy/pending action guards. Edit bets remains available for touch and keyboard users. The persistent result panel, board outcome ring, legend, and restored last-roll presentation are removed. The current roll still updates the die and Gold, and announces the outcome to assistive technology.
+
+Verified for this pass:
+
+- `npm test`: 34 passing existing tests. Production build and `git diff --check` passed.
+- Browser checks at 1280×800, 390×844, and 320×740. Larger text can require vertical scrolling.
+- Added 20 G to Number 1 and 10 G to Red. Right-clicking Number 1 removed all 20 G while preserving Red, including with invalid text in the amount field.
+- Added 1 G to all 13 targets, then right-clicked each target. Final draft was 0 G, available Gold was 100 G, and Roll was disabled. Right-clicking an empty target was a no-op.
+- At 320px, all 13 selected targets had no horizontal text clipping or page overflow; odds stayed visible. Number and column wagers of `9,007,199,254,740,993 G` also wrapped without clipping, and right-click canceled the large number wager.
+- Right-clicking Black restored eligibility for a sole Number 6 Jackpot. Keyboard Roll settled the Jackpot at 330 G; a subsequent ordinary hit settled at 380 G. No last-roll panel or outcome marker appeared.
+- Mobile draft removal, the header leaderboard button, and Settings worked. No browser warnings or errors were reported in the inspected fixture session.
+
+Current previews: [Desktop](screenshots/refined-desktop.jpg) · [Mobile](screenshots/refined-mobile.jpg).
+
+The requested new reference image or URL was not present in the conversation; the visual direction follows the explicit request for less decoration, larger type, and fewer labels. Earlier entries below describe superseded presentations.
+
+## Roulette-inspired design refinement — October 9, 2026
+
+The board now uses green felt, a connected ivory grid, larger centered numbers, stronger red/black contrast, and gold wager markers. Group odds remain visible after selection. A ring identifies the last rolled number; a star and ×24 identify the Jackpot target. On narrow screens, Roll and the amount selector share a row, with Shake below.
+
+Checks for this refinement:
+
+- `npm test`: all 34 existing tests passed. `npm run build` and `git diff --check` passed.
+- Chrome layouts inspected at 1280×800, 768×800, 390×844, and 320×740. The normal large desktop viewport was also visually inspected. Mobile pages use vertical scrolling.
+- At 320px, all 13 targets accepted 1 G wagers, all seven group probabilities remained visible, and the inspected target labels had no horizontal clipping. No document horizontal overflow was observed.
+- Draft reduction and clearing, overlapping number/column/color wagers, mobile Settings and Leaderboard dialogs, keyboard Enter on Roll, Jackpot eligibility, a 240 G Jackpot return, automatic Shake, and free Shake were exercised in the isolated fixture. Reduced motion remained respected.
+- The large-balance fixture exposed a collision in the compact desktop header. Balances and records above 12 digits now use separate rows; the 768px layout was rechecked for overlap. At 390px, number and column wagers of `9,007,199,254,740,993 G` wrapped without clipping, with group odds still visible. The ordinary ×6 result displayed exactly `54,043,195,528,445,958 G`.
+- Sampled foreground/background contrast ratios: number text on red 6.11:1; on black 15.73:1; group coverage 7.99:1; selected group coverage 5.82:1; legend against the lightest felt base 5.00:1. These are specific color-pair checks, not a full accessibility audit.
+- No warnings or errors appeared in the inspected fixture's browser runtime logs before the fixture restart.
+
+Updated previews: [Desktop](screenshots/roulette-desktop.jpg) · [Mobile](screenshots/roulette-mobile.jpg). Both show overlapping wagers after a deterministic Jackpot. Game rules and server behavior were unchanged.
+
+The earlier verification below records the original implementation; its screenshots and viewport-fit claims describe that earlier design.
+
 ## Automated checks actually run
 
 `npm test`: **34 passing tests**, zero failures. Coverage includes:
