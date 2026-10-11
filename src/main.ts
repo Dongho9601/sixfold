@@ -4,6 +4,7 @@ import { guideBody, guideLanguages, guides, resolveGuideLanguage, type GuideLang
 import type { Action, PlayerState, Settlement, Wagers } from "./types";
 import { LocalGame, SAVE_KEY, StaleRunError } from "./save";
 import { setupBetKeypad } from "./bet-keypad";
+import { tiltLevel } from "./game/rules";
 
 const game = new LocalGame();
 
@@ -83,7 +84,7 @@ app.innerHTML = `
   <div class="workspace">
     <main id="game" aria-label="${CONFIG.title} game">
       <aside class="sidebar" aria-label="Your game">
-        <header class="header"><a class="wordmark" href="${import.meta.env.BASE_URL}" aria-label="${CONFIG.title} home">${icon("dice")}${CONFIG.title}<span>PLAY THE ODDS</span></a></header>
+        <header class="header"><a class="wordmark" href="${import.meta.env.BASE_URL}" aria-label="${CONFIG.title} home">${icon("dice")}${CONFIG.title}</a></header>
         <section class="stat-card bankroll" aria-label="Your Gold">
           <span class="eyebrow">Bankroll</span><strong class="stat-value"><span id="gold" class="stat-number">—</span> <span class="gold-unit">G</span></strong>
         </section>
@@ -95,7 +96,7 @@ app.innerHTML = `
         <section class="table-area" aria-label="Betting table">
           <div class="felt">
             <section class="stage" aria-label="Die and result">
-              <div class="table-heading"><button id="tilt-info" class="board-tilt" aria-label="About board Tilt" aria-haspopup="dialog" aria-controls="welcome-dialog"><span id="tilt-number" class="tilt-number">Tilt —</span><span class="tilt-description"><strong id="tilt-level">—</strong><span id="tilt-change" aria-hidden="true" hidden></span></span></button><span id="table-status">Place your bets</span></div>
+              <div class="table-heading"><button id="tilt-info" class="board-tilt" aria-label="About board Tilt" aria-haspopup="dialog" aria-controls="welcome-dialog"><span id="tilt-number" class="tilt-number">Tilt —</span><span class="tilt-description"><strong id="tilt-level">—</strong><span id="tilt-change" aria-hidden="true">-</span></span></button><span id="table-status">Place your bets</span></div>
               <div class="die-area"><div id="die-shadow" class="die-shadow"></div><div id="die-mover" class="die-mover"><div id="die" class="die" role="img" aria-label="Die, ready to roll"></div></div><div id="landing-ring" class="landing-ring"></div></div>
               <div id="result-display" class="result-display"><span class="result-label">BOARD NET</span><strong id="board-net" class="result-value">0 G</strong><span class="result-detail">Winnings minus bets</span></div>
             </section>
@@ -351,24 +352,34 @@ function showBoardNet(gold = state!.gold, startingGold = state!.boardStartingGol
   $("result-display").classList.toggle("lost", net < 0n);
 }
 let displayedTilt: number | undefined;
-let displayedTiltRun: string | undefined;
+let displayedTiltState: PlayerState | undefined;
 let tiltChangeDescription = "";
 function showTilt(level: number) {
   const label = TILT_LABELS[level - 1];
   const indicator = $("tilt-change");
-  if (displayedTiltRun !== state!.id) {
+  const current = state!;
+  const previous = displayedTiltState;
+  const newRun = previous?.id !== current.id;
+  const rolled = previous && !newRun && current.rollsUsed > previous.rollsUsed;
+  const replacedDie = previous && !newRun && current.rollsUsed === previous.rollsUsed &&
+    ((previous.canShake && !current.canShake) ||
+      current.probabilities.some((probability, i) => probability !== previous.probabilities[i]));
+  if (newRun) {
     displayedTilt = undefined;
-    displayedTiltRun = state!.id;
-    tiltChangeDescription = "";
-    indicator.textContent = "";
-    indicator.hidden = true;
   }
-  if (displayedTilt !== undefined && displayedTilt !== level) {
-    indicator.textContent = level > displayedTilt ? "▲" : "▼";
-    indicator.hidden = false;
-    tiltChangeDescription = ` ${level > displayedTilt ? "Increased" : "Decreased"} from level ${displayedTilt} to ${level}.`;
+  if (newRun || rolled || replacedDie) {
+    const result = rolled ? current.lastRoll : null;
+    // A fresh die from Shake or Jackpot has no roll-driven Tilt change.
+    const rollChangedThisDie = result && !result.jackpot &&
+      current.probabilities.every((probability, i) => probability === result.probabilitiesAfter[i]);
+    const beforeLevel = rollChangedThisDie ? tiltLevel(result.probabilitiesBefore) : level;
+    indicator.textContent = level > beforeLevel ? "▲" : level < beforeLevel ? "▼" : "-";
+    tiltChangeDescription = level === beforeLevel
+      ? " Tilt change: none."
+      : ` ${level > beforeLevel ? "Increased" : "Decreased"} from level ${beforeLevel} to ${level} after the last roll.`;
     indicator.title = tiltChangeDescription.trim();
   }
+  displayedTiltState = current;
   $("tilt-info").setAttribute("aria-label", `Board Tilt: ${label}, level ${level} of 6.${tiltChangeDescription} Open Tilt explanation.`);
   if (displayedTilt === level) return;
   $("tilt-number").textContent = `Tilt ${level}`;
@@ -1072,7 +1083,7 @@ $("bet-amount").addEventListener("change", () => {
 setupBetKeypad($<HTMLInputElement>("bet-amount"), mobileLayout, value => {
   setAmount(value);
   announce("");
-});
+}, () => state!.gold);
 function placeMobileActions() {
   app.classList.toggle("swap-mobile-actions", swapMobileActions);
   const actions = document.querySelector<HTMLElement>(".actions")!;

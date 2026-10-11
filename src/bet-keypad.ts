@@ -3,6 +3,7 @@ export function setupBetKeypad(
   input: HTMLInputElement,
   mobileLayout: MediaQueryList,
   commit: (value: string) => void,
+  bankroll: () => string,
 ) {
   const touch = matchMedia("(pointer: coarse)");
   const dialog = document.createElement("dialog");
@@ -13,6 +14,11 @@ export function setupBetKeypad(
     <div class="dialog-top"><h2 id="keypad-title">Bet amount</h2><button type="button" class="icon-button" id="keypad-cancel" aria-label="Cancel bet amount edit">×</button></div>
     <div class="keypad-value"><output id="keypad-amount" tabindex="0" aria-label="Bet amount in Gold" aria-live="polite" aria-atomic="true"></output><span>G</span></div>
     <p id="keypad-validation" class="keypad-validation" role="status"></p>
+    <div class="keypad-percentages" role="group" aria-label="Bet as a percentage of bankroll">
+      ${[10, 20, 30].map(percent =>
+        `<button type="button" data-bankroll-percent="${percent}" aria-label="${percent}% of current bankroll">${percent}%</button>`,
+      ).join("")}
+    </div>
     <div class="keypad-keys" role="group" aria-label="Number keypad">
       ${["1", "2", "3", "4", "5", "6", "7", "8", "9", "clear", "0", "backspace"].map(key =>
         `<button type="button" data-key="${key}"${key === "backspace" ? ' aria-label="Delete last digit"' : ""}>${key === "clear" ? "Clear" : key === "backspace" ? "⌫" : key}</button>`,
@@ -75,8 +81,14 @@ export function setupBetKeypad(
     }
   });
   dialog.addEventListener("click", event => {
+    const percentage = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-bankroll-percent]");
     const key = (event.target as HTMLElement).closest<HTMLButtonElement>("button[data-key]");
-    if (key) press(key.dataset.key!);
+    if (percentage) {
+      const amount = BigInt(bankroll()) * BigInt(percentage.dataset.bankrollPercent!) / 100n;
+      value = (amount < 1n ? 1n : amount).toString();
+      replace = true;
+      render();
+    } else if (key) press(key.dataset.key!);
     else if (event.target === dialog) {
       const bounds = dialog.getBoundingClientRect();
       if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom)

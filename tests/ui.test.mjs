@@ -113,6 +113,7 @@ test("click a bet then R settles exactly once; uppercase R works too", async t =
   assert.equal(await page.locator("#draft-total").textContent(), "0 G");
   assert.equal(await page.locator("#tilt-number").innerText(), "Tilt 1");
   assert.equal(await page.locator("#tilt-level").innerText(), "NEARLY EVEN");
+  assert.equal(await page.locator("#tilt-change").innerText(), "-");
   assert.equal(await page.locator("#board-net").innerText(), "0 G");
   await page.locator('[data-target="n2"]').click();
   await page.keyboard.press("Shift+R");
@@ -461,6 +462,45 @@ test("the phone bet keypad overlays a stationary game and commits or cancels exa
   assert.equal((await saved(page)).rollsUsed, 0);
 });
 
+test("keypad percentages use the current bankroll with exact whole-Gold arithmetic", async t => {
+  const page = await game(t, 390, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  await page.locator('[data-target="n1"]').tap();
+  await page.locator("#bet-amount").tap();
+  for (const percent of [10, 20, 30]) {
+    await page.getByRole("button", { name: `${percent}% of current bankroll`, exact: true }).tap();
+    assert.equal(await page.locator("#keypad-amount").innerText(), String(percent));
+    assert.equal(await page.locator("#keypad-done").isDisabled(), false);
+  }
+  await page.locator("#keypad-cancel").tap();
+  assert.equal(await page.locator("#bet-amount").inputValue(), "10");
+  await page.locator("#roll").tap();
+  await settled(page, "90");
+  await page.locator("#bet-amount").tap();
+  for (const [percent, expected] of [[10, "9"], [20, "18"], [30, "27"]]) {
+    await page.locator(`[data-bankroll-percent="${percent}"]`).tap();
+    assert.equal(await page.locator("#keypad-amount").innerText(), expected);
+  }
+  await page.locator("#keypad-done").tap();
+  assert.equal(await page.locator("#bet-amount").inputValue(), "27");
+  assert.equal(await page.locator("#bet-amount").getAttribute("aria-valuenow"), "27");
+  await page.locator('[data-target="n1"]').tap();
+  assert.equal(await page.locator("#draft-total").textContent(), "27 G");
+  for (const gold of ["101", "1", "9007199254740993123456789"]) {
+    await patchSave(page, { gold });
+    await page.locator("#bet-amount").tap();
+    for (const percent of [10, 20, 30]) {
+      await page.locator(`[data-bankroll-percent="${percent}"]`).tap();
+      const amount = BigInt(gold) * BigInt(percent) / 100n;
+      assert.equal(await page.locator("#keypad-amount").innerText(), String(amount < 1n ? 1n : amount));
+      assert.equal(await page.locator("#keypad-done").isDisabled(), false);
+    }
+    await page.locator("#keypad-done").tap();
+    const amount = BigInt(gold) * 30n / 100n;
+    assert.equal(await page.locator("#bet-amount").inputValue(), String(amount < 1n ? 1n : amount));
+    assert.equal((await saved(page)).gold, gold);
+  }
+});
+
 test("desktop bet input stays editable at phone-sized window widths", async t => {
   const page = await game(t);
   for (const width of [1280, 390, 320]) {
@@ -619,7 +659,7 @@ test("the table and guide display all six Tilt levels", async t => {
 
 test("Tilt stays visible, animates a changed level, and respects reduced motion", async t => {
   const page = await game(t, 320, { viewport: { width: 320, height: 568 } });
-  assert.equal(await page.locator("#tilt-change").isVisible(), false);
+  assert.equal(await page.locator("#tilt-change").innerText(), "-");
   assert.equal(await page.locator(".tilt-help").count(), 0);
   await page.locator("#settings-open").click();
   await page.locator("#motion").uncheck();
@@ -628,7 +668,15 @@ test("Tilt stays visible, animates a changed level, and respects reduced motion"
   await page.waitForFunction(key => JSON.parse(localStorage.getItem(key)).settings.reducedMotion === false, SAVE_KEY);
   const changeTilt = peak => page.evaluate(({ key, peak }) => {
     const save = JSON.parse(localStorage.getItem(key));
+    const before = save.state.probabilities;
     save.state.probabilities = [peak, ...Array(5).fill((1 - peak) / 5)];
+    // Simulate a roll settled by another tab, including its settlement receipt.
+    save.state.lastRoll = { outcome: 1, stake: "10", totalReturn: "60", net: "50", jackpot: false,
+      paidTargets: ["n1"], probabilitiesBefore: before, probabilitiesAfter: save.state.probabilities,
+      markerBefore: save.state.jackpotNumber, transferred: true };
+    save.state.rollsUsed++;
+    save.state.gold = (BigInt(save.state.gold) + 50n).toString();
+    save.state.canShake = true;
     save.state.revision = (BigInt(save.state.revision) + 1n).toString();
     save.revision = (BigInt(save.revision) + 1n).toString();
     localStorage.setItem(key, JSON.stringify(save));
@@ -658,7 +706,71 @@ test("Tilt stays visible, animates a changed level, and respects reduced motion"
   await page.locator("#settings-restart").click();
   await page.locator("#restart-confirm").click();
   await page.waitForFunction(() => document.querySelector("#notice").textContent.includes("New run."));
-  assert.equal(await page.locator("#tilt-change").isVisible(), false);
+  assert.equal(await page.locator("#tilt-change").innerText(), "-");
+});
+
+test("Tilt arrows track actual rolls and reset after unchanged rolls, Shake, and Jackpot", async t => {
+  const page = await game(t);
+  const land = async outcome => {
+    const { probabilities } = await saved(page);
+    await page.evaluate(({ probabilities, outcome }) => {
+      const sample = probabilities.slice(0, outcome - 1).reduce((a, b) => a + b, 0) + probabilities[outcome - 1] / 2;
+      let first = true;
+      const original = crypto.getRandomValues.bind(crypto);
+      crypto.getRandomValues = array => {
+        if (array.length !== 6) return original(array);
+        let value = Math.floor((first ? sample : .1) * 2 ** 48);
+        first = false;
+        for (let i = 5; i >= 0; i--) { array[i] = value % 256; value = Math.floor(value / 256); }
+        return array;
+      };
+    }, { probabilities, outcome });
+  };
+  await patchSave(page, { probabilities: [.3562, ...Array(5).fill((1 - .3562) / 5)] });
+  assert.equal(await page.locator("#tilt-number").innerText(), "Tilt 1");
+  await page.locator('[data-target="row1"]').click();
+  await page.locator("#roll").click();
+  await settled(page, "110");
+  assert.equal(await page.locator("#tilt-number").innerText(), "Tilt 2");
+  assert.equal(await page.locator("#tilt-change").innerText(), "▲");
+  await page.locator("#increase").click();
+  assert.equal(await page.locator("#tilt-change").innerText(), "▲");
+  await page.locator('[data-target="n2"]').click();
+  await page.locator("#roll").click();
+  await settled(page, "95");
+  assert.equal(await page.locator("#tilt-change").innerText(), "-");
+  await patchSave(page, { probabilities: [.36, ...Array(5).fill((1 - .36) / 5)] });
+  await land(1);
+  await page.locator('[data-target="n1"]').click();
+  await page.locator("#roll").click();
+  await settled(page, "145");
+  assert.equal(await page.locator("#tilt-number").innerText(), "Tilt 1");
+  assert.equal(await page.locator("#tilt-change").innerText(), "▼");
+  await page.locator("#shake").click();
+  await settled(page, "145");
+  assert.equal(await page.locator("#tilt-number").innerText(), "Tilt 1");
+  assert.equal(await page.locator("#tilt-change").innerText(), "-");
+  await page.locator('[data-target="row0"]').click();
+  await page.locator("#roll").click();
+  await settled(page, "155");
+  assert.equal(await page.locator("#tilt-change").innerText(), "-");
+  await page.locator("#shake").click();
+  await settled(page, "155");
+  assert.equal(await page.locator("#tilt-change").innerText(), "-");
+  await patchSave(page, { probabilities: [.36, ...Array(5).fill((1 - .36) / 5)] });
+  await land(1);
+  await page.locator('[data-target="n1"]').click();
+  await page.locator("#roll").click();
+  await settled(page, "205");
+  assert.equal(await page.locator("#tilt-change").innerText(), "▼");
+  const state = await saved(page);
+  const marked = state.jackpotNumber;
+  await land(marked);
+  await page.locator(`[data-target="n${marked}"]`).click();
+  await page.locator("#roll").click();
+  await settled(page, "435");
+  assert.equal((await saved(page)).lastRoll.jackpot, true);
+  assert.equal(await page.locator("#tilt-change").innerText(), "-");
 });
 
 test("bankruptcy restart animates the die and cards while actions stay locked", async t => {
