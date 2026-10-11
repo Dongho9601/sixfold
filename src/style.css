@@ -57,7 +57,10 @@ main { width: min(1540px, 100%); min-width: 0; margin: 0 auto; display: grid; gr
 .table-heading .eyebrow { color: #b7c7ad; font-size: 9px; letter-spacing: 2px; }
 #table-status { font: italic 22px Georgia, serif; }
 .board-tilt { align-self: flex-start; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-height: 44px; max-width: 100%; padding: 4px 0; background: transparent; color: #f3d38e; text-align: left; border-radius: 3px; white-space: nowrap; }
+.tilt-title { display: flex; align-items: center; gap: 8px; color: #fff; }
 .tilt-number { color: #fff; font-size: 14px; line-height: 1.2; font-weight: 400; }
+.distribution-hint { display: flex; flex-shrink: 0; gap: 4px; }
+.distribution-square { width: 12px; height: 12px; flex-shrink: 0; border-radius: 3px; background: currentColor; }
 .board-tilt strong { display: block; font-size: 20px; line-height: 1.15; font-weight: 600; }
 .tilt-description { display: flex; align-items: center; gap: 5px; }
 #tilt-change { flex-shrink: 0; font-size: 12px; line-height: 1; }
@@ -480,6 +483,9 @@ dialog::backdrop {
   .table-heading { gap: 7px; }
   .board-tilt { gap: 3px; }
   .tilt-number { font-size: 11px; }
+  .tilt-title { gap: 6px; }
+  .distribution-hint { gap: 3px; }
+  .distribution-square { width: 10px; height: 10px; }
   .board-tilt strong { font-size: 13px; }
   #tilt-change { font-size: 9px; }
   .table-heading .eyebrow { font-size: 7px; letter-spacing: 1px; }

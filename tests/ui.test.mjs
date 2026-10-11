@@ -5,6 +5,8 @@ import { preview } from "vite";
 import { newRun } from "../src/game/run.ts";
 import { SAVE_KEY } from "../src/save.ts";
 import { TILT_LABELS } from "../src/config.ts";
+import { distributionHint } from "../src/distribution-hint.ts";
+import { guideLanguages, guides } from "../src/guide.ts";
 
 let browser, vite, origin;
 before(async () => {
@@ -67,6 +69,8 @@ async function settled(page, gold) {
   await page.waitForFunction(value => document.querySelector("#gold").textContent === value &&
     !document.querySelector('[data-target="n1"]').disabled, gold);
 }
+const hintOpacities = page => page.locator(".distribution-square")
+  .evaluateAll(squares => squares.map(square => Number(getComputedStyle(square).opacity)));
 
 test("columns show ordinal pairs and rows show Odds/Evens at desktop and mobile widths", async t => {
   const page = await game(t);
@@ -619,6 +623,154 @@ test("short presses add bets while dragging, cancelled touches, and lost focus a
   assert.equal(await page.locator("#draft-total").textContent(), "30 G");
 });
 
+test("anonymous distribution squares show the five shapes and fit beside Tilt", async t => {
+  const page = await game(t);
+  const examples = [
+    [[65, 7, 7, 7, 7, 7], [1, .16, .16, .16, .16, .16]],
+    [[42, 42, 4, 4, 4, 4], [1, 1, .16, .16, .16, .16]],
+    [[30, 30, 30, 4, 3, 3], [1, 1, 1, .16, .16, .16]],
+    [[50, 20, 20, 4, 3, 3], [1, .49, .49, .16, .16, .16]],
+    [[18, 17, 17, 16, 16, 16], [.49, .49, .49, .49, .49, .49]],
+  ];
+  for (const [index, [percentages, expected]] of examples.entries()) {
+    // Deliberately put the strongest face in a different position from the first square.
+    const probabilities = [2, 4, 1, 5, 0, 3].map(i => percentages[i] / 100);
+    await patchSave(page, { probabilities });
+    assert.deepEqual(await hintOpacities(page), expected);
+    assert.deepEqual((await saved(page)).probabilities, probabilities);
+    assert.equal((await saved(page)).showProbabilities, false);
+    assert.equal((await saved(page)).leaderboardEligible, true);
+    assert.equal(await page.locator(".probability, .group-odds").count(), 0);
+    const description = distributionHint(probabilities).description;
+    assert.equal(await page.getByRole("img", { name: description, exact: true }).count(), 1);
+    assert.equal(await page.locator("#distribution-hint").getAttribute("aria-label"), description);
+    assert.equal(await page.locator("#tilt-info").getAttribute("aria-describedby"), "distribution-hint");
+    assert.equal(await page.locator("#distribution-hint[title], #distribution-hint [title]").count(), 0);
+    for (const [width, height] of [[1280, 900], [768, 900], [390, 844], [320, 568], [568, 320]]) {
+      await page.setViewportSize({ width, height });
+      const dimensions = await page.locator("#distribution-hint").evaluate(hint => {
+        const label = document.querySelector("#tilt-number").getBoundingClientRect();
+        const bounds = hint.getBoundingClientRect();
+        const stage = hint.closest(".stage").getBoundingClientRect();
+        const die = document.querySelector("#die-mover").getBoundingClientRect();
+        const squares = [...hint.children].map(square => ({
+          x: square.getBoundingClientRect().x, y: square.getBoundingClientRect().y,
+          width: square.getBoundingClientRect().width, height: square.getBoundingClientRect().height,
+          radius: getComputedStyle(square).borderRadius, color: getComputedStyle(square).backgroundColor,
+          animations: square.getAnimations().length, transition: getComputedStyle(square).transitionDuration,
+        }));
+        return {
+          aligned: Math.abs((label.top + label.bottom) / 2 - (bounds.top + bounds.bottom) / 2) < 1,
+          beside: bounds.left > label.right && bounds.left - label.right <= 8,
+          fits: bounds.left >= stage.left && bounds.right <= stage.right &&
+            (bounds.right <= die.left || bounds.bottom <= die.top),
+          labelColor: getComputedStyle(document.querySelector("#tilt-number")).color, squares,
+        };
+      });
+      assert.ok(dimensions.aligned && dimensions.beside && dimensions.fits, `${width} × ${height}: ${JSON.stringify(dimensions)}`);
+      assert.equal(dimensions.squares.length, 6);
+      assert.ok(dimensions.squares.every(square => square.width === square.height && square.width >= 10 &&
+        square.width === dimensions.squares[0].width && square.y === dimensions.squares[0].y &&
+        square.radius === "3px" && square.color === dimensions.labelColor &&
+        square.animations === 0 && square.transition === "0s"));
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+      if (width === 1280 || width === 320)
+        await page.locator(".stage").screenshot({ path: `test-results/distribution-example-${index + 1}-${width}.png` });
+    }
+  }
+  await page.setViewportSize({ width: 320, height: 568 });
+  for (const colorScheme of ["light", "dark"]) {
+    await page.emulateMedia({ colorScheme });
+    assert.deepEqual(await hintOpacities(page), examples[4][1]);
+  }
+  await page.screenshot({ path: "test-results/distribution-mobile-320.png", fullPage: true });
+  await page.locator("#tilt-info").click();
+  for (const [language] of guideLanguages) {
+    await page.locator("#guide-language").selectOption(language);
+    assert.ok((await page.locator(".tilt-guide + p").innerText()).endsWith(guides[language].tiltHint));
+  }
+});
+
+test("distribution hint waits for reveal and follows redistribution, Shake, Jackpot, and resume", async t => {
+  const page = await game(t);
+  const probabilities = [.254, ...Array(5).fill((1 - .254) / 5)];
+  await patchSave(page, { probabilities }, { settings: { ...(await save(page)).settings, reducedMotion: false } });
+  const beforeTilt = await page.locator("#tilt-number").innerText();
+  const before = [1, .49, .49, .49, .49, .49];
+  assert.deepEqual(await hintOpacities(page), before);
+  await page.evaluate(() => {
+    const original = crypto.getRandomValues.bind(crypto);
+    crypto.getRandomValues = array => {
+      if (array.length !== 6) return original(array);
+      let value = Math.floor(.1 * 2 ** 48);
+      for (let i = 5; i >= 0; i--) { array[i] = value % 256; value = Math.floor(value / 256); }
+      return array;
+    };
+    window.hintUpdates = [];
+    window.hintObserver = new MutationObserver(() => window.hintUpdates.push({
+      die: document.querySelector("#die").getAttribute("aria-label"),
+      opacities: [...document.querySelectorAll(".distribution-square")].map(square => Number(square.style.opacity)),
+    }));
+    window.hintObserver.observe(document.querySelector("#distribution-hint"), { childList: true, attributes: true });
+  });
+  await page.locator('[data-target="n1"]').click();
+  await page.locator("#roll").click();
+  await page.waitForFunction(() => document.querySelector("#die").getAnimations().length > 0);
+  await page.evaluate(() => document.querySelector("#die").getAnimations().forEach(animation => animation.pause()));
+  assert.equal((await saved(page)).rollsUsed, 1);
+  assert.deepEqual(distributionHint((await saved(page)).probabilities).opacities, Array(6).fill(.49));
+  assert.equal(await page.locator("#die").getAttribute("aria-label"), "Die rolling");
+  assert.deepEqual(await hintOpacities(page), before);
+  assert.deepEqual(await page.evaluate(() => window.hintUpdates), []);
+  await page.evaluate(() => document.querySelector("#die").getAnimations().forEach(animation => animation.play()));
+  await settled(page, "150");
+  assert.equal(await page.locator("#tilt-number").innerText(), beforeTilt);
+  assert.deepEqual(await hintOpacities(page), Array(6).fill(.49));
+  const updates = await page.evaluate(() => { window.hintObserver.disconnect(); return window.hintUpdates; });
+  assert.equal(updates.length, 1, "All six squares and their description update together");
+  assert.notEqual(updates[0].die, "Die rolling");
+  assert.deepEqual(updates[0].opacities, Array(6).fill(.49));
+
+  await patchSave(page, { probabilities: [.5, .2, .2, .04, .03, .03] });
+  const preShake = await hintOpacities(page);
+  await page.locator("#shake").click();
+  await page.waitForFunction(() => document.querySelector("#die").getAttribute("aria-label") === "Replacing the die");
+  assert.deepEqual(await hintOpacities(page), preShake);
+  await settled(page, "150");
+  assert.deepEqual(await hintOpacities(page), distributionHint((await saved(page)).probabilities).opacities);
+  assert.notDeepEqual(await hintOpacities(page), preShake);
+
+  await patchSave(page, { probabilities: [.5, .2, .2, .04, .03, .03], rollsUsed: 99 },
+    { settings: { ...(await save(page)).settings, reducedMotion: true } });
+  const marked = (await saved(page)).jackpotNumber;
+  const jackpotProbabilities = (await saved(page)).probabilities;
+  const sample = jackpotProbabilities.slice(0, marked - 1).reduce((a, b) => a + b, 0) + jackpotProbabilities[marked - 1] / 2;
+  await page.evaluate(sample => {
+    const original = crypto.getRandomValues.bind(crypto);
+    let first = true;
+    crypto.getRandomValues = array => {
+      if (array.length !== 6) return original(array);
+      let value = Math.floor((first ? sample : .1) * 2 ** 48);
+      first = false;
+      for (let i = 5; i >= 0; i--) { array[i] = value % 256; value = Math.floor(value / 256); }
+      return array;
+    };
+  }, sample);
+  await page.locator(`[data-target="n${marked}"]`).click();
+  await page.locator("#roll").click();
+  await page.locator("#run-dialog[open]").waitFor();
+  const committed = await saved(page);
+  assert.equal(committed.lastRoll.jackpot, true);
+  assert.equal(committed.showProbabilities, false);
+  assert.equal(committed.leaderboardEligible, true);
+  assert.equal((await save(page)).records.length, 1);
+  assert.deepEqual(await hintOpacities(page), Array(6).fill(.49));
+  await page.reload();
+  await page.locator("#run-dialog[open]").waitFor();
+  assert.deepEqual(await saved(page), committed);
+  assert.deepEqual(await hintOpacities(page), Array(6).fill(.49));
+});
+
 test("the table and guide display all six Tilt levels", async t => {
   const page = await game(t);
   for (const [index, peak] of [1 / 6, .4, .475, .5, .55, .7].entries()) {
@@ -981,6 +1133,7 @@ test("a committed roll survives refresh during animation and rapid inputs settle
   await page.reload();
   await settled(page, "330");
   assert.deepEqual(await saved(page), committed);
+  assert.deepEqual(await hintOpacities(page), distributionHint(committed.probabilities).opacities);
   assert.equal(await page.locator("#draft-total").textContent(), "0 G");
   assert.equal(await page.locator("#rolls-remaining").innerText(), "99");
 });

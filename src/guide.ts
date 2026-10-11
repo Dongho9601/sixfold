@@ -13,6 +13,7 @@ interface GuideCopy {
   payoutNote: string;
   boardNet: Section;
   tilt: Section;
+  tiltHint: string;
   shake: Section;
   jackpot: Section;
   keysTitle: string;
@@ -39,6 +40,7 @@ export function resolveGuideLanguage(languages: readonly string[]): GuideLanguag
 // Authored copy only: no user-provided text is interpolated into guide markup.
 export const guides: Record<GuideLanguage, GuideCopy> = {
   en: {
+    tiltHint: "The squares beside Tilt show the anonymous distribution, sorted from highest to lowest chance in three shades. They are not a six-step Tilt rating and reveal neither numbers nor exact odds.",
     title: "How to play", close: "Close gameplay guide", language: "Language", start: "Let’s play",
     intro: "Start with 100 G. Play 100 rolls. Your final Gold is your score; the personal leaderboard keeps your best 10 completed runs in this browser.",
     steps: [
@@ -63,6 +65,7 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
     ],
   },
   ko: {
+    tiltHint: "Tilt 옆의 사각형은 숫자를 익명으로 두고 확률이 높은 순서대로 분포를 세 가지 명암으로 보여 줍니다. Tilt의 여섯 단계를 나타내는 표시가 아니며, 숫자나 정확한 확률은 드러내지 않습니다.",
     title: "게임 방법", close: "게임 안내 닫기", language: "언어", start: "시작하기",
     intro: "100 G로 시작해 주사위를 100번 굴립니다. 마지막에 남은 Gold가 점수이며, 개인 순위표에는 이 브라우저에서 완주한 게임의 상위 10개 기록이 남습니다.",
     steps: [
@@ -87,6 +90,7 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
     ],
   },
   ja: {
+    tiltHint: "Tiltの横の四角は、どの数字かを伏せた確率分布を、確率の高い順に3段階の濃淡で示します。Tiltの6段階の評価ではなく、数字や正確な確率は明かしません。",
     title: "遊び方", close: "遊び方を閉じる", language: "言語", start: "始める",
     intro: "100 Gでスタートし、サイコロを100回振ります。最後に残ったGoldがスコアです。個人ランキングには、このブラウザーで完走したゲームの上位10件が残ります。",
     steps: [
@@ -111,6 +115,7 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
     ],
   },
   zh: {
+    tiltHint: "Tilt旁的方块用三种深浅，按概率从高到低显示匿名分布。它们不是Tilt的六级评分，也不透露数字或精确概率。",
     title: "玩法说明", close: "关闭玩法说明", language: "语言", start: "开始游戏",
     intro: "从100 G开始，掷骰100次。最后的Gold就是分数；个人排行榜保留当前浏览器中已完成游戏的最佳10局纪录。",
     steps: [
@@ -135,6 +140,7 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
     ],
   },
   es: {
+    tiltHint: "Los cuadrados junto a Tilt muestran la distribución anónima, ordenada de mayor a menor probabilidad en tres tonos. No representan los seis niveles de Tilt ni revelan números o probabilidades exactas.",
     title: "Cómo jugar", close: "Cerrar la guía", language: "Idioma", start: "Jugar",
     intro: "Empiezas con 100 G y juegas 100 tiradas. El Gold final es tu puntuación; la clasificación personal guarda tus 10 mejores partidas completadas en este navegador.",
     steps: [
@@ -159,6 +165,7 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
     ],
   },
   fr: {
+    tiltHint: "Les carrés à côté de Tilt montrent la distribution anonyme, de la probabilité la plus élevée à la plus faible, en trois nuances. Ils ne représentent pas les six niveaux de Tilt et ne révèlent ni les nombres ni les probabilités exactes.",
     title: "Comment jouer", close: "Fermer le guide", language: "Langue", start: "Jouer",
     intro: "Commencez avec 100 G et jouez 100 lancers. Le Gold final est votre score ; le classement personnel conserve vos 10 meilleures parties terminées dans ce navigateur.",
     steps: [
@@ -183,6 +190,7 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
     ],
   },
   de: {
+    tiltHint: "Die Quadrate neben Tilt zeigen die anonyme Verteilung mit drei Helligkeitsstufen, von der höchsten zur niedrigsten Wahrscheinlichkeit. Sie bilden nicht die sechs Tilt-Stufen ab und verraten weder Zahlen noch genaue Wahrscheinlichkeiten.",
     title: "Spielanleitung", close: "Spielanleitung schließen", language: "Sprache", start: "Losspielen",
     intro: "Starte mit 100 G und spiele 100 Würfe. Dein letzter Goldstand ist dein Ergebnis; die persönliche Rangliste speichert deine 10 besten abgeschlossenen Durchläufe in diesem Browser.",
     steps: [
@@ -221,7 +229,7 @@ export function guideBody(language: GuideLanguage): string {
       <dl class="guide-payouts">${copy.payouts.map((label, index) => `<div><dt>${label}</dt><dd>×${multipliers[index]}</dd></div>`).join("")}</dl>
       <p>${copy.payoutNote}</p>
       ${section(copy.boardNet)}
-      <h3 class="tilt-guide" tabindex="-1">${copy.tilt[0]}</h3><p>${copy.tilt[1]}</p>
+      <h3 class="tilt-guide" tabindex="-1">${copy.tilt[0]}</h3><p>${copy.tilt[1]} ${copy.tiltHint}</p>
       ${section(copy.shake)}${section(copy.jackpot)}
       <h3>${copy.keysTitle}</h3>
       <dl class="guide-shortcuts">${copy.keys.map((label, index) => `<div><dt><kbd>${keys[index]}</kbd></dt><dd>${label}</dd></div>`).join("")}</dl>

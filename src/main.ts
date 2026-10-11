@@ -5,6 +5,7 @@ import type { Action, PlayerState, Settlement, Wagers } from "./types";
 import { LocalGame, SAVE_KEY, StaleRunError } from "./save";
 import { setupBetKeypad } from "./bet-keypad";
 import { tiltLevel } from "./game/rules";
+import { distributionHint } from "./distribution-hint";
 
 const game = new LocalGame();
 
@@ -96,7 +97,7 @@ app.innerHTML = `
         <section class="table-area" aria-label="Betting table">
           <div class="felt">
             <section class="stage" aria-label="Die and result">
-              <div class="table-heading"><button id="tilt-info" class="board-tilt" aria-label="About board Tilt" aria-haspopup="dialog" aria-controls="welcome-dialog"><span id="tilt-number" class="tilt-number">Tilt —</span><span class="tilt-description"><strong id="tilt-level">—</strong><span id="tilt-change" aria-hidden="true">-</span></span></button><span id="table-status">Place your bets</span></div>
+              <div class="table-heading"><button id="tilt-info" class="board-tilt" aria-label="About board Tilt" aria-describedby="distribution-hint" aria-haspopup="dialog" aria-controls="welcome-dialog"><span class="tilt-title"><span id="tilt-number" class="tilt-number">Tilt —</span><span id="distribution-hint" class="distribution-hint" role="img"></span></span><span class="tilt-description"><strong id="tilt-level">—</strong><span id="tilt-change" aria-hidden="true">-</span></span></button><span id="table-status">Place your bets</span></div>
               <div class="die-area"><div id="die-shadow" class="die-shadow"></div><div id="die-mover" class="die-mover"><div id="die" class="die" role="img" aria-label="Die, ready to roll"></div></div><div id="landing-ring" class="landing-ring"></div></div>
               <div id="result-display" class="result-display"><span class="result-label">BOARD NET</span><strong id="board-net" class="result-value">0 G</strong><span class="result-detail">Winnings minus bets</span></div>
             </section>
@@ -354,10 +355,26 @@ function showBoardNet(gold = state!.gold, startingGold = state!.boardStartingGol
 let displayedTilt: number | undefined;
 let displayedTiltState: PlayerState | undefined;
 let tiltChangeDescription = "";
+function showDistributionHint(probabilities: readonly number[]) {
+  const hint = $("distribution-hint");
+  const { opacities, description } = distributionHint(probabilities);
+  if (hint.getAttribute("aria-label") === description) return;
+  const squares = opacities.map(opacity => {
+    const square = document.createElement("span");
+    square.className = "distribution-square";
+    square.style.opacity = String(opacity);
+    square.setAttribute("aria-hidden", "true");
+    return square;
+  });
+  hint.replaceChildren(...squares);
+  hint.setAttribute("aria-label", description);
+}
 function showTilt(level: number) {
   const label = TILT_LABELS[level - 1];
   const indicator = $("tilt-change");
   const current = state!;
+  // Use Tilt's presentation state, which stays on the old die until reveal finishes.
+  showDistributionHint(current.probabilities);
   const previous = displayedTiltState;
   const newRun = previous?.id !== current.id;
   const rolled = previous && !newRun && current.rollsUsed > previous.rollsUsed;
