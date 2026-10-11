@@ -2,7 +2,7 @@
 
 A free hobby browser game about discovering changing odds on a six-sided die. Start with 100 Gold and play up to 100 rolls. Bet on numbers, rows, columns, or colors; observe Tilt, earn a free Shake, and find the hidden ×24 Jackpot. Gold has no monetary value. There are no ads, payments, accounts, or shared rankings.
 
-Everything runs in the browser. The personal leaderboard keeps this browser’s best 10 eligible completed runs, ranked by final Gold after roll 100. Enabling Show probabilities excludes that run from records, even if hidden again. Earlier bankruptcy records no score. Rules, controls, animations, procedural audio, and the seven-language guide are preserved.
+Everything runs in the browser. The personal leaderboard keeps this browser’s best 10 eligible completed runs, ranked by final Gold after roll 100. Enabling Show probabilities excludes that run from records, even if hidden again. Earlier bankruptcy records no score. Tilt displays two lines: a smaller white Tilt N above an uppercase description, using six descriptions from NEARLY EVEN to EXTREME BIAS, and animates changes. BOARD NET tracks cumulative returns minus settled bets on the current die and resets when Shake, Jackpot, or restart supplies a fresh die. The phone table fills the available viewport height. Settings links to the creator’s website, and the seven-language guide and About page explain the current rules and browser saves.
 
 ## Local development
 
@@ -37,6 +37,8 @@ npm run audit:strategies    # Seeded strategy audit with current settlement rule
 ## Saves and personal records
 
 The versioned `localStorage` key `sixfold:save:v1` contains the settled run, settings, and best 10 completed records. Gold, wagers, payouts, scores, and revisions use exact decimal strings at the storage boundary and `bigint` for arithmetic. Probability values retain their unrounded precision. Settlement and the completion receipt save together before animation starts; reload resumes the committed board without rolling or recording it again. Equal scores retain completion order, with a stable run-ID fallback.
+
+The saved board starting bankroll preserves BOARD NET across refreshes and tabs. Existing version-1 saves without this field initialize it to their current bankroll, so the new counter starts at zero while preserving progress and records.
 
 Restart discards the current run and draft while retaining records, name, sound/motion preferences, guide preferences, and recent bet amounts. Unrolled draft bets clear on reload. Saves belong to this browser and origin; development, preview, and the hosted site have separate saves. Clearing Sixfold’s data or the browser’s site data loses that progress. There is no synchronization or export/import.
 

@@ -25,6 +25,12 @@ export const CONFIG = {
   leaderboardLimit: 10,
 } as const;
 
+/** Ordered from the most even odds to the most concentrated. */
+export const TILT_LABELS = [
+  "NEARLY EVEN", "SLIGHT BIAS", "MODERATE BIAS",
+  "STRONG BIAS", "HEAVY BIAS", "EXTREME BIAS",
+] as const;
+
 /** All coverage is derived from this explicit board; order within a row is visual order. */
 export const BOARD = [
   [

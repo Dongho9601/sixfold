@@ -15,6 +15,8 @@ export interface PlayerState {
   id: string;
   nickname: string;
   gold: string;
+  /** Bankroll when the current die arrived; board net is gold minus this value. */
+  boardStartingGold: string;
   bestGold: string;
   previousBestGold: string | null;
   /** Whether a record-eligible run has ever been completed in this browser. */

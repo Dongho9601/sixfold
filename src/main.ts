@@ -1,5 +1,5 @@
 import "./style.css";
-import { BOARD, CONFIG, TARGET_BY_ID } from "./config";
+import { BOARD, CONFIG, TARGET_BY_ID, TILT_LABELS } from "./config";
 import { guideBody, guideLanguages, guides, resolveGuideLanguage, type GuideLanguage } from "./guide";
 import type { Action, PlayerState, Settlement, Wagers } from "./types";
 import { LocalGame, SAVE_KEY, StaleRunError } from "./save";
@@ -92,9 +92,9 @@ app.innerHTML = `
         <section class="table-area" aria-label="Betting table">
           <div class="felt">
             <section class="stage" aria-label="Die and result">
-              <div class="table-heading"><button id="tilt-info" class="board-tilt" aria-label="About board Tilt" aria-haspopup="dialog" aria-controls="welcome-dialog"><strong id="tilt-level">—</strong><span class="tilt-copy"><span class="tilt-name">Tilt</span><span class="tilt-help">Guide ${icon("chevron")}</span></span></button><span id="table-status">Place your bets</span></div>
+              <div class="table-heading"><button id="tilt-info" class="board-tilt" aria-label="About board Tilt" aria-haspopup="dialog" aria-controls="welcome-dialog"><span id="tilt-number" class="tilt-number">Tilt —</span><strong id="tilt-level">—</strong></button><span id="table-status">Place your bets</span></div>
               <div class="die-area"><div id="die-shadow" class="die-shadow"></div><div id="die-mover" class="die-mover"><div id="die" class="die" role="img" aria-label="Die, ready to roll"></div></div><div id="landing-ring" class="landing-ring"></div></div>
-              <div id="result-display" class="result-display" aria-hidden="true"><span class="result-label">ONE ROLL. SIX POSSIBILITIES.</span><strong class="result-value">Good luck.</strong><span class="result-detail">Every number has its odds.</span></div>
+              <div id="result-display" class="result-display"><span class="result-label">BOARD NET</span><strong id="board-net" class="result-value">0 G</strong><span class="result-detail">Winnings minus bets</span></div>
             </section>
             <div id="board" class="board"></div>
             <div class="color-bets" id="color-bets"></div>
@@ -113,7 +113,7 @@ app.innerHTML = `
   </div>
   <div id="effects" class="effects" aria-hidden="true"></div>
   <dialog id="leaderboard-dialog" class="leaderboard-dialog" aria-labelledby="leaderboard-title"><div id="leaderboard-content"><div class="tower-heading"><h2 id="leaderboard-title">Personal records</h2><button class="icon-button" data-close="leaderboard-dialog" aria-label="Close leaderboard">${icon("close")}</button></div><p class="personal-records-note">Best 10 runs · stored in this browser</p><div class="tower-floors"><ol id="leaders" aria-label="Your best 10 completed runs stored in this browser"></ol><div id="leaderboard-unranked" class="leaderboard-unranked" hidden>Complete 100 rolls to set your first record.</div></div></div></dialog>
-  <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title"><div class="dialog-top"><div><h2 id="settings-title">Settings</h2></div><button class="icon-button" data-close="settings-dialog" aria-label="Close settings">${icon("close")}</button></div>
+  <dialog id="settings-dialog" class="settings-dialog" aria-labelledby="settings-title"><div class="dialog-top"><div><h2 id="settings-title">Settings</h2><p class="creator-credit"><a href="https://dongho9601.github.io/" target="_blank" rel="noopener noreferrer">dongho9601.github.io</a></p></div><button class="icon-button" data-close="settings-dialog" aria-label="Close settings">${icon("close")}</button></div>
     <form id="nickname-form"><label for="nickname">Your record name</label><div class="nickname-row"><input id="nickname" maxlength="48" required autocomplete="nickname"/><button type="submit" id="save-nickname">Save</button></div><p id="nickname-status" role="status"></p></form>
     <label class="sound-control"><span>Sound effects</span><input id="sound" type="checkbox" role="switch" ${sound ? "checked" : ""}/></label>
     <label class="sound-control"><span>Reduce motion</span><input id="motion" type="checkbox" role="switch" ${prefersReducedMotion() ? "checked" : ""}/></label>
@@ -209,7 +209,7 @@ function setDie(number: number) {
 }
 setDie(1);
 
-// All motion is decorative. The server settles the roll before presentation begins.
+// All motion is decorative. The browser saves settlement before presentation begins.
 const activeAnimations = new Set<Animation>();
 const activeCounts = new Set<() => void>();
 function motion(element: HTMLElement, frames: Keyframe[], options: KeyframeAnimationOptions) {
@@ -319,7 +319,7 @@ function compactGold(value: string) {
 }
 function tossChip(id: string) {
   const poses = chipPoses.get(id) || [];
-  // Decorative randomness stays local. Only the server samples game outcomes.
+  // Decorative randomness is separate from Web Crypto game outcomes.
   poses.push({ x: 34 + Math.random() * 32, y: 36 + Math.random() * 28, rotation: -28 + Math.random() * 56, tone: Math.floor(Math.random() * 3) });
   chipPoses.set(id, poses.slice(-5));
 }
@@ -334,9 +334,32 @@ function targetElement(id: string) {
 }
 function clearResult() {
   document.querySelectorAll(".hit, .paid, .missed").forEach(el => el.classList.remove("hit", "paid", "missed"));
-  $("result-display").className = "result-display";
-  $("result-display").innerHTML = '<span class="result-label">ONE ROLL. SIX POSSIBILITIES.</span><strong class="result-value">Good luck.</strong><span class="result-detail">Every number has its odds.</span>';
   $("table-status").textContent = "Place your bets";
+}
+function showBoardNet(gold = state!.gold, startingGold = state!.boardStartingGold) {
+  const net = BigInt(gold) - BigInt(startingGold);
+  const magnitude = net < 0n ? -net : net;
+  const value = `${net === 0n ? "" : net > 0n ? "+" : "−"}${compactGold(magnitude.toString())} G`;
+  $("board-net").textContent = value;
+  $("board-net").title = `${signed(net.toString())} Gold`;
+  $("board-net").setAttribute("aria-label", `Net income on this board: ${signed(net.toString())} Gold`);
+  $("result-display").classList.toggle("won", net > 0n);
+  $("result-display").classList.toggle("lost", net < 0n);
+}
+let displayedTilt: number | undefined;
+function showTilt(level: number) {
+  const label = TILT_LABELS[level - 1];
+  $("tilt-info").setAttribute("aria-label", `Board Tilt: ${label}, level ${level} of 6. Open Tilt explanation.`);
+  if (displayedTilt === level) return;
+  $("tilt-number").textContent = `Tilt ${level}`;
+  $("tilt-level").textContent = label;
+  if (displayedTilt !== undefined) {
+    void motion($("tilt-level"), [
+      { opacity: .25, transform: "translateY(4px)", color: "#fff7d6" },
+      { opacity: 1, transform: "translateY(0)", color: "#f3d38e" },
+    ], { duration: 650, easing: "cubic-bezier(.2,.8,.2,1)" });
+  }
+  displayedTilt = level;
 }
 function coinFlight(from: HTMLElement, to: HTMLElement, count = 1) {
   if (shouldReduceMotion()) return Promise.resolve();
@@ -467,8 +490,7 @@ async function revealResult(result: Settlement, wagers: Wagers, nextGold: string
   targetElement(`n${result.outcome}`).classList.add("hit");
   Object.keys(wagers).forEach(id => targetElement(id).classList.add(result.paidTargets.includes(id) ? "paid" : "missed"));
   $("table-status").textContent = `Rolled ${result.outcome}`;
-  $("result-display").className = `result-display ${hasReturn ? "won" : "lost"} ${result.jackpot ? "jackpot" : ""}`;
-  $("result-display").innerHTML = `<span class="result-label">${result.jackpot ? "JACKPOT!" : hasReturn ? "RETURN" : "NO HIT THIS ROLL"}</span><strong class="result-value">${hasReturn ? `${formatGold(result.totalReturn)} G` : "Next roll."}</strong><span class="result-detail">${hasReturn ? `${signed(result.net)} G net${result.jackpot ? " · ×24" : ""}` : `−${formatGold(result.stake)} G`}</span>`;
+  showBoardNet(nextGold);
   announceRoll(result);
   if (hasReturn) playTone(result.jackpot ? "jackpot" : BigInt(result.net) > 0n ? "win" : "chip");
   const reveals = result.paidTargets.map((id, i) => {
@@ -623,11 +645,9 @@ function render() {
     : "Out of Gold. This run ended before 100 rolls; no score was posted.";
   if (runEnded() && !busy) {
     $("table-status").textContent = "Run complete";
-    $("result-display").className = "result-display";
-    $("result-display").innerHTML = `<span class="result-label">${state.rollsUsed === CONFIG.rollsPerRun ? "FINAL SCORE" : "OUT OF GOLD"}</span><strong class="result-value">${compactGold(state.gold)} G</strong><span class="result-detail">${state.leaderboardEligible === false ? "No personal record saved" : state.rollsUsed === CONFIG.rollsPerRun ? "100 rolls complete" : "No score posted"}</span>`;
   }
-  $("tilt-level").textContent = String(state.tiltLevel);
-  $("tilt-info").setAttribute("aria-label", `Board Tilt, level ${state.tiltLevel} of 6. Open Tilt guide.`);
+  showBoardNet();
+  showTilt(state.tiltLevel);
   $("draft-gold").textContent = formatGold(totalDraft());
   fitStatValue($("draft-gold"));
   for (const id of chipPoses.keys()) if (!draft[id]) chipPoses.delete(id);

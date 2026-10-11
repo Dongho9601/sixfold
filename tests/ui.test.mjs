@@ -4,6 +4,7 @@ import { chromium } from "playwright";
 import { preview } from "vite";
 import { newRun } from "../src/game/run.ts";
 import { SAVE_KEY } from "../src/save.ts";
+import { TILT_LABELS } from "../src/config.ts";
 
 let browser, vite, origin;
 before(async () => {
@@ -93,7 +94,9 @@ test("click a bet then R settles exactly once; uppercase R works too", async t =
   assert.equal((await saved(page)).revision, "1");
   assert.equal((await saved(page)).lastRoll.jackpot, true);
   assert.equal(await page.locator("#draft-total").textContent(), "0 G");
-  assert.equal(await page.locator("#tilt-level").innerText(), "1");
+  assert.equal(await page.locator("#tilt-number").innerText(), "Tilt 1");
+  assert.equal(await page.locator("#tilt-level").innerText(), "NEARLY EVEN");
+  assert.equal(await page.locator("#board-net").innerText(), "0 G");
   await page.locator('[data-target="n2"]').click();
   await page.keyboard.press("Shift+R");
   await settled(page, "320");
@@ -108,6 +111,22 @@ test("keyboard placement with Enter then R works from the focused target", async
   await page.keyboard.press("r");
   await settled(page, "110");
   assert.equal((await saved(page)).lastRoll.totalReturn, "20");
+  assert.equal(await page.locator("#board-net").innerText(), "+10 G");
+  await page.reload();
+  assert.equal(await page.locator("#board-net").innerText(), "+10 G");
+  await page.locator('[data-target="n2"]').click();
+  await page.locator("#roll").click();
+  await settled(page, "100");
+  assert.equal(await page.locator("#board-net").innerText(), "0 G");
+  await page.locator('[data-target="n2"]').click();
+  await page.locator("#roll").click();
+  await settled(page, "90");
+  assert.equal(await page.locator("#board-net").innerText(), "−10 G");
+  await page.locator("#shake").click();
+  await settled(page, "90");
+  assert.equal(await page.locator("#board-net").innerText(), "0 G");
+  await page.reload();
+  assert.equal(await page.locator("#board-net").innerText(), "0 G");
 });
 
 test("Space respects the lock and shakes from a focused target without placing another bet", async t => {
@@ -177,6 +196,9 @@ test("Settings stays compact and the complete guide works on desktop and mobile"
   for (const width of [1280, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     await page.locator("#settings-open").click();
+    const website = page.locator('#settings-dialog a[href="https://dongho9601.github.io/"]');
+    assert.equal(await website.innerText(), "dongho9601.github.io");
+    assert.equal(await website.getAttribute("target"), "_blank");
     assert.equal(await page.locator("#settings-dialog h3, #settings-dialog small").count(), 0);
     await page.locator("#nickname").fill("Reader");
     await page.locator("#save-nickname").click();
@@ -192,7 +214,7 @@ test("Settings stays compact and the complete guide works on desktop and mobile"
     await page.locator("#guide-open").click();
     assert.equal(await page.locator("#settings-dialog").isVisible(), false);
     const guide = await page.locator("#welcome-dialog").innerText();
-    for (const text of ["100 rolls", "least likely number", "×24", "Keyboard controls", "Tilt 1–2", "5–6", "Space", "W / E", "Q / Esc"])
+    for (const text of ["100 rolls", "least likely number", "×24", "Keyboard controls", ...TILT_LABELS, "BOARD NET", "Space", "W / E", "Q / Esc"])
       assert.ok(guide.includes(text), `Guide missing ${text}`);
     assert.ok(!guide.includes("1 in 24"));
     assert.ok(!guide.includes("Full rules in Settings"));
@@ -306,6 +328,16 @@ test("the complete phone game fits portrait and landscape viewports during play"
     }));
     assert.ok(layout.scrollWidth <= layout.width, `${label}: horizontal overflow`);
     assert.ok(layout.scrollHeight <= layout.height + 1, `${label}: vertical overflow (${layout.scrollHeight} / ${layout.height})`);
+    if (layout.width < layout.height)
+      assert.ok(await page.locator("main").evaluate(element => element.getBoundingClientRect().bottom >= innerHeight - 36), `${label}: phone layout leaves unused height`);
+    if (layout.width < layout.height) {
+      assert.ok(await page.evaluate(() => {
+        const footer = document.querySelector(".site-information").getBoundingClientRect();
+        return [...document.querySelectorAll(".messages .notice:not(:empty):not([hidden])")]
+          .filter(element => getComputedStyle(element).display !== "none")
+          .every(element => element.getBoundingClientRect().bottom <= footer.top - 2);
+      }), `${label}: feedback overlaps the footer`);
+    }
     for (const bounds of layout.controls) {
       assert.ok(bounds.left >= 0 && bounds.right <= layout.width + 1 && bounds.top >= 0 && bounds.bottom <= layout.height + 1,
         `${label}: ${bounds.name} is outside the viewport`);
@@ -433,19 +465,66 @@ test("short presses add bets while dragging, cancelled touches, and lost focus a
 
 test("the table and guide display all six Tilt levels", async t => {
   const page = await game(t);
-  const id = (await saved(page)).id;
   for (const [index, peak] of [1 / 6, .4, .475, .5, .55, .7].entries()) {
     const probabilities = [peak, ...Array(5).fill((1 - peak) / 5)];
     await patchSave(page, { probabilities });
     await page.reload();
-    await page.waitForFunction(level => document.querySelector("#tilt-level").textContent === level, String(index + 1));
+    const caption = TILT_LABELS[index];
+    await page.waitForFunction(caption => document.querySelector("#tilt-level").textContent === caption, caption);
     assert.match(await page.locator("#tilt-info").getAttribute("aria-label"), new RegExp(`level ${index + 1} of 6`));
+    for (const [width, height] of [[1280, 900], [768, 900], [390, 844], [320, 568], [568, 320]]) {
+      await page.setViewportSize({ width, height });
+      assert.equal(await page.locator("#tilt-level").innerText(), caption);
+      assert.equal(await page.locator("#tilt-number").innerText(), `Tilt ${index + 1}`);
+      const fits = await page.locator("#tilt-level").evaluate(element => {
+        const text = document.createRange();
+        text.selectNodeContents(element);
+        const lines = text.getClientRects();
+        const bounds = element.getBoundingClientRect();
+        const space = element.closest(".stage").getBoundingClientRect();
+        const net = document.querySelector("#result-display").getBoundingClientRect();
+        const number = document.querySelector("#tilt-number");
+        const numberStyle = getComputedStyle(number);
+        return lines.length === 1 && element.scrollWidth <= element.clientWidth &&
+          bounds.left >= space.left && bounds.right <= net.left &&
+          bounds.top >= space.top && bounds.bottom <= space.bottom &&
+          number.getBoundingClientRect().bottom <= bounds.top && numberStyle.color === "rgb(255, 255, 255)" &&
+          parseFloat(numberStyle.fontSize) < parseFloat(getComputedStyle(element).fontSize);
+      });
+      assert.ok(fits, `Tilt ${index + 1} above ${caption} must fit with a smaller white title at ${width} × ${height}`);
+    }
   }
   for (const width of [1280, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
     await page.screenshot({ path: `test-results/six-tilts-${width}.png`, fullPage: true });
   }
+});
+
+test("Tilt stays visible, animates a changed level, and respects reduced motion", async t => {
+  const page = await game(t, 320, { viewport: { width: 320, height: 568 } });
+  assert.equal(await page.locator(".tilt-help").count(), 0);
+  await page.locator("#settings-open").click();
+  await page.locator("#motion").uncheck();
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => !document.documentElement.classList.contains("reduce-motion"));
+  await page.waitForFunction(key => JSON.parse(localStorage.getItem(key)).settings.reducedMotion === false, SAVE_KEY);
+  const changeTilt = peak => page.evaluate(({ key, peak }) => {
+    const save = JSON.parse(localStorage.getItem(key));
+    save.state.probabilities = [peak, ...Array(5).fill((1 - peak) / 5)];
+    save.state.revision = (BigInt(save.state.revision) + 1n).toString();
+    save.revision = (BigInt(save.revision) + 1n).toString();
+    localStorage.setItem(key, JSON.stringify(save));
+    window.dispatchEvent(new StorageEvent("storage", { key }));
+    const tilt = document.querySelector("#tilt-level");
+    const bounds = tilt.getBoundingClientRect();
+    const control = document.querySelector("#tilt-info").getBoundingClientRect();
+    return { text: tilt.textContent, animations: tilt.getAnimations().length, fits: tilt.scrollWidth <= tilt.clientWidth && bounds.bottom <= control.bottom + 1 };
+  }, { key: SAVE_KEY, peak });
+  assert.deepEqual(await changeTilt(.7), { text: "EXTREME BIAS", animations: 1, fits: true });
+  await page.waitForFunction(() => document.querySelector("#tilt-level").getAnimations().length === 0);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  assert.deepEqual(await changeTilt(1 / 6), { text: "NEARLY EVEN", animations: 0, fits: true });
 });
 
 test("bankruptcy restart animates the die and cards while actions stay locked", async t => {

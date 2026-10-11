@@ -33,6 +33,47 @@ test("local settlement persists exact Gold, odds, rolls and last result before r
   assert.deepEqual(reopened.data, durable);
 });
 
+test("board net accumulates gains and losses, survives reload, and resets on die replacement", async () => {
+  const { game, storage, makeId } = fixture();
+  const net = (state: typeof game.data.state) => BigInt(state.gold) - BigInt(state.boardStartingGold);
+  await game.act(game.data.state, { kind: "roll", wagers: { red: "10" } });
+  assert.equal(net(game.data.state), 10n);
+  await game.act(game.data.state, { kind: "roll", wagers: { black: "4" } });
+  assert.equal(net(game.data.state), 6n);
+  await game.act(game.data.state, { kind: "roll", wagers: { red: "1", black: "1" } });
+  assert.equal(net(game.data.state), 6n);
+  const reopened = new LocalGame(() => storage, () => .1, makeId);
+  assert.equal(net(reopened.data.state), 6n);
+  await reopened.act(reopened.data.state, { kind: "shake" });
+  assert.equal(reopened.data.state.gold, "106");
+  assert.equal(net(reopened.data.state), 0n);
+  assert.equal(net(new LocalGame(() => storage).data.state), 0n);
+  await reopened.act(reopened.data.state, { kind: "roll", wagers: { n2: "3" } });
+  assert.equal(net(reopened.data.state), -3n);
+  await reopened.act(reopened.data.state, { kind: "roll", wagers: { n1: "1" } });
+  assert.equal(reopened.data.state.lastRoll?.jackpot, true);
+  assert.equal(reopened.data.state.gold, "126");
+  assert.equal(net(reopened.data.state), 0n);
+  await reopened.act(reopened.data.state, { kind: "restart" });
+  assert.equal(reopened.data.state.boardStartingGold, "100");
+  assert.equal(net(reopened.data.state), 0n);
+});
+
+test("older saves preserve progress and records while initializing board net without guessing", () => {
+  const legacy = fixture().game.data;
+  legacy.state.gold = (10n ** 80n + 1n).toString();
+  legacy.state.rollsUsed = 20;
+  legacy.records = [record("999", 1)];
+  const { boardStartingGold: _baseline, ...oldState } = legacy.state;
+  const raw = JSON.stringify({ ...legacy, state: oldState });
+  const restored = decodeSave(raw);
+  assert.equal(restored.state.boardStartingGold, legacy.state.gold);
+  assert.equal(restored.state.rollsUsed, 20);
+  assert.deepEqual(restored.records, legacy.records);
+  for (const value of [null, -1, "-1", "1.5", "01", 100])
+    assert.throws(() => decodeSave(JSON.stringify({ ...legacy, state: { ...oldState, boardStartingGold: value } })), /Invalid saved run/);
+});
+
 test("100th roll records the final bankroll exactly once, including after repeated reload", async () => {
   const { storage, game } = fixture();
   game.data.state.rollsUsed = 99;

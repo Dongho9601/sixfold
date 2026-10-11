@@ -59,6 +59,7 @@ export function decodeSave(raw: string): Save {
     throw new Error("Incompatible save.");
   const s = value.state, p = value.settings;
   if (!id(s.id) || !name(s.nickname) || !decimal(s.gold) || !decimal(s.bestGold) ||
+    !(s.boardStartingGold === undefined || decimal(s.boardStartingGold)) ||
     !(s.previousBestGold === null || decimal(s.previousBestGold)) || !decimal(s.revision) ||
     ![s.hasCompletedRun, s.showProbabilities, s.leaderboardEligible, s.canShake, s.recorded].every(bool) ||
     !Number.isInteger(s.rollsUsed) || Number(s.rollsUsed) < 0 || Number(s.rollsUsed) > CONFIG.rollsPerRun ||
@@ -73,6 +74,9 @@ export function decodeSave(raw: string): Save {
     new Set(value.records.map(r => r.id)).size !== value.records.length)
     throw new Error("Invalid personal records.");
   const save = value as unknown as Save;
+  // Earlier v1 saves did not track die arrivals. Begin the counter at the
+  // restored bankroll instead of guessing profit from an unknown board history.
+  save.state.boardStartingGold ??= save.state.gold;
   // Derived display fields are recomputed; probabilities themselves stay exact.
   save.state.tiltLevel = tiltLevel(save.state.probabilities);
   save.state.jackpotNumber = marker(save.state.probabilities);

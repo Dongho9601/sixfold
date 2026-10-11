@@ -11,6 +11,7 @@ interface GuideCopy {
   payoutsTitle: string;
   payouts: readonly [string, string, string];
   payoutNote: string;
+  boardNet: Section;
   tilt: Section;
   shake: Section;
   jackpot: Section;
@@ -46,7 +47,8 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
     ],
     payoutsTitle: "Payouts", payouts: ["Number", "Column", "Row or color"],
     payoutNote: "Returns include the winning stake. A 10 G number bet returns 60 G: a 50 G gain if it was your only bet.",
-    tilt: ["Read the Tilt", "The odds are hidden and unequal. <b>Tilt 1–2</b> means more even odds; <b>3–4</b> is in between; <b>5–6</b> means the odds favor fewer numbers. Tilt does not tell you which ones. Every number has at least a 2% chance. A payout changes the odds; a miss leaves them unchanged."],
+    boardNet: ["Your board’s net income", "BOARD NET adds up winnings minus all settled bets on the current die. For example, a 10 G loss followed by a 50 G gain shows +40 G. Ordinary changes in the odds keep this total. Shake resets it to zero without changing your bankroll. A Jackpot shows its gain before the fresh die resets the counter; a new run also starts at zero."],
+    tilt: ["Read the Tilt", "Tilt describes how evenly the hidden odds are spread. The six levels, from most even to most concentrated, are <b>NEARLY EVEN</b>, <b>SLIGHT BIAS</b>, <b>MODERATE BIAS</b>, <b>STRONG BIAS</b>, <b>HEAVY BIAS</b>, and <b>EXTREME BIAS</b>. Bias means the odds favor some numbers over others; stronger bias means a more concentrated distribution. Tilt does not tell you which numbers are favored. NEARLY EVEN means similar chances, not a guarantee of an exactly fair die. New boards give every number at least a 2% chance. A payout changes the odds; a miss leaves them unchanged. The numbered levels in the examples below follow this same order, from 1 to 6."],
     shake: ["Shake for a fresh board", "A roll that gains or loses Gold unlocks <b>Shake</b>; a break-even roll does not. Press <kbd>Space</kbd> to get new odds and clear your bets. Shake keeps your Gold, uses no rolls, and locks again until another gain or loss."],
     jackpot: ["The hidden Jackpot", "Bet only on the least likely number and hit it to receive <b>×24</b> on any board. Adding to that same number is allowed; any other bet removes eligibility. A 10 G Jackpot returns 240 G. A hit automatically refreshes the board and locks Shake, without using another roll."],
     keysTitle: "Keyboard controls", keys: ["Roll", "Shake", "Recall recent amounts, newest first", "Decrease / increase amount by 5 G", "Clear all unrolled bets", "Remove the focused target’s bet"],
@@ -69,7 +71,8 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
     ],
     payoutsTitle: "지급 배수", payouts: ["숫자", "세로줄", "가로줄 또는 색상"],
     payoutNote: "지급액에는 적중한 베팅의 원금이 포함됩니다. 숫자 하나에 10 G만 걸어 적중하면 60 G를 받아 50 G를 법니다.",
-    tilt: ["Tilt 읽기", "각 숫자의 확률은 숨겨져 있으며 서로 다릅니다. <b>Tilt 1–2</b>는 비교적 고른 확률, <b>3–4</b>는 중간, <b>5–6</b>은 소수의 숫자에 확률이 집중된 상태입니다. 어떤 숫자가 유리한지는 알려주지 않습니다. 모든 숫자의 확률은 최소 2%입니다. 하나라도 적중하면 확률이 변하고, 모두 빗나가면 유지됩니다."],
+    boardNet: ["현재 보드의 순손익", "BOARD NET은 현재 주사위에서 받은 지급액에서 확정된 베팅 총액을 뺀 누적 손익입니다. 10 G를 잃고 50 G를 벌면 +40 G가 표시됩니다. 일반 적중으로 확률이 변해도 누적됩니다. Shake는 보유 Gold를 유지하며 이 수치만 0으로 되돌립니다. Jackpot은 수익을 보여 준 뒤 새 주사위로 교체하면서 0으로 초기화하고, 새 게임도 0에서 시작합니다."],
+    tilt: ["Tilt 읽기", "Tilt는 숨겨진 확률이 얼마나 고르게 퍼져 있는지 보여 줍니다. 고른 쪽부터 순서대로 <b>NEARLY EVEN</b>(거의 고름), <b>SLIGHT BIAS</b>(약한 편향), <b>MODERATE BIAS</b>(중간 편향), <b>STRONG BIAS</b>(강한 편향), <b>HEAVY BIAS</b>(매우 강한 편향), <b>EXTREME BIAS</b>(극심한 편향)입니다. 더 치우친 보드에서는 소수의 숫자에 확률이 집중되지만, Tilt는 어떤 숫자가 유리한지 알려주지 않습니다. NEARLY EVEN은 확률이 비슷하다는 뜻이며 정확히 공평한 주사위라는 보장은 아닙니다. 새 보드에서 모든 숫자의 확률은 최소 2%입니다. 하나라도 적중하면 확률이 변하고, 모두 빗나가면 유지됩니다. 아래 예시의 단계 번호 1부터 6은 이 순서에 대응합니다."],
     shake: ["Shake로 새 확률 받기", "굴린 결과 Gold가 늘거나 줄면 <b>Shake</b>가 열립니다. 본전이면 열리지 않습니다. <kbd>Space</kbd>를 누르면 확률이 새로 정해지고 베팅이 지워집니다. Gold와 남은 횟수는 유지되며, 다시 손익이 발생할 때까지 Shake가 잠깁니다."],
     jackpot: ["숨겨진 Jackpot", "가장 확률이 낮은 숫자 하나에만 걸어 적중하면 어떤 판에서든 <b>×24</b>를 받습니다. 같은 숫자에 금액을 더해도 되지만, 다른 곳에도 걸면 대상에서 제외됩니다. 10 G를 걸면 240 G를 받습니다. 적중 시 횟수를 추가로 쓰지 않고 확률이 새로 정해지며 Shake가 잠깁니다."],
     keysTitle: "키보드 조작", keys: ["굴리기", "새 확률 받기", "최근 베팅 금액 불러오기 · 최신순", "베팅 금액 5 G 줄이기 / 늘리기", "아직 굴리지 않은 베팅 모두 지우기", "선택한 칸의 베팅 지우기"],
@@ -92,7 +95,8 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
     ],
     payoutsTitle: "払い戻し倍率", payouts: ["数字", "縦列", "横列・色"],
     payoutNote: "払い戻しには当たったベットの元金を含みます。数字1つに10 Gだけ賭けて当たると60 Gを受け取り、利益は50 Gです。",
-    tilt: ["Tiltの見方", "各数字の確率は非公開で、均等ではありません。<b>Tilt 1–2</b>は比較的均等、<b>3–4</b>は中間、<b>5–6</b>は少数の数字に確率が偏った状態です。どの数字が有利かは分かりません。各数字の確率は最低2%です。ベットが当たると確率が変わり、すべて外れると変わりません。"],
+    boardNet: ["現在のボードの収支", "BOARD NETは現在のサイコロで受け取った払い戻しから、確定した全ベットを引いた累計収支です。10 Gを失ってから50 Gの利益を得ると+40 Gになります。通常の当たりで確率が変わっても累計は続きます。Shakeは所持Goldを保ち、この値だけを0に戻します。Jackpotは利益を表示した後、新しいサイコロへの交換時に0に戻り、新しいゲームも0から始まります。"],
+    tilt: ["Tiltの見方", "Tiltは隠れた確率がどれほど均等に分布しているかを示します。均等な順に<b>NEARLY EVEN</b>（ほぼ均等）、<b>SLIGHT BIAS</b>（弱い偏り）、<b>MODERATE BIAS</b>（中程度の偏り）、<b>STRONG BIAS</b>（強い偏り）、<b>HEAVY BIAS</b>（非常に強い偏り）、<b>EXTREME BIAS</b>（極端な偏り）の6段階です。偏りが大きいほど少数の数字に確率が集中しますが、どの数字かは分かりません。NEARLY EVENは確率が近いという意味で、完全に公平なサイコロである保証ではありません。新しいボードでは各数字の確率は最低2%です。ベットが当たると確率が変わり、すべて外れると変わりません。以下の例の段階番号1から6は、この順序に対応します。"],
     shake: ["Shakeで確率をリセット", "振った結果Goldが増減すると<b>Shake</b>が使えます。収支がゼロなら解除されません。<kbd>Space</kbd>で新しい確率に入れ替わり、ベットが消えます。Goldと残り回数は維持され、次に損益が出るまでShakeは再びロックされます。"],
     jackpot: ["隠れたJackpot", "最も出にくい数字1つだけに賭けて当たると、どの盤面でも<b>×24</b>です。同じ数字への追加は可能ですが、別の場所にも賭けると対象外になります。10 Gなら240 Gの払い戻しです。当たると追加の回数を使わずに確率がリセットされ、Shakeはロックされます。"],
     keysTitle: "キーボード操作", keys: ["振る", "確率をリセット", "最近の金額を呼び出す・新しい順", "金額を5 G減らす / 増やす", "まだ振っていないベットをすべて消す", "フォーカス中のマスのベットを消す"],
@@ -115,7 +119,8 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
     ],
     payoutsTitle: "返还倍数", payouts: ["数字", "竖列", "横行或颜色"],
     payoutNote: "返还金额包含中奖下注的本金。只在一个数字上下注10 G并命中，可获得60 G，净赚50 G。",
-    tilt: ["看懂Tilt", "各数字的概率隐藏且不均等。<b>Tilt 1–2</b>表示较为均匀，<b>3–4</b>居中，<b>5–6</b>表示概率集中在少数数字上。它不会告诉你哪些数字更容易出现。每个数字的概率至少为2%。有下注命中时概率会变化；全部落空时则不变。"],
+    boardNet: ["当前骰子的净收益", "BOARD NET累计当前骰子的返还金额减去所有已结算下注。例如，先亏10 G再赚50 G，会显示+40 G。普通命中改变概率时，累计值继续保留。Shake保留持有的Gold，只将此值归零。Jackpot先显示收益，再在换上新骰子时归零；新游戏也从零开始。"],
+    tilt: ["看懂Tilt", "Tilt表示隐藏概率分布的均匀程度。从最均匀到最集中，六个等级依次为<b>NEARLY EVEN</b>（接近均匀）、<b>SLIGHT BIAS</b>（轻微偏向）、<b>MODERATE BIAS</b>（中度偏向）、<b>STRONG BIAS</b>（强烈偏向）、<b>HEAVY BIAS</b>（高度偏向）和<b>EXTREME BIAS</b>（极度偏向）。偏向越强，概率越集中在少数数字上，但Tilt不会告诉你是哪几个数字。NEARLY EVEN表示概率相近，不保证骰子完全公平。新棋盘上每个数字的概率至少为2%。有下注命中时概率会变化；全部落空时则不变。下方示例中的等级编号1至6与此顺序对应。"],
     shake: ["用Shake更换概率", "一次掷骰使Gold增加或减少后，即可解锁<b>Shake</b>；收支持平不会解锁。按<kbd>Space</kbd>可生成新概率并清空下注。Gold和剩余次数不变，随后Shake会再次锁定，直到又一次产生盈亏。"],
     jackpot: ["隐藏的Jackpot", "只押概率最低的一个数字并命中，在任何局面下都可获得<b>×24</b>返还。可向同一个数字追加金额，但押任何其他位置都会失去资格。下注10 G可获得240 G。命中后自动重置概率并锁定Shake，不额外消耗次数。"],
     keysTitle: "键盘操作", keys: ["掷骰", "更换概率", "调用最近金额，按由新到旧排列", "下注金额减少 / 增加5 G", "清空所有尚未掷骰的下注", "移除当前焦点位置的下注"],
@@ -138,7 +143,8 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
     ],
     payoutsTitle: "Multiplicadores", payouts: ["Número", "Columna", "Fila o color"],
     payoutNote: "El pago incluye la apuesta ganadora. Apostar solo 10 G a un número y acertar devuelve 60 G: una ganancia de 50 G.",
-    tilt: ["Interpreta el Tilt", "Las probabilidades están ocultas y no son iguales. <b>Tilt 1–2</b> indica mayor equilibrio; <b>3–4</b>, un punto intermedio; <b>5–6</b>, una concentración en pocos números. No revela cuáles. Cada número tiene al menos un 2% de probabilidad. Un acierto cambia las probabilidades; si ninguna apuesta gana, se mantienen."],
+    boardNet: ["El beneficio neto del tablero", "BOARD NET acumula los pagos menos todas las apuestas liquidadas con el dado actual. Perder 10 G y luego ganar 50 G muestra +40 G. Los cambios habituales de probabilidades conservan el total. Shake lo pone a cero sin cambiar tu Gold. Un Jackpot muestra la ganancia antes de que el nuevo dado reinicie el contador; una partida nueva también empieza en cero."],
+    tilt: ["Interpreta el Tilt", "Tilt describe cómo se reparten las probabilidades ocultas. Los seis niveles, del más equilibrado al más concentrado, son <b>NEARLY EVEN</b> (casi equilibrado), <b>SLIGHT BIAS</b> (sesgo leve), <b>MODERATE BIAS</b> (sesgo moderado), <b>STRONG BIAS</b> (sesgo fuerte), <b>HEAVY BIAS</b> (sesgo muy fuerte) y <b>EXTREME BIAS</b> (sesgo extremo). Cuanto más desigual sea el tablero, más favorece a pocos números, pero Tilt no revela cuáles. NEARLY EVEN indica probabilidades parecidas, sin garantizar un dado exactamente justo. En los tableros nuevos, cada número tiene al menos un 2% de probabilidad. Un acierto cambia las probabilidades; si ninguna apuesta gana, se mantienen. Los niveles del 1 al 6 en los ejemplos siguientes siguen este mismo orden."],
     shake: ["Shake: nuevas probabilidades", "Una tirada con ganancia o pérdida de Gold desbloquea <b>Shake</b>; quedar a cero de beneficio no lo desbloquea. Pulsa <kbd>Space</kbd> para renovar las probabilidades y borrar las apuestas. Conservas el Gold y las tiradas. Shake vuelve a bloquearse hasta otra ganancia o pérdida."],
     jackpot: ["El Jackpot oculto", "Apuesta solo al número menos probable y acierta para cobrar <b>×24</b> en cualquier tablero. Puedes añadir más al mismo número; cualquier otra apuesta anula la posibilidad. Con 10 G recibes 240 G. El acierto renueva automáticamente el tablero y bloquea Shake, sin consumir otra tirada."],
     keysTitle: "Controles de teclado", keys: ["Tirar", "Renovar las probabilidades", "Recuperar importes recientes, del más nuevo al más antiguo", "Reducir / aumentar el importe en 5 G", "Borrar todas las apuestas sin tirar", "Quitar la apuesta de la casilla enfocada"],
@@ -161,7 +167,8 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
     ],
     payoutsTitle: "Multiplicateurs", payouts: ["Nombre", "Colonne", "Ligne ou couleur"],
     payoutNote: "Le versement inclut la mise gagnante. Miser seulement 10 G sur un nombre et gagner rapporte 60 G, soit un bénéfice de 50 G.",
-    tilt: ["Comprendre le Tilt", "Les probabilités sont cachées et inégales. <b>Tilt 1–2</b> indique des chances plus équilibrées ; <b>3–4</b>, un état intermédiaire ; <b>5–6</b>, une concentration sur peu de nombres. Il ne révèle pas lesquels. Chaque nombre a au moins 2% de chances. Un paiement modifie les probabilités ; si aucune mise ne gagne, elles restent inchangées."],
+    boardNet: ["Le bilan net du plateau", "BOARD NET cumule les versements moins toutes les mises réglées avec le dé actuel. Une perte de 10 G suivie d’un gain de 50 G affiche +40 G. Les changements ordinaires de probabilités conservent ce total. Shake le remet à zéro sans modifier votre Gold. Un Jackpot affiche le gain avant que le nouveau dé remette le compteur à zéro ; une nouvelle partie commence aussi à zéro."],
+    tilt: ["Comprendre le Tilt", "Tilt décrit la répartition des probabilités cachées. Les six niveaux, du plus équilibré au plus concentré, sont <b>NEARLY EVEN</b> (presque équilibré), <b>SLIGHT BIAS</b> (faible biais), <b>MODERATE BIAS</b> (biais modéré), <b>STRONG BIAS</b> (biais fort), <b>HEAVY BIAS</b> (biais très fort) et <b>EXTREME BIAS</b> (biais extrême). Plus le plateau est déséquilibré, plus il favorise quelques nombres, sans révéler lesquels. NEARLY EVEN indique des chances proches, sans garantir un dé parfaitement équitable. Sur un nouveau plateau, chaque nombre a au moins 2% de chances. Un paiement modifie les probabilités ; si aucune mise ne gagne, elles restent inchangées. Les niveaux numérotés de 1 à 6 dans les exemples suivants respectent cet ordre."],
     shake: ["Shake : renouveler les probabilités", "Un lancer qui fait gagner ou perdre du Gold débloque <b>Shake</b> ; un bilan nul ne le débloque pas. Appuyez sur <kbd>Space</kbd> pour renouveler les probabilités et effacer les mises. Vous gardez votre Gold et vos lancers. Shake se verrouille jusqu’au prochain gain ou à la prochaine perte."],
     jackpot: ["Le Jackpot caché", "Misez uniquement sur le nombre le moins probable et trouvez-le pour recevoir <b>×24</b>, quel que soit le plateau. Vous pouvez ajouter une mise sur ce même nombre ; toute autre mise annule l’éligibilité. Avec 10 G, vous recevez 240 G. Le Jackpot renouvelle automatiquement le plateau et verrouille Shake, sans lancer supplémentaire."],
     keysTitle: "Commandes au clavier", keys: ["Lancer", "Renouveler les probabilités", "Rappeler les montants récents, du plus récent au plus ancien", "Diminuer / augmenter le montant de 5 G", "Effacer toutes les mises non jouées", "Retirer la mise de la case sélectionnée"],
@@ -184,7 +191,8 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
     ],
     payoutsTitle: "Auszahlungen", payouts: ["Zahl", "Spalte", "Reihe oder Farbe"],
     payoutNote: "Die Auszahlung enthält den ursprünglichen Einsatz der gewonnenen Wette. Setzt du nur 10 G auf eine Zahl und triffst, erhältst du 60 G: ein Gewinn von 50 G.",
-    tilt: ["Tilt verstehen", "Die Wahrscheinlichkeiten sind verborgen und ungleich. <b>Tilt 1–2</b> bedeutet eine gleichmäßigere Verteilung, <b>3–4</b> liegt dazwischen, <b>5–6</b> bedeutet eine Konzentration auf wenige Zahlen. Welche Zahlen das sind, verrät Tilt nicht. Jede Zahl hat mindestens 2% Chance. Eine Auszahlung verändert die Wahrscheinlichkeiten; ohne Treffer bleiben sie gleich."],
+    boardNet: ["Der Nettogewinn des Spielbretts", "BOARD NET summiert die Auszahlungen abzüglich aller abgerechneten Einsätze mit dem aktuellen Würfel. Nach 10 G Verlust und 50 G Gewinn steht dort +40 G. Gewöhnliche Änderungen der Wahrscheinlichkeiten erhalten die Summe. Shake setzt sie auf null, ohne dein Gold zu verändern. Ein Jackpot zeigt den Gewinn, bevor der neue Würfel den Zähler zurücksetzt; ein neuer Durchlauf beginnt ebenfalls bei null."],
+    tilt: ["Tilt verstehen", "Tilt beschreibt die Verteilung der verborgenen Wahrscheinlichkeiten. Die sechs Stufen, von gleichmäßig bis stark konzentriert, heißen <b>NEARLY EVEN</b> (fast gleichmäßig), <b>SLIGHT BIAS</b> (leichte Verzerrung), <b>MODERATE BIAS</b> (mäßige Verzerrung), <b>STRONG BIAS</b> (starke Verzerrung), <b>HEAVY BIAS</b> (sehr starke Verzerrung) und <b>EXTREME BIAS</b> (extreme Verzerrung). Je ungleichmäßiger das Brett, desto stärker bevorzugt es wenige Zahlen; welche das sind, verrät Tilt nicht. NEARLY EVEN bedeutet ähnliche Chancen, ohne einen exakt fairen Würfel zu garantieren. Auf neuen Brettern hat jede Zahl mindestens 2% Chance. Eine Auszahlung verändert die Wahrscheinlichkeiten; ohne Treffer bleiben sie gleich. Die Stufen 1 bis 6 in den folgenden Beispielen entsprechen dieser Reihenfolge."],
     shake: ["Shake: neue Wahrscheinlichkeiten", "Ein Wurf mit Goldgewinn oder -verlust schaltet <b>Shake</b> frei; ein ausgeglichener Wurf tut das nicht. Drücke <kbd>Space</kbd>, um neue Wahrscheinlichkeiten zu erhalten und die Einsätze zu entfernen. Gold und verbleibende Würfe bleiben erhalten. Shake wird bis zum nächsten Gewinn oder Verlust gesperrt."],
     jackpot: ["Der verborgene Jackpot", "Setze ausschließlich auf die unwahrscheinlichste Zahl und triff sie, um auf jedem Spielfeld <b>×24</b> zu erhalten. Weitere Einsätze auf dieselbe Zahl sind erlaubt; jeder andere Einsatz schließt den Jackpot aus. Bei 10 G erhältst du 240 G. Der Treffer erneuert automatisch das Spielfeld und sperrt Shake, ohne einen weiteren Wurf zu verbrauchen."],
     keysTitle: "Tastatursteuerung", keys: ["Würfeln", "Wahrscheinlichkeiten erneuern", "Letzte Beträge abrufen, den neuesten zuerst", "Betrag um 5 G senken / erhöhen", "Alle noch nicht gespielten Einsätze entfernen", "Einsatz des fokussierten Feldes entfernen"],
@@ -212,6 +220,7 @@ export function guideBody(language: GuideLanguage): string {
       <h3>${copy.payoutsTitle}</h3>
       <dl class="guide-payouts">${copy.payouts.map((label, index) => `<div><dt>${label}</dt><dd>×${multipliers[index]}</dd></div>`).join("")}</dl>
       <p>${copy.payoutNote}</p>
+      ${section(copy.boardNet)}
       <h3 class="tilt-guide" tabindex="-1">${copy.tilt[0]}</h3><p>${copy.tilt[1]}</p>
       ${section(copy.shake)}${section(copy.jackpot)}
       <h3>${copy.keysTitle}</h3>

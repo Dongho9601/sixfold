@@ -29,7 +29,8 @@ export function newRun(id: string, name: string, random: Random): PlayerState {
   const normalizedName = nickname(name);
   const probabilities = freshProbabilities(random);
   return {
-    id, nickname: normalizedName, gold: CONFIG.startingGold, bestGold: "0",
+    id, nickname: normalizedName, gold: CONFIG.startingGold,
+    boardStartingGold: CONFIG.startingGold, bestGold: "0",
     previousBestGold: null, hasCompletedRun: false, showProbabilities: false,
     leaderboardEligible: true, rollsUsed: 0, probabilities,
     tiltLevel: tiltLevel(probabilities), canShake: false, revision: "0",
@@ -51,6 +52,7 @@ export function transition(
     state.gold = settled.gold.toString();
     state.probabilities = settled.probabilities;
     state.lastRoll = result = settled.result;
+    if (result.jackpot) state.boardStartingGold = state.gold;
     state.rollsUsed++;
     state.canShake = !result.jackpot && (state.canShake || result.net !== "0");
     if (state.gold === "0" || state.rollsUsed === CONFIG.rollsPerRun) state.canShake = false;
@@ -58,6 +60,7 @@ export function transition(
     if (!state.canShake)
       throw new GameError("Shake unlocks after a roll changes your bankroll. Break-even rolls do not count.");
     state.probabilities = freshProbabilities(random);
+    state.boardStartingGold = state.gold;
     state.canShake = false;
   } else if (action.kind === "restart") {
     state = newRun(nextId, action.nickname === undefined ? state.nickname : action.nickname, random);

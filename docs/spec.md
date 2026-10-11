@@ -100,18 +100,18 @@ H = -sum(p[i] × ln(p[i]))
 N = exp(H)
 ```
 
-| Effective outcomes N | Tilt |
-|---|---:|
-| N ≥ 5.4 | 1 |
-| 4.8 ≤ N < 5.4 | 2 |
-| 4.5 ≤ N < 4.8 | 3 |
-| 4.2 ≤ N < 4.5 | 4 |
-| 3.6 ≤ N < 4.2 | 5 |
-| N < 3.6 | 6 |
+| Effective outcomes N | Tilt | Visible label |
+|---|---:|---|
+| N ≥ 5.4 | 1 | NEARLY EVEN |
+| 4.8 ≤ N < 5.4 | 2 | SLIGHT BIAS |
+| 4.5 ≤ N < 4.8 | 3 | MODERATE BIAS |
+| 4.2 ≤ N < 4.5 | 4 | STRONG BIAS |
+| 3.6 ≤ N < 4.2 | 5 | HEAVY BIAS |
+| N < 3.6 | 6 | EXTREME BIAS |
 
 Higher Tilt means concentration on fewer faces. Relabeling faces does not change it. Tilt does not identify those faces, group odds, Jackpot odds, or expected profit. A paying update may change the hidden odds without crossing a level boundary; Tilt can rise, fall, or stay the same.
 
-A prominent gold Tilt control opens How to Play at its Tilt explanation and regains focus when closed. Low levels receive gentler transfers to preserve continuity after the board becomes more even. The old middle band is split at N = 4.5; old levels 4 and 5 become 5 and 6 without changing their boundaries. The fresh-board generator is unchanged.
+The control displays two stacked lines: a smaller white Tilt N heading above a larger gold uppercase description, for example Tilt 2 above SLIGHT BIAS. It sits to the left of the die, keeps each line intact on phones, opens How to Play at its Tilt explanation, and regains focus when closed. No adjacent Guide text is shown. Label changes fade and slide into place over 650 ms; system or manual reduced motion skips the effect. “NEARLY EVEN” means similar chances, not an exactly fair die. Low levels receive gentler transfers to preserve continuity after the board becomes more even. The old middle band is split at N = 4.5; old levels 4 and 5 become 5 and 6 without changing their boundaries. The fresh-board generator is unchanged.
 
 ## 5. Ordinary probability transfers
 
@@ -183,6 +183,7 @@ For settled bankroll `B`, total committed stakes `S`, and total return `P`:
 ```text
 BNext = B - S + P
 NetChange = P - S
+BoardNet = BNext - BoardStartingGold
 RollsUsed = previous RollsUsed + 1
 On eligible roll 100 only: BestGold = max(previous completed BestGold, BNext)
 Before the first completed run: no leaderboard entry
@@ -193,6 +194,8 @@ The pure browser transition checks the expected run identity and revision, valid
 Gold, wagers, returns, scores, and revisions use **BigInt** internally and canonical decimal **strings** in JSON and localStorage. Probabilities remain unrounded doubles. The sampler multiplies a uniform draw by the stored probability sum to absorb rounding drift; it does not smooth the board. Display rounding never feeds settlement. Compact chips and records retain exact values in tooltips and accessible labels.
 
 The version-1 save under `sixfold:save:v1` contains the current run, settings, and top ten personal records. A single JSON write stores a settled result and its completion receipt together. Restart creates a fresh run identity and resets bankroll, odds, roll count, last roll, probability visibility, eligibility, and Shake; it retains records and settings. Unsupported or malformed saves recover to a fresh run and preserve the first unreadable value under `sixfold:save:recovery` when possible. Browser storage failures leave in-memory play available with a save warning. Old server databases and backups remain local and untouched.
+
+The upper-right BOARD NET panel accumulates the current die’s net income using a saved starting bankroll. Ordinary probability transfers and draft edits retain the baseline. Shake sets the baseline to the unchanged current bankroll; Jackpot sets it to the settled bankroll after showing the gain and supplying a fresh die. Restart begins at 100 G. All three replacements reset the counter to zero. A completed run keeps its board net visible while the final score appears in the results dialog. Earlier version-1 saves without this baseline initialize it to the restored bankroll, preserving the run and records while starting the counter at zero. The counter uses exact integer arithmetic; abbreviated large displays retain full values in accessible names and tooltips.
 
 Uncommitted drafts belong to the current tab and clear on reload, settlement, Shake, restart, or a changed board from another tab. Input locks cover the full action presentation. Modern browsers use Web Locks to serialize normal save writes; the transition checks the latest saved run revision under the lock, so a stale draft cannot settle into a restarted run. Storage events and focus/visibility recovery update the view without polling. Settings writes are coalesced. Page navigation journals staged preferences under `sixfold:settings:pending:v1`, and reopening merges them into the main save under the normal write lock without overwriting a newer run. Browsers without Web Locks retain revision checks before synchronous writes. Hidden tabs stop audio and decorative motion and finish presentation of the settled outcome.
 
@@ -208,7 +211,7 @@ Nicknames are trimmed and normalized to NFC, contain 1–24 visible Unicode code
 
 ### 9.1 Layout and feedback
 
-Wide screens show three left-side cards: Bankroll, Rolls remaining, and On the table. Rolls remaining is emphasized with a large gold number and counts down from 100 to zero. The felt table sits in the center, with a compact rank/name/score leaderboard on the right. No best-score card, Available readout, ranking progress meter, or repeated leaderboard copy is shown. Smaller screens provide the leaderboard through a trophy button and right-side drawer. All 13 targets remain visible on narrow screens. No Jackpot availability message appears. On the table contains only its label and wager total. On phone screens, all three stat cards share one compact row. The board height adapts to the viewport, with smaller cards, spacing, and targets on short screens. Short landscape screens place the table beside the stats and wager controls. The core game and footer fit a 320 × 568 portrait viewport and a 568 × 320 landscape viewport; save warnings can require additional scrolling. Completion disables wagers/Roll/Shake and opens the results popup described in Section 3.4; the same state survives reload. All three cards share the same padding, label-over-value layout, spacing, and numeral size and weight. Rolls remaining retains its highlighted background. Gold values use a smaller G aligned to the numeral baseline. Value rows have a fixed height; full exact Bankroll and On the table numerals scale down to fit the available width, including during count animation and viewport resizing, so six-figure and larger amounts cannot wrap or grow the cards.
+Wide screens show three left-side cards: Bankroll, Rolls remaining, and On the table. Rolls remaining is emphasized with a large gold number and counts down from 100 to zero. The felt table sits in the center, with a compact rank/name/score leaderboard on the right. No best-score card, Available readout, ranking progress meter, or repeated leaderboard copy is shown. Smaller screens provide the leaderboard through a trophy button and right-side drawer. All 13 targets remain visible on narrow screens. No Jackpot availability message appears. On the table contains only its label and wager total. On phone screens, all three stat cards share one compact row. Portrait phones use the live viewport height, including browser-toolbar changes and safe-area insets, and grow the number cells into the remaining space. A reserved feedback row keeps the betting cells fixed during ordinary messages and actions, with smaller cards, spacing, and targets on short screens. Short landscape screens place the table beside the stats and wager controls. The core game and footer fit a 320 × 568 portrait viewport and a 568 × 320 landscape viewport; save warnings can require additional scrolling. Completion disables wagers/Roll/Shake and opens the results popup described in Section 3.4; the same state survives reload. All three cards share the same padding, label-over-value layout, spacing, and numeral size and weight. Rolls remaining retains its highlighted background. Gold values use a smaller G aligned to the numeral baseline. Value rows have a fixed height; full exact Bankroll and On the table numerals scale down to fit the available width, including during count animation and viewport resizing, so six-figure and larger amounts cannot wrap or grow the cards.
 
 Draft wagers appear as tossed chip piles, with up to five visible chips per target and the top chip displaying the total. Grid tracks remain fixed as bets change. A six-faced CSS die tumbles for Roll; Shake slides the old die out and a fresh one in. Ordinary roll timing is 1,100 ms and die replacement is 800 ms, with additional result presentation. These timings do not alter committed rules or add a cooldown after completion.
 
@@ -226,9 +229,9 @@ Hovered targets use brighter fills and a gold inset outline; covered numbers use
 
 ### 9.3 Settings and How to Play
 
-Settings contains the nickname form, **Sound effects**, **Reduce motion**, and **Show probabilities** controls, plus Restart run. How to Play is available from the separate sidebar control and Tilt; Settings has no guide link. Rule descriptions and explanations of these preferences live in **How to Play**.
+Settings contains the nickname form, **Sound effects**, **Reduce motion**, and **Show probabilities** controls, plus Restart run and a creator link to `https://dongho9601.github.io/`. How to Play is available from the separate sidebar control and Tilt; Settings has no guide link. Rule descriptions and explanations of these preferences live in **How to Play**.
 
-The guide leads with two playing steps, payout multipliers, Tilt, Shake, Jackpot, and a keyboard reference. An expandable section covers wager editing, probability transfers and a numerical example, persistence, final-score submission, new runs, and preference descriptions. English, Korean, Japanese, Simplified Chinese, Spanish, French, and German versions share the same structure. A native language selector starts with the first supported browser language (falling back to English) and remembers an explicit choice across reloads; the dialog language and accessible controls update with it. It uses a white reading surface, dark 18 px serif body text, simple headings, and a sticky close control. The Tilt control opens it at the appropriate section; closing restores focus to its trigger.
+The guide leads with two playing steps, payout multipliers, board net, Tilt, Shake, Jackpot, and a keyboard reference. An expandable section covers wager editing, probability transfers and a numerical example, persistence, final-score submission, new runs, and preference descriptions. English, Korean, Japanese, Simplified Chinese, Spanish, French, and German versions share the same structure. A native language selector starts with the first supported browser language (falling back to English) and remembers an explicit choice across reloads; the dialog language and accessible controls update with it. It uses a white reading surface, dark 18 px serif body text, simple headings, and a sticky close control. The Tilt control opens it at the appropriate section; closing restores focus to its trigger.
 
 The guide opens automatically for a player with no previous roll who has not dismissed it. Dismissal is saved with this browser’s settings and survives refreshes and restarts. How to Play can reopen it at any time.
 
