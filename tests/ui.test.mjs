@@ -252,14 +252,14 @@ test("Settings stays compact and the complete guide works on desktop and mobile"
     await page.locator("#guide-open").click();
     assert.equal(await page.locator("#settings-dialog").isVisible(), false);
     const guide = await page.locator("#welcome-dialog").innerText();
-    for (const text of ["100 rolls", "least likely number", "×24", "Keyboard controls", ...TILT_LABELS, "BOARD NET", "Space", "W / E", "Q / Esc"])
+    for (const text of ["100 rolls", "least likely number", "×24", "Keyboard controls", "Tilt 1", "Tilt 6", "▲", "▼", "BOARD NET", "Space", "W / E", "Q / Esc"])
       assert.ok(guide.includes(text), `Guide missing ${text}`);
     assert.ok(!guide.includes("1 in 24"));
     assert.ok(!guide.includes("Full rules in Settings"));
     if (!await page.locator(".guide-details").evaluate(element => element.open))
       await page.locator(".guide-details summary").click();
     const details = await page.locator(".guide-details").innerText();
-    for (const text of ["Press and hold", "right-click", "Earlier peaks do not count", "Sound effects", "Reduce motion", "Show probabilities", "4%–8%", "5%–10%", "37.61%"])
+    for (const text of ["Press and hold", "right-click", "Earlier peaks do not count", "Sound effects", "Reduce motion", "Show probabilities", "Swap Roll and Shake on mobile", "keypad", "10%, 20%, and 30%", "4%–8%", "9%–18%", "5%–10%", "7.5%", "37.15%", ...TILT_LABELS])
       assert.ok(details.includes(text), `Details missing ${text}`);
     await page.screenshot({ path: `test-results/guide-details-${width}.png` });
     assert.equal(await page.evaluate(() => {
