@@ -10,11 +10,11 @@ export const CONFIG = {
   // Tuned with scripts/tune-tilt.ts; see docs/PROBABILITY_MODEL.md.
   transferRates: [
     { min: 0.04, max: 0.08 },
-    { min: 0.042, max: 0.084 },
-    { min: 0.044, max: 0.088 },
-    { min: 0.046, max: 0.092 },
-    { min: 0.048, max: 0.096 },
     { min: 0.05, max: 0.10 },
+    { min: 0.06, max: 0.12 },
+    { min: 0.07, max: 0.14 },
+    { min: 0.08, max: 0.16 },
+    { min: 0.09, max: 0.18 },
   ],
   // Effective-outcome cutoffs, from nearly even to strongly concentrated.
   // Split the old middle band; the former levels 4 and 5 become 5 and 6.

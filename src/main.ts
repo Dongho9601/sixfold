@@ -4,7 +4,7 @@ import { guideBody, guideLanguages, guides, resolveGuideLanguage, type GuideLang
 import type { Action, PlayerState, Settlement, Wagers } from "./types";
 import { LocalGame, SAVE_KEY, StaleRunError } from "./save";
 import { setupBetKeypad } from "./bet-keypad";
-import { tiltLevel } from "./game/rules";
+import { probabilityEntropy, tiltLevel } from "./game/rules";
 import { distributionHint } from "./distribution-hint";
 
 const game = new LocalGame();
@@ -386,14 +386,24 @@ function showTilt(level: number) {
   }
   if (newRun || rolled || replacedDie) {
     const result = rolled ? current.lastRoll : null;
-    // A fresh die from Shake or Jackpot has no roll-driven Tilt change.
+    // A fresh die from Shake or Jackpot has no roll-driven bias change.
     const rollChangedThisDie = result && !result.jackpot &&
       current.probabilities.every((probability, i) => probability === result.probabilitiesAfter[i]);
-    const beforeLevel = rollChangedThisDie ? tiltLevel(result.probabilitiesBefore) : level;
-    indicator.textContent = level > beforeLevel ? "▲" : level < beforeLevel ? "▼" : "-";
-    tiltChangeDescription = level === beforeLevel
-      ? " Tilt change: none."
-      : ` ${level > beforeLevel ? "Increased" : "Decreased"} from level ${beforeLevel} to ${level} after the last roll.`;
+    const beforeProbabilities = rollChangedThisDie ? result.probabilitiesBefore : current.probabilities;
+    const beforeLevel = tiltLevel(beforeProbabilities);
+    const entropyChange = probabilityEntropy(current.probabilities) - probabilityEntropy(beforeProbabilities);
+    // Ignore floating-point noise, but retain changes within a single Tilt band.
+    const tolerance = 8 * Number.EPSILON;
+    const direction = entropyChange < -tolerance ? "increased" : entropyChange > tolerance ? "decreased" : null;
+    indicator.textContent = direction === "increased" ? "▲" : direction === "decreased" ? "▼" : "-";
+    tiltChangeDescription = direction
+      ? ` Bias ${direction} (entropy ${direction === "increased" ? "decreased" : "increased"}) after the last roll.`
+      : " Bias change: none.";
+    if (direction) {
+      tiltChangeDescription += level === beforeLevel
+        ? ` Tilt remains at level ${level}.`
+        : ` Tilt ${level > beforeLevel ? "increased" : "decreased"} from level ${beforeLevel} to ${level}.`;
+    }
     indicator.title = tiltChangeDescription.trim();
   }
   displayedTiltState = current;

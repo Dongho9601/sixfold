@@ -22,15 +22,18 @@ export function freshProbabilities(random: Random): number[] {
   return randomShares(6, random).map((share) => floor + (1 - 6 * floor) * share);
 }
 
-export function tiltLevel(p: readonly number[]): number {
+export function probabilityEntropy(p: readonly number[]): number {
   // Sort before summing so relabeling faces cannot affect boundary rounding.
   const values = [...p].sort((a, b) => a - b);
   const total = values.reduce((sum, value) => sum + value, 0);
-  const entropy = -values.reduce((sum, value) => {
+  return -values.reduce((sum, value) => {
     const probability = value / total;
     return sum + (probability > 0 ? probability * Math.log(probability) : 0);
   }, 0);
-  const effectiveOutcomes = Math.exp(entropy);
+}
+
+export function tiltLevel(p: readonly number[]): number {
+  const effectiveOutcomes = Math.exp(probabilityEntropy(p));
   return 1 + CONFIG.tiltThresholds.filter((cutoff) => effectiveOutcomes < cutoff).length;
 }
 

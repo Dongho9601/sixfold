@@ -5,6 +5,7 @@ import { preview } from "vite";
 import { newRun } from "../src/game/run.ts";
 import { SAVE_KEY } from "../src/save.ts";
 import { TILT_LABELS } from "../src/config.ts";
+import { probabilityEntropy } from "../src/game/rules.ts";
 import { distributionHint } from "../src/distribution-hint.ts";
 import { guideLanguages, guides } from "../src/guide.ts";
 
@@ -68,6 +69,21 @@ async function patchSave(page, state = {}, rest = {}) {
 async function settled(page, gold) {
   await page.waitForFunction(value => document.querySelector("#gold").textContent === value &&
     !document.querySelector('[data-target="n1"]').disabled, gold);
+}
+async function land(page, outcome) {
+  const { probabilities } = await saved(page);
+  await page.evaluate(({ probabilities, outcome }) => {
+    const sample = probabilities.slice(0, outcome - 1).reduce((a, b) => a + b, 0) + probabilities[outcome - 1] / 2;
+    let first = true;
+    const original = crypto.getRandomValues.bind(crypto);
+    crypto.getRandomValues = array => {
+      if (array.length !== 6) return original(array);
+      let value = Math.floor((first ? sample : .1) * 2 ** 48);
+      first = false;
+      for (let i = 5; i >= 0; i--) { array[i] = value % 256; value = Math.floor(value / 256); }
+      return array;
+    };
+  }, { probabilities, outcome });
 }
 const hintOpacities = page => page.locator(".distribution-square")
   .evaluateAll(squares => squares.map(square => Number(getComputedStyle(square).opacity)));
@@ -840,7 +856,7 @@ test("Tilt stays visible, animates a changed level, and respects reduced motion"
   }, { key: SAVE_KEY, peak });
   assert.deepEqual(await changeTilt(.7), { text: "EXTREME BIAS", animations: 1, fits: true });
   assert.equal(await page.locator("#tilt-change").innerText(), "▲");
-  assert.match(await page.locator("#tilt-info").getAttribute("aria-label"), /Increased from level 2 to 6/);
+  assert.match(await page.locator("#tilt-info").getAttribute("aria-label"), /Tilt increased from level 2 to 6/);
   await page.locator("#increase").click();
   assert.equal(await page.locator("#tilt-change").innerText(), "▲");
   assert.ok(await page.locator(".tilt-description").evaluate(row => {
@@ -852,7 +868,7 @@ test("Tilt stays visible, animates a changed level, and respects reduced motion"
   await page.emulateMedia({ reducedMotion: "reduce" });
   assert.deepEqual(await changeTilt(1 / 6), { text: "NEARLY EVEN", animations: 0, fits: true });
   assert.equal(await page.locator("#tilt-change").innerText(), "▼");
-  assert.match(await page.locator("#tilt-info").getAttribute("aria-label"), /Decreased from level 6 to 1/);
+  assert.match(await page.locator("#tilt-info").getAttribute("aria-label"), /Tilt decreased from level 6 to 1/);
   await page.screenshot({ path: "test-results/tilt-direction-mobile.png" });
   await page.locator("#settings-open").click();
   await page.locator("#settings-restart").click();
@@ -863,21 +879,6 @@ test("Tilt stays visible, animates a changed level, and respects reduced motion"
 
 test("Tilt arrows track actual rolls and reset after unchanged rolls, Shake, and Jackpot", async t => {
   const page = await game(t);
-  const land = async outcome => {
-    const { probabilities } = await saved(page);
-    await page.evaluate(({ probabilities, outcome }) => {
-      const sample = probabilities.slice(0, outcome - 1).reduce((a, b) => a + b, 0) + probabilities[outcome - 1] / 2;
-      let first = true;
-      const original = crypto.getRandomValues.bind(crypto);
-      crypto.getRandomValues = array => {
-        if (array.length !== 6) return original(array);
-        let value = Math.floor((first ? sample : .1) * 2 ** 48);
-        first = false;
-        for (let i = 5; i >= 0; i--) { array[i] = value % 256; value = Math.floor(value / 256); }
-        return array;
-      };
-    }, { probabilities, outcome });
-  };
   await patchSave(page, { probabilities: [.3562, ...Array(5).fill((1 - .3562) / 5)] });
   assert.equal(await page.locator("#tilt-number").innerText(), "Tilt 1");
   await page.locator('[data-target="row1"]').click();
@@ -892,7 +893,7 @@ test("Tilt arrows track actual rolls and reset after unchanged rolls, Shake, and
   await settled(page, "95");
   assert.equal(await page.locator("#tilt-change").innerText(), "-");
   await patchSave(page, { probabilities: [.36, ...Array(5).fill((1 - .36) / 5)] });
-  await land(1);
+  await land(page, 1);
   await page.locator('[data-target="n1"]').click();
   await page.locator("#roll").click();
   await settled(page, "145");
@@ -905,23 +906,57 @@ test("Tilt arrows track actual rolls and reset after unchanged rolls, Shake, and
   await page.locator('[data-target="row0"]').click();
   await page.locator("#roll").click();
   await settled(page, "155");
-  assert.equal(await page.locator("#tilt-change").innerText(), "-");
+  assert.equal(await page.locator("#tilt-change").innerText(), "▲");
+  assert.match(await page.locator("#tilt-info").getAttribute("aria-label"), /Bias increased \(entropy decreased\).*Tilt remains at level 1/);
   await page.locator("#shake").click();
   await settled(page, "155");
   assert.equal(await page.locator("#tilt-change").innerText(), "-");
   await patchSave(page, { probabilities: [.36, ...Array(5).fill((1 - .36) / 5)] });
-  await land(1);
+  await land(page, 1);
   await page.locator('[data-target="n1"]').click();
   await page.locator("#roll").click();
   await settled(page, "205");
   assert.equal(await page.locator("#tilt-change").innerText(), "▼");
   const state = await saved(page);
   const marked = state.jackpotNumber;
-  await land(marked);
+  await land(page, marked);
   await page.locator(`[data-target="n${marked}"]`).click();
   await page.locator("#roll").click();
   await settled(page, "435");
   assert.equal((await saved(page)).lastRoll.jackpot, true);
+  assert.equal(await page.locator("#tilt-change").innerText(), "-");
+});
+
+test("Tilt arrows show entropy changes in both directions within the same level", async t => {
+  const page = await game(t);
+  for (const { probabilities, outcome, target, level, gold, arrow, description } of [
+    { probabilities: [.5, .1, .1, .1, .1, .1], outcome: 2, target: "row1", level: 4,
+      gold: "110", arrow: "▲", description: "Bias increased (entropy decreased)" },
+    { probabilities: [.4, .2, .15, .1, .1, .05], outcome: 1, target: "row0", level: 2,
+      gold: "120", arrow: "▼", description: "Bias decreased (entropy increased)" },
+  ]) {
+    await patchSave(page, { probabilities });
+    assert.equal(await page.locator("#tilt-change").innerText(), "-");
+    assert.equal(await page.locator("#tilt-number").innerText(), `Tilt ${level}`);
+    await land(page, outcome);
+    await page.locator(`[data-target="${target}"]`).click();
+    await page.locator("#roll").click();
+    await settled(page, gold);
+    const result = (await saved(page)).lastRoll;
+    assert.equal(result.jackpot, false);
+    const change = probabilityEntropy(result.probabilitiesAfter) - probabilityEntropy(result.probabilitiesBefore);
+    assert.ok(arrow === "▲" ? change < 0 : change > 0);
+    assert.equal(await page.locator("#tilt-number").innerText(), `Tilt ${level}`);
+    assert.equal(await page.locator("#tilt-change").innerText(), arrow);
+    const label = await page.locator("#tilt-info").getAttribute("aria-label");
+    assert.ok(label.includes(description));
+    assert.ok(label.includes(`Tilt remains at level ${level}.`));
+    assert.ok((await page.locator("#tilt-change").getAttribute("title")).includes(description));
+    await page.locator("#increase").click();
+    assert.equal(await page.locator("#tilt-change").innerText(), arrow);
+  }
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector("#gold").textContent === "120");
   assert.equal(await page.locator("#tilt-change").innerText(), "-");
 });
 

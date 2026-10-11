@@ -113,6 +113,8 @@ Higher Tilt means concentration on fewer faces. Relabeling faces does not change
 
 The control displays two stacked lines: a smaller white Tilt N heading above a larger gold uppercase description, for example Tilt 2 above SLIGHT BIAS. It sits to the left of the die, keeps each line intact on phones, opens How to Play at its Tilt explanation, and regains focus when closed. No adjacent Guide text is shown. Label changes fade and slide into place over 650 ms; system or manual reduced motion skips the effect. “NEARLY EVEN” means similar chances, not an exactly fair die. Low levels receive gentler transfers to preserve continuity after the board becomes more even. The old middle band is split at N = 4.5; old levels 4 and 5 become 5 and 6 without changing their boundaries. The fresh-board generator is unchanged.
 
+The adjacent arrow compares Shannon entropy before and after the latest ordinary roll, using the same normalized, unrounded probabilities as Tilt. Lower entropy displays ▲ for increased bias; higher entropy displays ▼ for decreased bias, even when both boards have the same Tilt level. A difference within eight times `Number.EPSILON` is treated as floating-point noise and displays -. The tooltip and accessible label explain the bias direction and whether the Tilt level changed or stayed the same. Draft edits and other ordinary renders retain the latest indicator; a complete miss displays -, and Shake, Jackpot, restart, and reload reset it to -.
+
 ## 5. Ordinary probability transfers
 
 ### 5.1 Trigger and order
