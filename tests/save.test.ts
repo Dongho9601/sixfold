@@ -74,6 +74,17 @@ test("older saves preserve progress and records while initializing board net wit
     assert.throws(() => decodeSave(JSON.stringify({ ...legacy, state: { ...oldState, boardStartingGold: value } })), /Invalid saved run/);
 });
 
+test("mobile action preference defaults for older saves and validates persisted values", async () => {
+  const { game, storage } = fixture();
+  const { swapMobileActions: _preference, ...legacySettings } = game.data.settings;
+  const legacy = { ...game.data, settings: legacySettings };
+  assert.equal(decodeSave(JSON.stringify(legacy)).settings.swapMobileActions, false);
+  await game.updateSettings({ swapMobileActions: true });
+  assert.equal(new LocalGame(() => storage).data.settings.swapMobileActions, true);
+  for (const invalid of [null, 0, "true", {}])
+    assert.throws(() => decodeSave(JSON.stringify({ ...legacy, settings: { ...legacySettings, swapMobileActions: invalid } })), /Invalid saved settings/);
+});
+
 test("100th roll records the final bankroll exactly once, including after repeated reload", async () => {
   const { storage, game } = fixture();
   game.data.state.rollsUsed = 99;
@@ -123,7 +134,7 @@ test("top ten compare unbounded integers, resolve ties by completion order and k
 test("restart retains records, best score and settings while resetting run flags and identity", async () => {
   const { game, storage } = fixture();
   game.data.state.rollsUsed = 99;
-  await game.updateSettings({ sound: false, reducedMotion: true, guideLanguage: "ko", guideSeen: true, recentAmounts: ["5", "10"] });
+  await game.updateSettings({ sound: false, reducedMotion: true, swapMobileActions: true, guideLanguage: "ko", guideSeen: true, recentAmounts: ["5", "10"] });
   await game.act(game.data.state, { kind: "roll", wagers: { red: "1", black: "1" } });
   const oldId = game.data.state.id;
   const settings = structuredClone(game.data.settings);

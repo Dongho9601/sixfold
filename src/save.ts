@@ -10,6 +10,7 @@ export const SETTINGS_JOURNAL_KEY = "sixfold:settings:pending:v1";
 export interface Settings {
   sound: boolean;
   reducedMotion: boolean;
+  swapMobileActions: boolean;
   guideLanguage: string | null;
   guideSeen: boolean;
   recentAmounts: string[];
@@ -47,6 +48,7 @@ function validSettlement(value: unknown): value is Settlement | null {
 }
 function validSettings(p: unknown): p is Settings {
   return object(p) && bool(p.sound) && bool(p.reducedMotion) && bool(p.guideSeen) &&
+    (p.swapMobileActions === undefined || bool(p.swapMobileActions)) &&
     (p.guideLanguage === null || (typeof p.guideLanguage === "string" && ["en", "ko", "ja", "zh", "es", "fr", "de"].includes(p.guideLanguage))) &&
     Array.isArray(p.recentAmounts) && p.recentAmounts.length <= 3 &&
     p.recentAmounts.every(amount => decimal(amount) && amount !== "0") && new Set(p.recentAmounts).size === p.recentAmounts.length;
@@ -74,6 +76,7 @@ export function decodeSave(raw: string): Save {
     new Set(value.records.map(r => r.id)).size !== value.records.length)
     throw new Error("Invalid personal records.");
   const save = value as unknown as Save;
+  save.settings.swapMobileActions ??= false;
   // Earlier v1 saves did not track die arrivals. Begin the counter at the
   // restored bankroll instead of guessing profit from an unknown board history.
   save.state.boardStartingGold ??= save.state.gold;
@@ -105,7 +108,7 @@ export class LocalGame {
     const loaded = this.read();
     this.data = loaded ?? {
       version: 1, revision: "0", state: newRun(this.makeId(), "Player", this.random),
-      settings: { sound: true, reducedMotion: false, guideLanguage: null, guideSeen: false, recentAmounts: [] },
+      settings: { sound: true, reducedMotion: false, swapMobileActions: false, guideLanguage: null, guideSeen: false, recentAmounts: [] },
       records: [],
     };
     // Recovery of a valid completion without a receipt is also idempotent.

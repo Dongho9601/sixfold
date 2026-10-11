@@ -46,6 +46,8 @@ async function game(t, width = 1280, options = {}) {
   await page.goto(origin);
   await page.locator("#welcome-start").click();
   await page.waitForFunction(() => !document.querySelector("#welcome-dialog").open && document.activeElement.id === "bet-amount");
+  // Guide close saves asynchronously; later fixtures must start after that write.
+  await page.waitForFunction(key => JSON.parse(localStorage.getItem(key)).settings.guideSeen === true, SAVE_KEY);
   return page;
 }
 const save = page => page.evaluate(key => JSON.parse(localStorage.getItem(key)), SAVE_KEY);
@@ -81,6 +83,21 @@ test("columns show ordinal pairs and rows show Odds/Evens at desktop and mobile 
       assert.equal(await target.locator(".group-title").evaluate(element => element.scrollWidth > element.clientWidth), false);
     }
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
+    const seam = await page.evaluate(() => {
+      const column = document.querySelector('[data-target="col2"]').getBoundingClientRect();
+      const key = document.querySelector(".board-key").getBoundingClientRect();
+      const number = document.querySelector('[data-target="n5"]');
+      const odds = document.querySelector('[data-target="row0"]');
+      return { columnBottom: column.bottom, keyBottom: key.bottom,
+        numberTop: number.getBoundingClientRect().top, oddsTop: odds.getBoundingClientRect().top,
+        numberBorder: getComputedStyle(number).borderTopWidth, oddsBorder: getComputedStyle(odds).borderTopWidth,
+        keyBorder: getComputedStyle(document.querySelector(".board-key")).borderBottomWidth };
+    });
+    assert.equal(seam.numberTop, seam.oddsTop);
+    assert.equal(seam.columnBottom, seam.keyBottom);
+    assert.equal(seam.columnBottom, seam.numberTop);
+    assert.equal(seam.numberBorder, seam.oddsBorder);
+    assert.equal(seam.keyBorder, "1px");
     await page.screenshot({ path: `test-results/board-labels-${width}.png`, fullPage: true });
   }
 });
@@ -383,6 +400,105 @@ test("the complete phone game fits portrait and landscape viewports during play"
   await page.screenshot({ path: "test-results/phone-fit-probabilities.png" });
 });
 
+test("the phone bet keypad overlays a stationary game and commits or cancels exact amounts", async t => {
+  const page = await game(t, 390, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const geometry = () => page.evaluate(() => ({
+    scrollX, scrollY, width: innerWidth, height: innerHeight,
+    cells: [...document.querySelectorAll("#board, [data-target], .amount-selector, .actions")].map(element => {
+      const { x, y, width, height } = element.getBoundingClientRect();
+      return { x, y, width, height };
+    }),
+  }));
+  for (const [width, height] of [[390, 844], [320, 568], [568, 320], [932, 430]]) {
+    await page.setViewportSize({ width, height });
+    assert.ok(await page.locator("#bet-amount").evaluate(input => input.readOnly && input.inputMode === "none"));
+    const before = await geometry();
+    await page.locator("#bet-amount").tap();
+    assert.equal(await page.locator("#bet-keypad").isVisible(), true);
+    assert.deepEqual(await geometry(), before, `${width} × ${height}: opening keypad moved the game`);
+    await page.locator('[data-key="clear"]').tap();
+    await page.locator('[data-key="0"]').tap();
+    assert.equal(await page.locator("#keypad-done").isDisabled(), true);
+    assert.equal(await page.locator("#keypad-validation").innerText(), "Enter at least 1 G.");
+    await page.locator('[data-key="clear"]').tap();
+    await page.locator('[data-key="2"]').tap();
+    await page.locator('[data-key="5"]').tap();
+    assert.equal(await page.locator("#keypad-amount").innerText(), "25");
+    assert.deepEqual(await geometry(), before, `${width} × ${height}: typing moved the game`);
+    assert.ok(await page.locator("#bet-keypad").evaluate(dialog => {
+      const bounds = dialog.getBoundingClientRect();
+      return bounds.top >= 0 && bounds.bottom <= innerHeight + 1 && dialog.scrollWidth <= dialog.clientWidth && dialog.scrollHeight <= dialog.clientHeight + 1 &&
+        [...dialog.querySelectorAll("button")].every(button => {
+          const key = button.getBoundingClientRect();
+          return key.height >= 44 && key.top >= bounds.top && key.bottom <= bounds.bottom;
+        });
+    }));
+    await page.screenshot({ path: `test-results/bet-keypad-${width}x${height}.png` });
+    await page.locator("#keypad-done").tap();
+    assert.equal(await page.locator("#bet-amount").inputValue(), "25");
+    assert.equal(await page.locator("#bet-keypad").isVisible(), false);
+    assert.deepEqual(await geometry(), before, `${width} × ${height}: closing keypad moved the game`);
+  }
+  await page.locator("#bet-amount").tap();
+  await page.locator('[data-key="3"]').tap();
+  await page.locator('[data-key="0"]').tap();
+  await page.locator('[data-key="backspace"]').tap();
+  assert.equal(await page.locator("#keypad-amount").innerText(), "3");
+  await page.locator("#keypad-cancel").tap();
+  assert.equal(await page.locator("#bet-amount").inputValue(), "25");
+  await page.locator("#bet-amount").tap();
+  await page.keyboard.type("40");
+  await page.locator("#keypad-cancel").focus();
+  await page.keyboard.press("Enter");
+  assert.equal(await page.locator("#bet-keypad").isVisible(), false);
+  assert.equal(await page.locator("#bet-amount").inputValue(), "25");
+  await page.locator("#bet-amount").tap();
+  await page.keyboard.type("9007199254740993");
+  await page.keyboard.press("Enter");
+  assert.equal(await page.locator("#bet-amount").inputValue(), "9007199254740993");
+  assert.equal(await page.locator("#bet-amount").getAttribute("aria-valuenow"), "9007199254740993");
+  assert.equal((await saved(page)).gold, "100");
+  assert.equal((await saved(page)).rollsUsed, 0);
+});
+
+test("desktop bet input stays editable at phone-sized window widths", async t => {
+  const page = await game(t);
+  for (const width of [1280, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    assert.equal(await page.locator("#bet-amount").evaluate(input => input.readOnly), false);
+    await page.locator("#bet-amount").fill("35");
+    assert.equal(await page.locator("#bet-keypad").isVisible(), false);
+  }
+});
+
+test("the saved mobile action setting swaps positions and widths while keeping desktop order", async t => {
+  const page = await game(t, 390, { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+  const order = () => page.locator(".actions > button").evaluateAll(buttons => buttons.map(button => button.id));
+  assert.deepEqual(await order(), ["roll", "shake"]);
+  await page.locator("#settings-open").tap();
+  await page.locator("#swap-mobile-actions").check();
+  await page.waitForFunction(key => JSON.parse(localStorage.getItem(key)).settings.swapMobileActions === true, SAVE_KEY);
+  await page.screenshot({ path: "test-results/mobile-action-settings.png" });
+  await page.locator('[data-close="settings-dialog"]').tap();
+  assert.deepEqual(await order(), ["shake", "roll"]);
+  assert.ok((await page.locator("#roll").boundingBox()).width > (await page.locator("#shake").boundingBox()).width);
+  await page.screenshot({ path: "test-results/mobile-actions-swapped.png" });
+  await page.reload();
+  await page.waitForFunction(() => document.querySelector("#gold").textContent !== "—");
+  assert.deepEqual(await order(), ["shake", "roll"]);
+  for (const [width, height, expected] of [[568, 320, ["shake", "roll"]], [1280, 900, ["roll", "shake"]], [320, 568, ["shake", "roll"]]]) {
+    await page.setViewportSize({ width, height });
+    await page.waitForFunction(expected => [...document.querySelectorAll(".actions > button")].map(button => button.id).join() === expected.join(), expected);
+    assert.deepEqual(await order(), expected);
+  }
+  await page.locator("#settings-open").tap();
+  assert.equal(await page.locator("#swap-mobile-actions").isChecked(), true);
+  await page.locator("#swap-mobile-actions").uncheck();
+  await page.waitForFunction(key => JSON.parse(localStorage.getItem(key)).settings.swapMobileActions === false, SAVE_KEY);
+  await page.locator('[data-close="settings-dialog"]').tap();
+  assert.deepEqual(await order(), ["roll", "shake"]);
+});
+
 test("mouse and touch holds remove only the chosen wager and consume the release click", async t => {
   for (const input of ["mouse", "touch"]) {
     const page = await game(t, input === "mouse" ? 1280 : 390, {
@@ -503,6 +619,7 @@ test("the table and guide display all six Tilt levels", async t => {
 
 test("Tilt stays visible, animates a changed level, and respects reduced motion", async t => {
   const page = await game(t, 320, { viewport: { width: 320, height: 568 } });
+  assert.equal(await page.locator("#tilt-change").isVisible(), false);
   assert.equal(await page.locator(".tilt-help").count(), 0);
   await page.locator("#settings-open").click();
   await page.locator("#motion").uncheck();
@@ -522,9 +639,26 @@ test("Tilt stays visible, animates a changed level, and respects reduced motion"
     return { text: tilt.textContent, animations: tilt.getAnimations().length, fits: tilt.scrollWidth <= tilt.clientWidth && bounds.bottom <= control.bottom + 1 };
   }, { key: SAVE_KEY, peak });
   assert.deepEqual(await changeTilt(.7), { text: "EXTREME BIAS", animations: 1, fits: true });
+  assert.equal(await page.locator("#tilt-change").innerText(), "▲");
+  assert.match(await page.locator("#tilt-info").getAttribute("aria-label"), /Increased from level 2 to 6/);
+  await page.locator("#increase").click();
+  assert.equal(await page.locator("#tilt-change").innerText(), "▲");
+  assert.ok(await page.locator(".tilt-description").evaluate(row => {
+    const indicator = row.querySelector("#tilt-change").getBoundingClientRect();
+    return indicator.left >= row.querySelector("#tilt-level").getBoundingClientRect().right &&
+      indicator.right <= document.querySelector("#result-display").getBoundingClientRect().left;
+  }));
   await page.waitForFunction(() => document.querySelector("#tilt-level").getAnimations().length === 0);
   await page.emulateMedia({ reducedMotion: "reduce" });
   assert.deepEqual(await changeTilt(1 / 6), { text: "NEARLY EVEN", animations: 0, fits: true });
+  assert.equal(await page.locator("#tilt-change").innerText(), "▼");
+  assert.match(await page.locator("#tilt-info").getAttribute("aria-label"), /Decreased from level 6 to 1/);
+  await page.screenshot({ path: "test-results/tilt-direction-mobile.png" });
+  await page.locator("#settings-open").click();
+  await page.locator("#settings-restart").click();
+  await page.locator("#restart-confirm").click();
+  await page.waitForFunction(() => document.querySelector("#notice").textContent.includes("New run."));
+  assert.equal(await page.locator("#tilt-change").isVisible(), false);
 });
 
 test("bankruptcy restart animates the die and cards while actions stay locked", async t => {

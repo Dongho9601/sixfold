@@ -3,6 +3,7 @@ import { BOARD, CONFIG, TARGET_BY_ID, TILT_LABELS } from "./config";
 import { guideBody, guideLanguages, guides, resolveGuideLanguage, type GuideLanguage } from "./guide";
 import type { Action, PlayerState, Settlement, Wagers } from "./types";
 import { LocalGame, SAVE_KEY, StaleRunError } from "./save";
+import { setupBetKeypad } from "./bet-keypad";
 
 const game = new LocalGame();
 
@@ -56,6 +57,8 @@ const audioSources = new Set<AudioScheduledSourceNode>();
 let previousRank: number | undefined;
 let announcement = "";
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+const mobileLayout = matchMedia("(max-width: 650px), (orientation: landscape) and (max-height: 500px) and (max-width: 1000px)");
+let swapMobileActions = game.data.settings.swapMobileActions;
 let manualReducedMotion = game.data.settings.reducedMotion;
 const prefersReducedMotion = () => reducedMotion.matches || manualReducedMotion;
 const shouldReduceMotion = () => document.hidden || prefersReducedMotion();
@@ -92,7 +95,7 @@ app.innerHTML = `
         <section class="table-area" aria-label="Betting table">
           <div class="felt">
             <section class="stage" aria-label="Die and result">
-              <div class="table-heading"><button id="tilt-info" class="board-tilt" aria-label="About board Tilt" aria-haspopup="dialog" aria-controls="welcome-dialog"><span id="tilt-number" class="tilt-number">Tilt —</span><strong id="tilt-level">—</strong></button><span id="table-status">Place your bets</span></div>
+              <div class="table-heading"><button id="tilt-info" class="board-tilt" aria-label="About board Tilt" aria-haspopup="dialog" aria-controls="welcome-dialog"><span id="tilt-number" class="tilt-number">Tilt —</span><span class="tilt-description"><strong id="tilt-level">—</strong><span id="tilt-change" aria-hidden="true" hidden></span></span></button><span id="table-status">Place your bets</span></div>
               <div class="die-area"><div id="die-shadow" class="die-shadow"></div><div id="die-mover" class="die-mover"><div id="die" class="die" role="img" aria-label="Die, ready to roll"></div></div><div id="landing-ring" class="landing-ring"></div></div>
               <div id="result-display" class="result-display"><span class="result-label">BOARD NET</span><strong id="board-net" class="result-value">0 G</strong><span class="result-detail">Winnings minus bets</span></div>
             </section>
@@ -117,6 +120,7 @@ app.innerHTML = `
     <form id="nickname-form"><label for="nickname">Your record name</label><div class="nickname-row"><input id="nickname" maxlength="48" required autocomplete="nickname"/><button type="submit" id="save-nickname">Save</button></div><p id="nickname-status" role="status"></p></form>
     <label class="sound-control"><span>Sound effects</span><input id="sound" type="checkbox" role="switch" ${sound ? "checked" : ""}/></label>
     <label class="sound-control"><span>Reduce motion</span><input id="motion" type="checkbox" role="switch" ${prefersReducedMotion() ? "checked" : ""}/></label>
+    <label class="sound-control"><span>Swap Roll and Shake on mobile</span><input id="swap-mobile-actions" type="checkbox" role="switch" ${swapMobileActions ? "checked" : ""}/></label>
     <label class="sound-control"><span>Show probabilities</span><input id="show-probabilities" type="checkbox" role="switch" aria-describedby="probabilities-status" disabled/></label>
     <p id="probabilities-status" class="settings-note"></p>
     <div class="settings-restart"><button id="settings-restart" class="danger-button" aria-haspopup="dialog" aria-controls="restart-dialog" disabled>Restart run</button></div>
@@ -347,9 +351,25 @@ function showBoardNet(gold = state!.gold, startingGold = state!.boardStartingGol
   $("result-display").classList.toggle("lost", net < 0n);
 }
 let displayedTilt: number | undefined;
+let displayedTiltRun: string | undefined;
+let tiltChangeDescription = "";
 function showTilt(level: number) {
   const label = TILT_LABELS[level - 1];
-  $("tilt-info").setAttribute("aria-label", `Board Tilt: ${label}, level ${level} of 6. Open Tilt explanation.`);
+  const indicator = $("tilt-change");
+  if (displayedTiltRun !== state!.id) {
+    displayedTilt = undefined;
+    displayedTiltRun = state!.id;
+    tiltChangeDescription = "";
+    indicator.textContent = "";
+    indicator.hidden = true;
+  }
+  if (displayedTilt !== undefined && displayedTilt !== level) {
+    indicator.textContent = level > displayedTilt ? "▲" : "▼";
+    indicator.hidden = false;
+    tiltChangeDescription = ` ${level > displayedTilt ? "Increased" : "Decreased"} from level ${displayedTilt} to ${level}.`;
+    indicator.title = tiltChangeDescription.trim();
+  }
+  $("tilt-info").setAttribute("aria-label", `Board Tilt: ${label}, level ${level} of 6.${tiltChangeDescription} Open Tilt explanation.`);
   if (displayedTilt === level) return;
   $("tilt-number").textContent = `Tilt ${level}`;
   $("tilt-level").textContent = label;
@@ -1049,6 +1069,22 @@ $("bet-amount").addEventListener("change", () => {
   readAmount();
   renderRecentAmounts();
 });
+setupBetKeypad($<HTMLInputElement>("bet-amount"), mobileLayout, value => {
+  setAmount(value);
+  announce("");
+});
+function placeMobileActions() {
+  app.classList.toggle("swap-mobile-actions", swapMobileActions);
+  const actions = document.querySelector<HTMLElement>(".actions")!;
+  const first = $(swapMobileActions && mobileLayout.matches ? "shake" : "roll");
+  if (actions.firstElementChild !== first) actions.prepend(first);
+}
+mobileLayout.addEventListener("change", placeMobileActions);
+$("swap-mobile-actions").addEventListener("change", () => {
+  swapMobileActions = $<HTMLInputElement>("swap-mobile-actions").checked;
+  placeMobileActions();
+  saveSettings({ swapMobileActions });
+});
 function openLeaderboard() {
   $<HTMLDialogElement>("leaderboard-dialog").showModal();
   $("leaderboard-open").setAttribute("aria-expanded", "true");
@@ -1237,10 +1273,13 @@ function applySavedSettings() {
   const settings = game.data.settings;
   sound = settings.sound;
   manualReducedMotion = settings.reducedMotion;
+  swapMobileActions = settings.swapMobileActions;
   recentAmounts = settings.recentAmounts;
   guideLanguage = (settings.guideLanguage as GuideLanguage | null) ?? resolveGuideLanguage(navigator.languages);
   $<HTMLInputElement>("sound").checked = sound;
   $<HTMLInputElement>("motion").checked = prefersReducedMotion();
+  $<HTMLInputElement>("swap-mobile-actions").checked = swapMobileActions;
+  placeMobileActions();
   document.documentElement.classList.toggle("reduce-motion", manualReducedMotion);
   if (!sound) stopSound();
   if (shouldReduceMotion()) stopMotion();
