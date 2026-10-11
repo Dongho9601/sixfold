@@ -285,6 +285,14 @@ test("left clicks and taps on chips add bets; right-click and keyboard remove wa
 
 test("the complete phone game fits portrait and landscape viewports during play", async t => {
   const page = await game(t, 390, { isMobile: true, hasTouch: true });
+  const boardGeometry = () => page.evaluate(() =>
+    [...document.querySelectorAll("#board, [data-target]")].map(element => {
+      const { x, y, width, height } = element.getBoundingClientRect();
+      return { target: element.id || element.dataset.target, x, y, width, height };
+    }));
+  const staysStill = async (expected, label) => {
+    assert.deepEqual(await boardGeometry(), expected, `${label}: betting cells moved or resized`);
+  };
   const fits = async label => {
     await page.evaluate(() => scrollTo(0, 0));
     const layout = await page.evaluate(() => ({
@@ -305,23 +313,35 @@ test("the complete phone game fits portrait and landscape viewports during play"
   };
   for (const [width, height] of [[320, 568], [360, 640], [375, 667], [390, 844], [430, 932], [568, 320], [667, 375], [844, 390], [932, 430]]) {
     await page.setViewportSize({ width, height });
+    const initial = await boardGeometry();
+    await fits(`${width} × ${height} before betting`);
     await page.locator('[data-target="row1"]').tap();
+    await staysStill(initial, `${width} × ${height} after betting`);
     await fits(`${width} × ${height}`);
     await page.screenshot({ path: `test-results/phone-fit-${width}x${height}.png` });
     await page.locator('[data-target="row1"]').click({ button: "right" });
+    await staysStill(initial, `${width} × ${height} after removing a bet`);
   }
   await page.setViewportSize({ width: 320, height: 568 });
+  const initial = await boardGeometry();
   await page.locator('[data-target="n6"]').tap();
   await page.locator("#roll").tap();
   await settled(page, "330");
+  await staysStill(initial, "small phone after Jackpot");
   await fits("small phone after Jackpot");
   await page.locator('[data-target="row1"]').tap();
+  await staysStill(initial, "small phone betting after Jackpot");
   await page.locator("#roll").tap();
   await settled(page, "320");
+  await staysStill(initial, "small phone after an ordinary roll");
   await fits("small phone after an ordinary roll");
   await page.locator("#shake").tap();
   await page.waitForFunction(() => document.querySelector("#notice").textContent.includes("A fresh die.") && !document.querySelector('[data-target="n1"]').disabled);
+  await staysStill(initial, "small phone after Shake");
   await fits("small phone after Shake");
+  await page.locator('[data-target="n1"]').tap();
+  await staysStill(initial, "small phone betting after Shake");
+  await fits("small phone betting after Shake");
   await page.locator("#settings-open").tap();
   await page.locator("#show-probabilities").tap();
   await page.locator("#probabilities-confirm").tap();

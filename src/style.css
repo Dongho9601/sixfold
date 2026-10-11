@@ -510,7 +510,8 @@ dialog::backdrop {
   #table-status { font-size: 12px; line-height: 14px; }
   .result-display { max-height: 68px; gap: 3px; }
   .result-label { font-size: 6px; line-height: 1.3; letter-spacing: .3px; }
-  .board { grid-template-rows: 44px repeat(2, clamp(52px, calc(16svh - 39px), 80px)); }
+  /* Leave room for status messages without resizing the betting cells. */
+  .board { grid-template-rows: 44px repeat(2, clamp(44px, calc(16svh - 47px), 72px)); }
   .color-bets { height: 44px; margin-top: 6px; }
   .table-footer { height: 18px; }
   .betting-controls { margin-top: 10px; gap: 8px; }
@@ -526,7 +527,6 @@ dialog::backdrop {
   .row-target:has(.group-odds) { padding-top: 0; padding-bottom: 14px; }
   .row-target:has(.group-odds) .group-title { font-size: 12px; gap: 0; }
   .row-target:has(.group-odds) .group-title b { font-size: 11px; }
-  main:has(.messages .notice:not(:empty):not([hidden])) .board { grid-template-rows: 44px repeat(2, clamp(44px, calc(16svh - 47px), 72px)); }
   .betting-controls:has(.notice:not(:empty):not([hidden])) .shake-hint { display: none; }
   .messages .notice { font-size: 11px; line-height: 14px; }
   .messages:has(#run-status:not([hidden])) #notice:not(.error) { display: none; }
