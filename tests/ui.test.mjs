@@ -4,10 +4,11 @@ import { chromium } from "playwright";
 import { preview } from "vite";
 import { newRun } from "../src/game/run.ts";
 import { SAVE_KEY } from "../src/save.ts";
-import { TILT_LABELS } from "../src/config.ts";
-import { probabilityEntropy } from "../src/game/rules.ts";
+import { CONFIG, TILT_LABELS } from "../src/config.ts";
+import { probabilityEntropy, settle } from "../src/game/rules.ts";
 import { distributionHint } from "../src/distribution-hint.ts";
 import { guideLanguages, guides } from "../src/guide.ts";
+import { slideGuides } from "../src/guide-slides.ts";
 
 let browser, vite, origin;
 before(async () => {
@@ -251,6 +252,7 @@ test("Settings stays compact and the complete guide works on desktop and mobile"
     await page.keyboard.press("Escape");
     await page.locator("#guide-open").click();
     assert.equal(await page.locator("#settings-dialog").isVisible(), false);
+    await page.locator("#guide-rules").click();
     const guide = await page.locator("#welcome-dialog").innerText();
     for (const text of ["100 rolls", "least likely number", "×24", "Keyboard controls", "Tilt 1", "Tilt 6", "▲", "▼", "BOARD NET", "Space", "W / E", "Q / Esc"])
       assert.ok(guide.includes(text), `Guide missing ${text}`);
@@ -701,9 +703,10 @@ test("anonymous distribution squares show the five shapes and fit beside Tilt", 
   }
   await page.screenshot({ path: "test-results/distribution-mobile-320.png", fullPage: true });
   await page.locator("#tilt-info").click();
+  await page.locator("#guide-rules").click();
   for (const [language] of guideLanguages) {
     await page.locator("#guide-language").selectOption(language);
-    assert.ok((await page.locator(".tilt-guide + p").innerText()).endsWith(guides[language].tiltHint));
+    assert.ok((await page.locator(".guide-reference-tilt + p").innerText()).endsWith(guides[language].tiltHint));
   }
 });
 
@@ -1106,17 +1109,56 @@ test("new shortcuts honor typing, dialog, modifier, repeat and composition guard
   assert.equal(await page.locator("#draft-total").textContent(), "10 G");
 });
 
-test("all seven guide languages fit desktop and mobile and remember the selection", async t => {
+test("all seven slide guides keep readable content and navigation within desktop and phone viewports", async t => {
   const page = await game(t);
   const titles = { en: "How to play", ko: "게임 방법", ja: "遊び方", zh: "玩法说明", es: "Cómo jugar", fr: "Comment jouer", de: "Spielanleitung" };
   await page.locator("#guide-open").click();
   assert.equal(await page.locator("#guide-language option").count(), 7);
-  for (const width of [1280, 390, 320]) {
-    await page.setViewportSize({ width, height: 900 });
+  for (const [width, height] of [[1280, 900], [390, 844], [320, 568], [568, 320], [932, 430]]) {
+    await page.setViewportSize({ width, height });
     for (const [code, title] of Object.entries(titles)) {
       await page.locator("#guide-language").selectOption(code);
       assert.equal(await page.locator("#welcome-title").innerText(), title);
       assert.equal(await page.locator("#welcome-dialog").getAttribute("lang"), code);
+      await page.locator(".guide-slide:not([hidden]) h3").focus();
+      await page.keyboard.press("Home");
+      assert.equal(await page.locator("#guide-previous").isDisabled(), true);
+      for (let index = 0; index < slideGuides[code].items.length; index++) {
+        const slide = page.locator(".guide-slide:not([hidden])");
+        assert.equal(await slide.count(), 1);
+        assert.equal(await slide.locator("h3").innerText(), slideGuides[code].items[index][0]);
+        const screenshots = slide.locator('img.guide-illustration');
+        assert.equal(await screenshots.count(), index === 1 ? 2 : 1);
+        assert.ok((await screenshots.evaluateAll(images => images.map(image => image.alt))).every(alt => alt.length > 10));
+        await page.waitForFunction(() => [...document.querySelectorAll('.guide-slide:not([hidden]) img')].every(image => image.complete && image.naturalWidth > 0 && (image.currentSrc.includes('tilt-') || image.currentSrc.endsWith(innerWidth <= 650 ? '-mobile.jpg' : '-desktop.jpg'))));
+        await screenshots.evaluateAll(images => Promise.all(images.map(image => image.decode())));
+        assert.ok((await screenshots.evaluateAll(images => images.map(image => image.currentSrc))).every(src => src.includes('/sixfold/guide/') && src.endsWith('.jpg')));
+        assert.equal(await page.locator("#guide-progress").innerText(), `${index + 1} / 8`);
+        const layout = await page.evaluate(() => {
+          const dialog = document.querySelector("#welcome-dialog");
+          const slide = document.querySelector(".guide-slide:not([hidden])");
+          const footer = document.querySelector(".guide-footer").getBoundingClientRect();
+          const content = document.querySelector("#guide-content");
+          const contentRect = content.getBoundingClientRect();
+          const prose = slide.querySelector(".guide-slide-copy p");
+          return { horizontal: dialog.scrollWidth > dialog.clientWidth || document.documentElement.scrollWidth > innerWidth,
+            scroll: dialog.scrollHeight > dialog.clientHeight + 1, overlap: contentRect.bottom > footer.top + 1,
+            visible: footer.bottom <= innerHeight && dialog.getBoundingClientRect().top >= 0,
+            textSize: getComputedStyle(prose).fontSize, contentHorizontal: content.scrollWidth > content.clientWidth };
+        });
+        assert.deepEqual(layout, { horizontal: false, scroll: false, overlap: false, visible: true, textSize: "18px", contentHorizontal: false }, `${code}, slide ${index + 1}, ${width} × ${height}`);
+        if (code === "en")
+          await page.screenshot({ path: `test-results/guide-slide-${index + 1}-${width}x${height}.png` });
+        // Short screens scroll inside the reading area; the footer stays visible.
+        assert.equal(await page.locator("#guide-content").evaluate(content => {
+          content.scrollTop = content.scrollHeight;
+          const end = content.querySelector('.guide-slide:not([hidden]) .guide-slide-copy p:last-child').getBoundingClientRect();
+          return end.bottom <= content.getBoundingClientRect().bottom + 1;
+        }), true);
+        if (index < 7) await page.locator("#guide-next").click();
+      }
+      assert.equal(await page.locator("#guide-next").isDisabled(), true);
+      await page.locator("#guide-rules").click();
       assert.equal(await page.locator(".guide-shortcuts > div").count(), 6);
       assert.equal(await page.locator(".guide-details").evaluate(el => el.open), false);
       assert.equal(await page.evaluate(() => {
@@ -1127,6 +1169,8 @@ test("all seven guide languages fit desktop and mobile and remember the selectio
       await page.locator(".guide-details summary").click();
       assert.equal(await page.locator(".guide-details h3").count(), 5);
       assert.equal(await page.locator("#welcome-dialog").evaluate(el => el.scrollWidth > el.clientWidth), false);
+      await page.locator("#guide-rules").click();
+      assert.equal(await page.locator(".guide-slide:not([hidden])").getAttribute("data-guide-slide"), "7");
     }
   }
   await page.locator("#guide-language").selectOption("ko");
@@ -1146,6 +1190,109 @@ test("all seven guide languages fit desktop and mobile and remember the selectio
   await localized.waitForSelector("#welcome-dialog[open]");
   assert.equal(await localized.locator("#guide-language").inputValue(), "ja");
   assert.equal(await localized.locator("#welcome-title").innerText(), titles.ja);
+});
+
+test("coverage examples use the real board and explain their distinct payouts in all languages", async t => {
+  const page = await game(t, 390);
+  await page.locator("#guide-open").click();
+  await page.keyboard.press("Home");
+  for (let i = 0; i < 3; i++) await page.locator("#guide-next").click();
+  const examples = [
+    { image: "number", payout: "60 G" },
+    { image: "column", payout: "30 G" },
+    { image: "odds", payout: "20 G" },
+    { image: "red", payout: "20 G" },
+  ];
+  const before = await saved(page);
+  for (const [language] of guideLanguages) {
+    await page.locator("#guide-language").selectOption(language);
+    for (const [index, example] of examples.entries()) {
+      const button = page.locator(`[data-guide-example="${index}"]`);
+      await button.click();
+      assert.equal(await button.getAttribute("aria-pressed"), "true");
+      assert.equal(await page.locator('[data-guide-example][aria-pressed="true"]').count(), 1);
+      const image = page.locator("#guide-coverage-image img");
+      await image.waitFor({ state: "visible" });
+      await page.waitForFunction(() => {
+        const image = document.querySelector('#guide-coverage-image img');
+        return image.complete && image.naturalWidth > 0;
+      });
+      assert.ok((await image.evaluate(image => image.currentSrc)).endsWith(`coverage-${example.image}-mobile.jpg`));
+      assert.equal(await page.locator("#guide-coverage-caption").innerText(), slideGuides[language].coverage[index][1]);
+      assert.equal(await image.getAttribute("alt"), slideGuides[language].coverage[index][1]);
+      assert.ok(slideGuides[language].coverage[index][1].includes(example.payout));
+    }
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.waitForFunction(() => document.querySelector('#guide-coverage-image img').currentSrc.endsWith('coverage-red-desktop.jpg'));
+  const screenshot = page.locator('#guide-coverage-image .guide-screenshot');
+  const [popup] = await Promise.all([page.waitForEvent('popup'), screenshot.click()]);
+  await popup.waitForLoadState();
+  assert.ok(popup.url().endsWith('/sixfold/guide/coverage-red-desktop.jpg'));
+  await popup.close();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForFunction(() => document.querySelector('#guide-coverage-image img').currentSrc.endsWith('coverage-red-mobile.jpg'));
+  const [mobilePopup] = await Promise.all([page.waitForEvent('popup'), screenshot.press('Enter')]);
+  await mobilePopup.waitForLoadState();
+  assert.ok(mobilePopup.url().endsWith('/sixfold/guide/coverage-red-mobile.jpg'));
+  await mobilePopup.close();
+  assert.deepEqual(await saved(page), before);
+  // A controlled ordinary result validates the guide's overlapping-bet receipt.
+  const settled = settle(BigInt(CONFIG.startingGold), [.2, .2, .2, .15, .15, .1], { n3: "10", row0: "10" }, () => .45);
+  assert.equal(settled.result.outcome, 3);
+  assert.equal(settled.result.totalReturn, "80");
+  assert.equal(settled.gold, 160n);
+});
+
+test("slide buttons, keyboard, touch swipes and Tilt help preserve the game and return focus", async t => {
+  const page = await game(t, 390, { hasTouch: true });
+  await page.locator('[data-target="n3"]').click();
+  const before = await saved(page);
+  await page.locator("#guide-open").click();
+  const current = () => page.locator(".guide-slide:not([hidden])").getAttribute("data-guide-slide");
+  assert.equal(await current(), "0");
+  await page.locator("#guide-next").click();
+  assert.equal(await current(), "1");
+  await page.keyboard.press("ArrowRight");
+  assert.equal(await current(), "2");
+  await page.keyboard.press("ArrowLeft");
+  assert.equal(await current(), "1");
+  await page.locator("#guide-previous").click();
+  assert.equal(await current(), "0");
+  await page.keyboard.press("End");
+  assert.equal(await current(), "7");
+  await page.keyboard.press("Home");
+  const swipe = async (start, end, y = 180) => {
+    await page.locator("#guide-content").dispatchEvent("pointerdown", { pointerType: "touch", pointerId: 1, clientX: start, clientY: 180 });
+    await page.locator("#guide-content").dispatchEvent("pointerup", { pointerType: "touch", pointerId: 1, clientX: end, clientY: y });
+  };
+  await swipe(300, 100);
+  assert.equal(await current(), "1");
+  await swipe(100, 300);
+  assert.equal(await current(), "0");
+  await swipe(300, 280); // A tap-sized gesture must not navigate.
+  await swipe(300, 100, 420); // Vertical reading gestures must not navigate.
+  assert.equal(await current(), "0");
+  await page.locator("#guide-next").click();
+  await page.locator("#guide-language").selectOption("ko");
+  await page.waitForFunction(key => JSON.parse(localStorage.getItem(key)).settings.guideLanguage === "ko", SAVE_KEY);
+  assert.equal(await current(), "1");
+  await page.locator("#guide-language").dispatchEvent("keydown", { key: "ArrowRight", bubbles: true });
+  assert.equal(await current(), "1");
+  await page.locator("#welcome-start").click();
+  assert.equal(await page.evaluate(() => document.activeElement.id), "guide-open");
+  assert.equal(await page.locator("#draft-total").textContent(), "10 G");
+  assert.deepEqual(await saved(page), before);
+  await page.locator("#tilt-info").click();
+  assert.equal(await current(), "1");
+  assert.equal(await page.evaluate(() => document.activeElement.className), "tilt-guide");
+  await page.keyboard.press("ArrowRight");
+  await page.waitForFunction(() => document.activeElement.id === "guide-heading-2");
+  await page.keyboard.press("ArrowRight");
+  assert.equal(await current(), "3");
+  assert.equal(await page.evaluate(() => document.activeElement.id), "guide-heading-3");
+  await page.keyboard.press("Escape");
+  assert.equal(await page.evaluate(() => document.activeElement.id), "tilt-info");
 });
 
 test("a committed roll survives refresh during animation and rapid inputs settle once", async t => {

@@ -6,6 +6,8 @@ Everything runs in the browser. The personal leaderboard keeps this browser’s 
 
 The phone table fills the available viewport height. On touch devices in the phone layout, tapping Bet amount opens an in-game numeric keypad over the game, keeping the board stationary without invoking the browser’s native keyboard. The 10%, 20%, and 30% buttons fill the amount from the current bankroll, rounded down to whole Gold with a minimum of 1 G. Done applies the amount; the close button cancels the edit. Desktop input remains directly editable. Settings includes a saved “Swap Roll and Shake on mobile” switch, which reverses the mobile buttons while retaining the desktop order. Settings also links to the creator’s website, and the seven-language guide and About page explain the current rules and browser saves.
 
+How to play presents eight slides in all seven languages, illustrated with screenshots of the actual game. The main explanation comes before the screenshot; captions and further guidance follow it. Desktop and phone layouts use their own captures. The coverage slide compares real 10 G bets on Number 3, the middle column, Odds, and Red, including the game’s own coverage highlights and chips. Tilt uses cropped screenshots of its actual indicator, and settlement, Shake, Jackpot, and completion use staged game states that match their explanations. View full size opens the displayed image. Back/Next buttons, left/right arrow keys, Home/End, and horizontal touch swipes navigate the slides. Tapping Tilt opens its slide directly. Full rules opens the complete reference; returning keeps the current slide. The reading area scrolls while navigation stays visible, preserving 18px body text. Screenshots load as their slides become visible. The saved language preference and first-run guide behavior are preserved.
+
 ## Local development
 
 Use Node.js 22.16 or later and npm. Node is only a development and test dependency.
@@ -22,7 +24,11 @@ npm run build    # Type-check, then build static files into dist/
 npm run preview  # Preview dist/, normally http://localhost:4173/sixfold/
 ```
 
-The build is static HTML, JavaScript, CSS, and SVG. It needs no production Node process, database, environment variables, API, or routing rewrites. Vite preview is a local verification tool. `package.json` stays `private: true`; npm publication is outside this project’s setup.
+The build is static HTML, JavaScript, CSS, SVG, and JPEG guide screenshots. It needs no production Node process, database, environment variables, API, or routing rewrites. Vite preview is a local verification tool. `package.json` stays `private: true`; npm publication is outside this project’s setup.
+
+Regenerate the guide’s screenshots with `npm run capture:guide`. The capture script opens the production game in isolated Chromium contexts, stages example saves, places real bets and rolls through the UI, and checks the pictured states. It writes the desktop/phone images and capture manifest in `public/guide/`, updates intrinsic image dimensions in `src/guide-images.ts`, and rebuilds the static output. It does not access a player’s existing browser save.
+
+Captures leave space around the pictured controls and labels. Coverage examples include the complete table frame so chips extending past a cell remain visible. The capture manifest records each crop and its margin.
 
 ## Tests
 

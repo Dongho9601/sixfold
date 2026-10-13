@@ -241,7 +241,7 @@ export function guideBody(language: GuideLanguage): string {
       <h3>${copy.payoutsTitle}</h3>
       <dl class="guide-payouts">${copy.payouts.map((label, index) => `<div><dt>${label}</dt><dd>×${multipliers[index]}</dd></div>`).join("")}</dl>
       <p>${copy.payoutNote}</p>
-      <h3 class="tilt-guide" tabindex="-1">${copy.tilt[0]}</h3><p>${copy.tilt[1]} ${copy.tiltHint}</p>
+      <h3 class="guide-reference-tilt">${copy.tilt[0]}</h3><p>${copy.tilt[1]} ${copy.tiltHint}</p>
       ${section(copy.shake)}${section(copy.jackpot)}${section(copy.boardNet)}
       <h3>${copy.keysTitle}</h3>
       <dl class="guide-shortcuts">${copy.keys.map((label, index) => `<div><dt><kbd>${keys[index]}</kbd></dt><dd>${label}</dd></div>`).join("")}</dl>

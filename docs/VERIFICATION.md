@@ -1,4 +1,4 @@
-# Interface and browser-save verification — October 11, 2026
+# Interface and browser-save verification — October 12, 2026
 
 Sixfold has been locally verified as a static browser game under `/sixfold/`. This report supersedes the earlier server-release reports and screenshot iterations. It records local checks, not GitHub Pages publication.
 
@@ -14,6 +14,8 @@ The title no longer includes the PLAY THE ODDS tagline, and the vertical gap bet
 
 ## Commands and results
 
+The October 12 guide refinement now uses screenshots of the actual production game in all eight slides and all seven languages. The main explanation precedes the screenshot, followed by a caption and further guidance. `scripts/capture-guide.ts` captured 22 JPEGs at twice the CSS pixel resolution: desktop and phone start, bet, coverage, settlement, Shake, Jackpot, and completion states, plus two cropped Tilt indicators. The script uses isolated staged saves and the actual bet/roll controls, with assertions for covered numbers, stakes, Tilt levels, bankrolls, remaining rolls, BOARD NET, and Shake availability. It applies no substitute markup, guide-only game styling, or screenshot annotations. The four coverage buttons select real screenshots of Number 3, the middle column, Odds, and Red; the overlapping-bet result has a 160 G bankroll and +60 G BOARD NET. Jackpot states explicitly illustrate a least-likely number rather than promising a live target. Images use responsive sources, intrinsic dimensions, lazy loading, localized alternative text, and View full size links. `npm run test:ui` passed the TypeScript/Vite build and all **37 Chromium tests**. After refining the image checks and moving explanations ahead of screenshots, the build and all **4 focused guide tests** passed again; `git diff --check` also passed. Production Chromium checks cover every slide in all seven languages at 1280 × 900, 390 × 844, 320 × 568, 568 × 320, and 932 × 430. They verify that the correct desktop or mobile source loads and decodes, there is no horizontal overflow, 18px reading text is retained, the final paragraph is reachable, and navigation stays visible outside the scrolling reading area. Coverage checks exercise every option in every language and opening the displayed desktop and phone image through full-size links. Navigation, localization, focus return, preservation of game state and draft bets, and the settlement arithmetic remain covered. Print emulation displays all eight slides and expands the full reference. Representative rendered desktop and phone screenshots were visually reviewed. These checks use Chromium emulation rather than physical devices.
+
 The entropy-arrow update passed `npm run build`, all **20 focused entropy/distribution/save tests**, and all **5 Tilt-related Chromium tests** against the production build. Browser checks include actual ordinary hits that increase and decrease entropy without changing the Tilt level, a paying roll from an even board, tooltip and accessible descriptions, persistence across draft edits, and neutral resets. The full unit suite has seven existing failures, reproduced before this update, because fixed probability expectations and pacing targets still assume the previous transfer rates. The user's manually edited rates were preserved; the arrow update does not retune them. The earlier full-suite results below describe the prior verification pass.
 
 - `npm run build`: TypeScript check and Vite static build passed, with base `/sixfold/` and multi-page serving rather than an SPA fallback.
@@ -28,13 +30,18 @@ Desktop and mobile emulation cover 1280 px desktop, 390 and 320 px phones, nine 
 
 ## Current screenshots
 
-These captures use synthetic local test data. Only six current examples are retained; the earlier redundant iterations are removed.
+After adjusting screenshot margins, all 22 guide captures were regenerated. Coverage examples retain the complete table frame, and Tilt and completion crops leave space around labels and borders. The production build and all four focused guide tests passed again. Updated desktop and phone previews were visually reviewed.
+
+Slide descriptions and captions were then shortened in all seven languages. English reading copy decreased from 858 to 451 words while retaining betting controls, payout examples, Tilt, Shake, Jackpot, and record eligibility. The detailed Full rules reference remains available. The build and four focused guide tests passed again, including all seven languages at five viewport sizes. Desktop and phone previews and print behavior were checked.
+
+These captures use synthetic local test data. Guide captures are also retained under `public/guide/` with a reproducible capture script and manifest.
 
 - [Desktop game](screenshots/game-desktop.png)
 - [Mobile game](screenshots/game-mobile.png)
 - [Personal records on mobile](screenshots/personal-records-mobile.png)
 - [Run results](screenshots/run-results-desktop.png)
-- [Mobile guide](screenshots/guide-mobile.png)
+- [Mobile guide — Red coverage example](screenshots/guide-mobile.png)
+- [Desktop guide — overlapping-bet settlement](screenshots/guide-desktop.png)
 - [Mobile Settings](screenshots/settings-mobile.png)
 
 ## Publication boundary

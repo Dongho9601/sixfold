@@ -1,0 +1,1264 @@
+{
+  "source": "Production UI captured by scripts/capture-guide.ts; isolated staged saves and actual bet/roll controls.",
+  "configuration": {
+    "title": "Sixfold",
+    "startingGold": "100",
+    "rollsPerRun": 100,
+    "minimumWager": "1",
+    "selectedWager": "10",
+    "probabilityFloor": 0.02,
+    "transferRates": [
+      {
+        "min": 0.04,
+        "max": 0.08
+      },
+      {
+        "min": 0.05,
+        "max": 0.1
+      },
+      {
+        "min": 0.06,
+        "max": 0.12
+      },
+      {
+        "min": 0.07,
+        "max": 0.14
+      },
+      {
+        "min": 0.08,
+        "max": 0.16
+      },
+      {
+        "min": 0.09,
+        "max": 0.18
+      }
+    ],
+    "tiltThresholds": [
+      5.4,
+      4.8,
+      4.5,
+      4.2,
+      3.6
+    ],
+    "multipliers": {
+      "number": 6,
+      "row": 2,
+      "column": 3,
+      "color": 2,
+      "jackpot": 24
+    },
+    "animationMs": 1100,
+    "replacementMs": 800,
+    "leaderboardLimit": 10
+  },
+  "images": {
+    "start-desktop": {
+      "width": 2158,
+      "height": 1612,
+      "viewport": {
+        "width": 1100,
+        "height": 850
+      },
+      "selectors": [
+        "#game"
+      ],
+      "margin": 16,
+      "clip": {
+        "x": 6,
+        "y": 8,
+        "width": 1079,
+        "height": 806
+      },
+      "state": {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "nickname": "Player",
+        "gold": "100",
+        "boardStartingGold": "100",
+        "bestGold": "0",
+        "previousBestGold": null,
+        "hasCompletedRun": false,
+        "showProbabilities": false,
+        "leaderboardEligible": true,
+        "rollsUsed": 0,
+        "probabilities": [
+          0.2,
+          0.2,
+          0.2,
+          0.15,
+          0.15,
+          0.1
+        ],
+        "tiltLevel": 1,
+        "canShake": false,
+        "revision": "0",
+        "recorded": false,
+        "jackpotNumber": 1,
+        "lastRoll": null
+      },
+      "bets": [],
+      "covered": []
+    },
+    "coverage-number-desktop": {
+      "width": 1686,
+      "height": 1216,
+      "viewport": {
+        "width": 1100,
+        "height": 850
+      },
+      "selectors": [
+        ".table-area"
+      ],
+      "margin": 4,
+      "clip": {
+        "x": 230,
+        "y": 20,
+        "width": 843,
+        "height": 608
+      },
+      "state": {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "nickname": "Player",
+        "gold": "100",
+        "boardStartingGold": "100",
+        "bestGold": "0",
+        "previousBestGold": null,
+        "hasCompletedRun": false,
+        "showProbabilities": false,
+        "leaderboardEligible": true,
+        "rollsUsed": 0,
+        "probabilities": [
+          0.2,
+          0.2,
+          0.2,
+          0.15,
+          0.15,
+          0.1
+        ],
+        "tiltLevel": 1,
+        "canShake": false,
+        "revision": "0",
+        "recorded": false,
+        "jackpotNumber": 6,
+        "lastRoll": null
+      },
+      "bets": [
+        {
+          "target": "n3",
+          "description": "Number 3, covers 3, return 6 times, wager 10 Gold. Hold, right-click, or press Delete to remove wager"
+        }
+      ],
+      "covered": [
+        "n3"
+      ]
+    },
+    "bet-desktop": {
+      "width": 2158,
+      "height": 1612,
+      "viewport": {
+        "width": 1100,
+        "height": 850
+      },
+      "selectors": [
+        "#game"
+      ],
+      "margin": 16,
+      "clip": {
+        "x": 6,
+        "y": 8,
+        "width": 1079,
+        "height": 806
+      },
+      "state": {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "nickname": "Player",
+        "gold": "100",
+        "boardStartingGold": "100",
+        "bestGold": "0",
+        "previousBestGold": null,
+        "hasCompletedRun": false,
+        "showProbabilities": false,
+        "leaderboardEligible": true,
+        "rollsUsed": 0,
+        "probabilities": [
+          0.2,
+          0.2,
+          0.2,
+          0.15,
+          0.15,
+          0.1
+        ],
+        "tiltLevel": 1,
+        "canShake": false,
+        "revision": "0",
+        "recorded": false,
+        "jackpotNumber": 6,
+        "lastRoll": null
+      },
+      "bets": [
+        {
+          "target": "n3",
+          "description": "Number 3, covers 3, return 6 times, wager 10 Gold. Hold, right-click, or press Delete to remove wager"
+        }
+      ],
+      "covered": []
+    },
+    "coverage-column-desktop": {
+      "width": 1686,
+      "height": 1216,
+      "viewport": {
+        "width": 1100,
+        "height": 850
+      },
+      "selectors": [
+        ".table-area"
+      ],
+      "margin": 4,
+      "clip": {
+        "x": 230,
+        "y": 20,
+        "width": 843,
+        "height": 608
+      },
+      "state": {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "nickname": "Player",
+        "gold": "100",
+        "boardStartingGold": "100",
+        "bestGold": "0",
+        "previousBestGold": null,
+        "hasCompletedRun": false,
+        "showProbabilities": false,
+        "leaderboardEligible": true,
+        "rollsUsed": 0,
+        "probabilities": [
+          0.2,
+          0.2,
+          0.2,
+          0.15,
+          0.15,
+          0.1
+        ],
+        "tiltLevel": 1,
+        "canShake": false,
+        "revision": "0",
+        "recorded": false,
+        "jackpotNumber": 6,
+        "lastRoll": null
+      },
+      "bets": [
+        {
+          "target": "col1",
+          "description": "2nd 2, covers 3, 4, return 3 times, wager 10 Gold. Hold, right-click, or press Delete to remove wager"
+        }
+      ],
+      "covered": [
+        "n3",
+        "n4"
+      ]
+    },
+    "coverage-odds-desktop": {
+      "width": 1686,
+      "height": 1216,
+      "viewport": {
+        "width": 1100,
+        "height": 850
+      },
+      "selectors": [
+        ".table-area"
+      ],
+      "margin": 4,
+      "clip": {
+        "x": 230,
+        "y": 20,
+        "width": 843,
+        "height": 608
+      },
+      "state": {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "nickname": "Player",
+        "gold": "100",
+        "boardStartingGold": "100",
+        "bestGold": "0",
+        "previousBestGold": null,
+        "hasCompletedRun": false,
+        "showProbabilities": false,
+        "leaderboardEligible": true,
+        "rollsUsed": 0,
+        "probabilities": [
+          0.2,
+          0.2,
+          0.2,
+          0.15,
+          0.15,
+          0.1
+        ],
+        "tiltLevel": 1,
+        "canShake": false,
+        "revision": "0",
+        "recorded": false,
+        "jackpotNumber": 6,
+        "lastRoll": null
+      },
+      "bets": [
+        {
+          "target": "row0",
+          "description": "Odds, covers 1, 3, 5, return 2 times, wager 10 Gold. Hold, right-click, or press Delete to remove wager"
+        }
+      ],
+      "covered": [
+        "n1",
+        "n3",
+        "n5"
+      ]
+    },
+    "coverage-red-desktop": {
+      "width": 1686,
+      "height": 1216,
+      "viewport": {
+        "width": 1100,
+        "height": 850
+      },
+      "selectors": [
+        ".table-area"
+      ],
+      "margin": 4,
+      "clip": {
+        "x": 230,
+        "y": 20,
+        "width": 843,
+        "height": 608
+      },
+      "state": {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "nickname": "Player",
+        "gold": "100",
+        "boardStartingGold": "100",
+        "bestGold": "0",
+        "previousBestGold": null,
+        "hasCompletedRun": false,
+        "showProbabilities": false,
+        "leaderboardEligible": true,
+        "rollsUsed": 0,
+        "probabilities": [
+          0.2,
+          0.2,
+          0.2,
+          0.15,
+          0.15,
+          0.1
+        ],
+        "tiltLevel": 1,
+        "canShake": false,
+        "revision": "0",
+        "recorded": false,
+        "jackpotNumber": 6,
+        "lastRoll": null
+      },
+      "bets": [
+        {
+          "target": "red",
+          "description": "Red, covers 1, 4, 5, return 2 times, wager 10 Gold. Hold, right-click, or press Delete to remove wager"
+        }
+      ],
+      "covered": [
+        "n1",
+        "n5",
+        "n4"
+      ]
+    },
+    "settlement-desktop": {
+      "width": 2158,
+      "height": 1612,
+      "viewport": {
+        "width": 1100,
+        "height": 850
+      },
+      "selectors": [
+        "#game"
+      ],
+      "margin": 16,
+      "clip": {
+        "x": 6,
+        "y": 8,
+        "width": 1079,
+        "height": 806
+      },
+      "state": {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "nickname": "Player",
+        "gold": "160",
+        "boardStartingGold": "100",
+        "bestGold": "0",
+        "previousBestGold": null,
+        "hasCompletedRun": false,
+        "showProbabilities": false,
+        "leaderboardEligible": true,
+        "rollsUsed": 1,
+        "probabilities": [
+          0.201584,
+          0.201584,
+          0.19208000000000003,
+          0.151584,
+          0.151584,
+          0.10158400000000001
+        ],
+        "tiltLevel": 1,
+        "canShake": true,
+        "revision": "1",
+        "recorded": false,
+        "jackpotNumber": 6,
+        "lastRoll": {
+          "outcome": 3,
+          "stake": "20",
+          "totalReturn": "80",
+          "net": "60",
+          "jackpot": false,
+          "paidTargets": [
+            "n3",
+            "row0"
+          ],
+          "probabilitiesBefore": [
+            0.2,
+            0.2,
+            0.2,
+            0.15,
+            0.15,
+            0.1
+          ],
+          "probabilitiesAfter": [
+            0.201584,
+            0.201584,
+            0.19208000000000003,
+            0.151584,
+            0.151584,
+            0.10158400000000001
+          ],
+          "markerBefore": 6,
+          "transferred": true
+        }
+      },
+      "bets": [],
+      "covered": []
+    },
+    "shake-desktop": {
+      "width": 2158,
+      "height": 1612,
+      "viewport": {
+        "width": 1100,
+        "height": 850
+      },
+      "selectors": [
+        "#game"
+      ],
+      "margin": 16,
+      "clip": {
+        "x": 6,
+        "y": 8,
+        "width": 1079,
+        "height": 806
+      },
+      "state": {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "nickname": "Player",
+        "gold": "140",
+        "boardStartingGold": "100",
+        "bestGold": "0",
+        "previousBestGold": null,
+        "hasCompletedRun": false,
+        "showProbabilities": false,
+        "leaderboardEligible": true,
+        "rollsUsed": 2,
+        "probabilities": [
+          0.201584,
+          0.201584,
+          0.19208000000000003,
+          0.151584,
+          0.151584,
+          0.10158400000000001
+        ],
+        "tiltLevel": 1,
+        "canShake": true,
+        "revision": "2",
+        "recorded": false,
+        "jackpotNumber": 6,
+        "lastRoll": {
+          "outcome": 3,
+          "stake": "10",
+          "totalReturn": "60",
+          "net": "50",
+          "jackpot": false,
+          "paidTargets": [
+            "n3"
+          ],
+          "probabilitiesBefore": [
+            0.2,
+            0.2,
+            0.2,
+            0.15,
+            0.15,
+            0.1
+          ],
+          "probabilitiesAfter": [
+            0.201584,
+            0.201584,
+            0.19208000000000003,
+            0.151584,
+            0.151584,
+            0.10158400000000001
+          ],
+          "markerBefore": 6,
+          "transferred": true
+        }
+      },
+      "bets": [],
+      "covered": []
+    },
+    "jackpot-desktop": {
+      "width": 2158,
+      "height": 1612,
+      "viewport": {
+        "width": 1100,
+        "height": 850
+      },
+      "selectors": [
+        "#game"
+      ],
+      "margin": 16,
+      "clip": {
+        "x": 6,
+        "y": 8,
+        "width": 1079,
+        "height": 806
+      },
+      "state": {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "nickname": "Player",
+        "gold": "100",
+        "boardStartingGold": "100",
+        "bestGold": "0",
+        "previousBestGold": null,
+        "hasCompletedRun": false,
+        "showProbabilities": false,
+        "leaderboardEligible": true,
+        "rollsUsed": 0,
+        "probabilities": [
+          0.25,
+          0.2,
+          0.03,
+          0.2,
+          0.2,
+          0.12
+        ],
+        "tiltLevel": 2,
+        "canShake": false,
+        "revision": "0",
+        "recorded": false,
+        "jackpotNumber": 3,
+        "lastRoll": null
+      },
+      "bets": [
+        {
+          "target": "n3",
+          "description": "Number 3, covers 3, return 6 times, wager 10 Gold. Hold, right-click, or press Delete to remove wager"
+        }
+      ],
+      "covered": []
+    },
+    "complete-desktop": {
+      "width": 986,
+      "height": 1132,
+      "viewport": {
+        "width": 1100,
+        "height": 850
+      },
+      "selectors": [
+        "#run-dialog"
+      ],
+      "margin": 16,
+      "clip": {
+        "x": 300,
+        "y": 142,
+        "width": 493,
+        "height": 566
+      },
+      "state": {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "nickname": "Player",
+        "gold": "150",
+        "boardStartingGold": "100",
+        "bestGold": "150",
+        "previousBestGold": null,
+        "hasCompletedRun": true,
+        "showProbabilities": false,
+        "leaderboardEligible": true,
+        "rollsUsed": 100,
+        "probabilities": [
+          0.2,
+          0.2,
+          0.2,
+          0.15,
+          0.15,
+          0.1
+        ],
+        "tiltLevel": 1,
+        "canShake": false,
+        "revision": "0",
+        "recorded": true,
+        "jackpotNumber": 6,
+        "lastRoll": null
+      },
+      "bets": [],
+      "covered": []
+    },
+    "tilt-even": {
+      "width": 328,
+      "height": 138,
+      "viewport": {
+        "width": 1100,
+        "height": 850
+      },
+      "selectors": [
+        "#tilt-info"
+      ],
+      "margin": 8,
+      "clip": {
+        "x": 257,
+        "y": 43,
+        "width": 164,
+        "height": 69
+      },
+      "state": {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "nickname": "Player",
+        "gold": "100",
+        "boardStartingGold": "100",
+        "bestGold": "0",
+        "previousBestGold": null,
+        "hasCompletedRun": false,
+        "showProbabilities": false,
+        "leaderboardEligible": true,
+        "rollsUsed": 0,
+        "probabilities": [
+          0.16666666666666666,
+          0.16666666666666666,
+          0.16666666666666666,
+          0.16666666666666666,
+          0.16666666666666666,
+          0.16666666666666666
+        ],
+        "tiltLevel": 1,
+        "canShake": false,
+        "revision": "0",
+        "recorded": false,
+        "jackpotNumber": 1,
+        "lastRoll": null
+      },
+      "bets": [],
+      "covered": []
+    },
+    "tilt-biased": {
+      "width": 350,
+      "height": 138,
+      "viewport": {
+        "width": 1100,
+        "height": 850
+      },
+      "selectors": [
+        "#tilt-info"
+      ],
+      "margin": 8,
+      "clip": {
+        "x": 257,
+        "y": 43,
+        "width": 175,
+        "height": 69
+      },
+      "state": {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "nickname": "Player",
+        "gold": "100",
+        "boardStartingGold": "100",
+        "bestGold": "0",
+        "previousBestGold": null,
+        "hasCompletedRun": false,
+        "showProbabilities": false,
+        "leaderboardEligible": true,
+        "rollsUsed": 0,
+        "probabilities": [
+          0.7,
+          0.1,
+          0.08,
+          0.05,
+          0.04,
+          0.03
+        ],
+        "tiltLevel": 1,
+        "canShake": false,
+        "revision": "0",
+        "recorded": false,
+        "jackpotNumber": 1,
+        "lastRoll": null
+      },
+      "bets": [],
+      "covered": []
+    },
+    "start-mobile": {
+      "width": 778,
+      "height": 1400,
+      "viewport": {
+        "width": 390,
+        "height": 700
+      },
+      "selectors": [
+        "#game"
+      ],
+      "margin": 16,
+      "clip": {
+        "x": 0,
+        "y": 0,
+        "width": 389,
+        "height": 700
+      },
+      "state": {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "nickname": "Player",
+        "gold": "100",
+        "boardStartingGold": "100",
+        "bestGold": "0",
+        "previousBestGold": null,
+        "hasCompletedRun": false,
+        "showProbabilities": false,
+        "leaderboardEligible": true,
+        "rollsUsed": 0,
+        "probabilities": [
+          0.2,
+          0.2,
+          0.2,
+          0.15,
+          0.15,
+          0.1
+        ],
+        "tiltLevel": 1,
+        "canShake": false,
+        "revision": "0",
+        "recorded": false,
+        "jackpotNumber": 1,
+        "lastRoll": null
+      },
+      "bets": [],
+      "covered": []
+    },
+    "coverage-number-mobile": {
+      "width": 742,
+      "height": 848,
+      "viewport": {
+        "width": 390,
+        "height": 700
+      },
+      "selectors": [
+        ".table-area"
+      ],
+      "margin": 4,
+      "clip": {
+        "x": 6,
+        "y": 112,
+        "width": 371,
+        "height": 424
+      },
+      "state": {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "nickname": "Player",
+        "gold": "100",
+        "boardStartingGold": "100",
+        "bestGold": "0",
+        "previousBestGold": null,
+        "hasCompletedRun": false,
+        "showProbabilities": false,
+        "leaderboardEligible": true,
+        "rollsUsed": 0,
+        "probabilities": [
+          0.2,
+          0.2,
+          0.2,
+          0.15,
+          0.15,
+          0.1
+        ],
+        "tiltLevel": 1,
+        "canShake": false,
+        "revision": "0",
+        "recorded": false,
+        "jackpotNumber": 6,
+        "lastRoll": null
+      },
+      "bets": [
+        {
+          "target": "n3",
+          "description": "Number 3, covers 3, return 6 times, wager 10 Gold. Hold, right-click, or press Delete to remove wager"
+        }
+      ],
+      "covered": [
+        "n3"
+      ]
+    },
+    "bet-mobile": {
+      "width": 778,
+      "height": 1400,
+      "viewport": {
+        "width": 390,
+        "height": 700
+      },
+      "selectors": [
+        "#game"
+      ],
+      "margin": 16,
+      "clip": {
+        "x": 0,
+        "y": 0,
+        "width": 389,
+        "height": 700
+      },
+      "state": {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "nickname": "Player",
+        "gold": "100",
+        "boardStartingGold": "100",
+        "bestGold": "0",
+        "previousBestGold": null,
+        "hasCompletedRun": false,
+        "showProbabilities": false,
+        "leaderboardEligible": true,
+        "rollsUsed": 0,
+        "probabilities": [
+          0.2,
+          0.2,
+          0.2,
+          0.15,
+          0.15,
+          0.1
+        ],
+        "tiltLevel": 1,
+        "canShake": false,
+        "revision": "0",
+        "recorded": false,
+        "jackpotNumber": 6,
+        "lastRoll": null
+      },
+      "bets": [
+        {
+          "target": "n3",
+          "description": "Number 3, covers 3, return 6 times, wager 10 Gold. Hold, right-click, or press Delete to remove wager"
+        }
+      ],
+      "covered": []
+    },
+    "coverage-column-mobile": {
+      "width": 742,
+      "height": 848,
+      "viewport": {
+        "width": 390,
+        "height": 700
+      },
+      "selectors": [
+        ".table-area"
+      ],
+      "margin": 4,
+      "clip": {
+        "x": 6,
+        "y": 112,
+        "width": 371,
+        "height": 424
+      },
+      "state": {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "nickname": "Player",
+        "gold": "100",
+        "boardStartingGold": "100",
+        "bestGold": "0",
+        "previousBestGold": null,
+        "hasCompletedRun": false,
+        "showProbabilities": false,
+        "leaderboardEligible": true,
+        "rollsUsed": 0,
+        "probabilities": [
+          0.2,
+          0.2,
+          0.2,
+          0.15,
+          0.15,
+          0.1
+        ],
+        "tiltLevel": 1,
+        "canShake": false,
+        "revision": "0",
+        "recorded": false,
+        "jackpotNumber": 6,
+        "lastRoll": null
+      },
+      "bets": [
+        {
+          "target": "col1",
+          "description": "2nd 2, covers 3, 4, return 3 times, wager 10 Gold. Hold, right-click, or press Delete to remove wager"
+        }
+      ],
+      "covered": [
+        "n3",
+        "n4"
+      ]
+    },
+    "coverage-odds-mobile": {
+      "width": 742,
+      "height": 848,
+      "viewport": {
+        "width": 390,
+        "height": 700
+      },
+      "selectors": [
+        ".table-area"
+      ],
+      "margin": 4,
+      "clip": {
+        "x": 6,
+        "y": 112,
+        "width": 371,
+        "height": 424
+      },
+      "state": {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "nickname": "Player",
+        "gold": "100",
+        "boardStartingGold": "100",
+        "bestGold": "0",
+        "previousBestGold": null,
+        "hasCompletedRun": false,
+        "showProbabilities": false,
+        "leaderboardEligible": true,
+        "rollsUsed": 0,
+        "probabilities": [
+          0.2,
+          0.2,
+          0.2,
+          0.15,
+          0.15,
+          0.1
+        ],
+        "tiltLevel": 1,
+        "canShake": false,
+        "revision": "0",
+        "recorded": false,
+        "jackpotNumber": 6,
+        "lastRoll": null
+      },
+      "bets": [
+        {
+          "target": "row0",
+          "description": "Odds, covers 1, 3, 5, return 2 times, wager 10 Gold. Hold, right-click, or press Delete to remove wager"
+        }
+      ],
+      "covered": [
+        "n1",
+        "n3",
+        "n5"
+      ]
+    },
+    "coverage-red-mobile": {
+      "width": 742,
+      "height": 848,
+      "viewport": {
+        "width": 390,
+        "height": 700
+      },
+      "selectors": [
+        ".table-area"
+      ],
+      "margin": 4,
+      "clip": {
+        "x": 6,
+        "y": 112,
+        "width": 371,
+        "height": 424
+      },
+      "state": {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "nickname": "Player",
+        "gold": "100",
+        "boardStartingGold": "100",
+        "bestGold": "0",
+        "previousBestGold": null,
+        "hasCompletedRun": false,
+        "showProbabilities": false,
+        "leaderboardEligible": true,
+        "rollsUsed": 0,
+        "probabilities": [
+          0.2,
+          0.2,
+          0.2,
+          0.15,
+          0.15,
+          0.1
+        ],
+        "tiltLevel": 1,
+        "canShake": false,
+        "revision": "0",
+        "recorded": false,
+        "jackpotNumber": 6,
+        "lastRoll": null
+      },
+      "bets": [
+        {
+          "target": "red",
+          "description": "Red, covers 1, 4, 5, return 2 times, wager 10 Gold. Hold, right-click, or press Delete to remove wager"
+        }
+      ],
+      "covered": [
+        "n1",
+        "n5",
+        "n4"
+      ]
+    },
+    "settlement-mobile": {
+      "width": 778,
+      "height": 1400,
+      "viewport": {
+        "width": 390,
+        "height": 700
+      },
+      "selectors": [
+        "#game"
+      ],
+      "margin": 16,
+      "clip": {
+        "x": 0,
+        "y": 0,
+        "width": 389,
+        "height": 700
+      },
+      "state": {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "nickname": "Player",
+        "gold": "160",
+        "boardStartingGold": "100",
+        "bestGold": "0",
+        "previousBestGold": null,
+        "hasCompletedRun": false,
+        "showProbabilities": false,
+        "leaderboardEligible": true,
+        "rollsUsed": 1,
+        "probabilities": [
+          0.201584,
+          0.201584,
+          0.19208000000000003,
+          0.151584,
+          0.151584,
+          0.10158400000000001
+        ],
+        "tiltLevel": 1,
+        "canShake": true,
+        "revision": "1",
+        "recorded": false,
+        "jackpotNumber": 6,
+        "lastRoll": {
+          "outcome": 3,
+          "stake": "20",
+          "totalReturn": "80",
+          "net": "60",
+          "jackpot": false,
+          "paidTargets": [
+            "n3",
+            "row0"
+          ],
+          "probabilitiesBefore": [
+            0.2,
+            0.2,
+            0.2,
+            0.15,
+            0.15,
+            0.1
+          ],
+          "probabilitiesAfter": [
+            0.201584,
+            0.201584,
+            0.19208000000000003,
+            0.151584,
+            0.151584,
+            0.10158400000000001
+          ],
+          "markerBefore": 6,
+          "transferred": true
+        }
+      },
+      "bets": [],
+      "covered": []
+    },
+    "shake-mobile": {
+      "width": 778,
+      "height": 1400,
+      "viewport": {
+        "width": 390,
+        "height": 700
+      },
+      "selectors": [
+        "#game"
+      ],
+      "margin": 16,
+      "clip": {
+        "x": 0,
+        "y": 0,
+        "width": 389,
+        "height": 700
+      },
+      "state": {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "nickname": "Player",
+        "gold": "140",
+        "boardStartingGold": "100",
+        "bestGold": "0",
+        "previousBestGold": null,
+        "hasCompletedRun": false,
+        "showProbabilities": false,
+        "leaderboardEligible": true,
+        "rollsUsed": 2,
+        "probabilities": [
+          0.201584,
+          0.201584,
+          0.19208000000000003,
+          0.151584,
+          0.151584,
+          0.10158400000000001
+        ],
+        "tiltLevel": 1,
+        "canShake": true,
+        "revision": "2",
+        "recorded": false,
+        "jackpotNumber": 6,
+        "lastRoll": {
+          "outcome": 3,
+          "stake": "10",
+          "totalReturn": "60",
+          "net": "50",
+          "jackpot": false,
+          "paidTargets": [
+            "n3"
+          ],
+          "probabilitiesBefore": [
+            0.2,
+            0.2,
+            0.2,
+            0.15,
+            0.15,
+            0.1
+          ],
+          "probabilitiesAfter": [
+            0.201584,
+            0.201584,
+            0.19208000000000003,
+            0.151584,
+            0.151584,
+            0.10158400000000001
+          ],
+          "markerBefore": 6,
+          "transferred": true
+        }
+      },
+      "bets": [],
+      "covered": []
+    },
+    "jackpot-mobile": {
+      "width": 778,
+      "height": 1400,
+      "viewport": {
+        "width": 390,
+        "height": 700
+      },
+      "selectors": [
+        "#game"
+      ],
+      "margin": 16,
+      "clip": {
+        "x": 0,
+        "y": 0,
+        "width": 389,
+        "height": 700
+      },
+      "state": {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "nickname": "Player",
+        "gold": "100",
+        "boardStartingGold": "100",
+        "bestGold": "0",
+        "previousBestGold": null,
+        "hasCompletedRun": false,
+        "showProbabilities": false,
+        "leaderboardEligible": true,
+        "rollsUsed": 0,
+        "probabilities": [
+          0.25,
+          0.2,
+          0.03,
+          0.2,
+          0.2,
+          0.12
+        ],
+        "tiltLevel": 2,
+        "canShake": false,
+        "revision": "0",
+        "recorded": false,
+        "jackpotNumber": 3,
+        "lastRoll": null
+      },
+      "bets": [
+        {
+          "target": "n3",
+          "description": "Number 3, covers 3, return 6 times, wager 10 Gold. Hold, right-click, or press Delete to remove wager"
+        }
+      ],
+      "covered": []
+    },
+    "complete-mobile": {
+      "width": 780,
+      "height": 1088,
+      "viewport": {
+        "width": 390,
+        "height": 700
+      },
+      "selectors": [
+        "#run-dialog"
+      ],
+      "margin": 16,
+      "clip": {
+        "x": 0,
+        "y": 78,
+        "width": 390,
+        "height": 544
+      },
+      "state": {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "nickname": "Player",
+        "gold": "150",
+        "boardStartingGold": "100",
+        "bestGold": "150",
+        "previousBestGold": null,
+        "hasCompletedRun": true,
+        "showProbabilities": false,
+        "leaderboardEligible": true,
+        "rollsUsed": 100,
+        "probabilities": [
+          0.2,
+          0.2,
+          0.2,
+          0.15,
+          0.15,
+          0.1
+        ],
+        "tiltLevel": 1,
+        "canShake": false,
+        "revision": "0",
+        "recorded": true,
+        "jackpotNumber": 6,
+        "lastRoll": null
+      },
+      "bets": [],
+      "covered": []
+    }
+  }
+}

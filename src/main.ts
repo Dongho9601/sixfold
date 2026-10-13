@@ -1,6 +1,7 @@
 import "./style.css";
 import { BOARD, CONFIG, TARGET_BY_ID, TILT_LABELS } from "./config";
 import { guideBody, guideLanguages, guides, resolveGuideLanguage, type GuideLanguage } from "./guide";
+import { guideExample, guideSlides, slideGuides } from "./guide-slides";
 import type { Action, PlayerState, Settlement, Wagers } from "./types";
 import { LocalGame, SAVE_KEY, StaleRunError } from "./save";
 import { setupBetKeypad } from "./bet-keypad";
@@ -151,11 +152,12 @@ app.innerHTML = `
       <p class="run-next">100 G · 100 rolls</p>
     </form>
   </dialog>
-  <dialog id="welcome-dialog" class="welcome-dialog" aria-labelledby="welcome-title" aria-describedby="welcome-intro">
-    <div class="dialog-top"><h2 id="welcome-title"></h2><button class="icon-button" data-close="welcome-dialog">${icon("close")}</button></div>
-    <div class="guide-language"><label id="guide-language-label" for="guide-language"></label><select id="guide-language">${guideLanguages.map(([code, name]) => `<option value="${code}" lang="${code}">${name}</option>`).join("")}</select></div>
+  <dialog id="welcome-dialog" class="welcome-dialog" aria-labelledby="welcome-title">
+    <div class="dialog-top"><h2 id="welcome-title"></h2><div class="guide-language"><label id="guide-language-label" class="sr-only" for="guide-language"></label><select id="guide-language">${guideLanguages.map(([code, name]) => `<option value="${code}" lang="${code}">${name}</option>`).join("")}</select></div><button class="icon-button" data-close="welcome-dialog">${icon("close")}</button></div>
+    <span id="guide-step-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></span>
     <div id="guide-content"></div>
-    <button id="welcome-start" class="roll-button"></button>
+    <div id="guide-reference" hidden></div>
+    <footer class="guide-footer"><nav class="guide-navigation"><button id="guide-previous" aria-controls="guide-content"></button><span id="guide-progress" aria-hidden="true"></span><button id="guide-next" aria-controls="guide-content"></button></nav><div class="guide-footer-actions"><button id="guide-rules" aria-controls="guide-reference" aria-expanded="false"></button><button id="welcome-start"></button></div></footer>
   </dialog>
 `;
 
@@ -1206,6 +1208,29 @@ $("probabilities-confirm").addEventListener("click", () => {
   $<HTMLDialogElement>("probabilities-dialog").close();
   void perform({ kind: "probabilities", enabled: true });
 });
+let guideIndex = 0;
+let guideReference = false;
+function updateGuideSlide() {
+  const copy = slideGuides[guideLanguage];
+  const count = copy.items.length;
+  const guide = $("welcome-dialog");
+  guide.classList.toggle("guide-reference-mode", guideReference);
+  $("guide-content").hidden = guideReference;
+  $("guide-reference").hidden = !guideReference;
+  guide.querySelectorAll<HTMLElement>("[data-guide-slide]").forEach(slide => {
+    slide.hidden = Number(slide.dataset.guideSlide) !== guideIndex;
+  });
+  $("guide-step-status").textContent = guideReference ? copy.rules : `${guideIndex + 1} / ${count}: ${copy.items[guideIndex][0]}`;
+  $("guide-progress").textContent = `${guideIndex + 1} / ${count}`;
+  $<HTMLButtonElement>("guide-previous").disabled = guideIndex === 0;
+  $<HTMLButtonElement>("guide-next").disabled = guideIndex === count - 1;
+  $("guide-previous").textContent = copy.previous;
+  $("guide-next").textContent = copy.next;
+  $("guide-rules").textContent = guideReference ? copy.slides : copy.rules;
+  $("guide-rules").setAttribute("aria-expanded", String(guideReference));
+  guide.scrollTop = 0;
+  $("guide-content").scrollTop = 0;
+}
 function renderGuide() {
   const copy = guides[guideLanguage];
   $("welcome-dialog").lang = guideLanguage;
@@ -1213,8 +1238,11 @@ function renderGuide() {
   $("welcome-dialog").querySelector("[data-close]")!.setAttribute("aria-label", copy.close);
   $("guide-language-label").textContent = copy.language;
   $<HTMLSelectElement>("guide-language").value = guideLanguage;
-  $("guide-content").innerHTML = guideBody(guideLanguage);
+  $("guide-content").innerHTML = guideSlides(guideLanguage);
+  // The reference is populated only on request, keeping the slide view concise.
+  if (guideReference) $("guide-reference").innerHTML = guideBody(guideLanguage);
   $("welcome-start").textContent = copy.start;
+  updateGuideSlide();
 }
 renderGuide();
 $("guide-language").addEventListener("change", () => {
@@ -1224,14 +1252,66 @@ $("guide-language").addEventListener("change", () => {
   $("welcome-dialog").scrollTop = 0;
 });
 $("welcome-start").addEventListener("click", () => $<HTMLDialogElement>("welcome-dialog").close());
+function moveGuideSlide(index: number) {
+  const focusWasOnSlide = !!document.activeElement?.closest("#guide-content");
+  guideIndex = Math.max(0, Math.min(slideGuides[guideLanguage].items.length - 1, index));
+  updateGuideSlide();
+  // Keep focus visible when a heading is hidden or an end button is disabled.
+  if (focusWasOnSlide || (document.activeElement as HTMLButtonElement | null)?.disabled)
+    $(`guide-heading-${guideIndex}`).focus({ preventScroll: true });
+}
+$("guide-previous").addEventListener("click", () => moveGuideSlide(guideIndex - 1));
+$("guide-next").addEventListener("click", () => moveGuideSlide(guideIndex + 1));
+$("guide-content").addEventListener("click", event => {
+  const screenshot = (event.target as HTMLElement).closest<HTMLAnchorElement>(".guide-screenshot");
+  if (screenshot?.querySelector("img")!.currentSrc)
+    screenshot.href = screenshot.querySelector("img")!.currentSrc;
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>("[data-guide-example]");
+  if (!button) return;
+  const example = Number(button.dataset.guideExample);
+  $("guide-coverage-image").innerHTML = guideExample(guideLanguage, example);
+  $("guide-coverage-caption").textContent = slideGuides[guideLanguage].coverage[example][1];
+  $("guide-content").querySelectorAll<HTMLButtonElement>("[data-guide-example]").forEach(item =>
+    item.setAttribute("aria-pressed", String(item === button)));
+});
+$("guide-rules").addEventListener("click", () => {
+  guideReference = !guideReference;
+  if (guideReference) $("guide-reference").innerHTML = guideBody(guideLanguage);
+  updateGuideSlide();
+});
+$("welcome-dialog").addEventListener("keydown", event => {
+  if (guideReference || event.altKey || event.ctrlKey || event.metaKey || event.isComposing ||
+    (event.target as HTMLElement).closest("select, input, textarea")) return;
+  const destinations: Record<string, number> = { ArrowLeft: guideIndex - 1, ArrowRight: guideIndex + 1, Home: 0, End: slideGuides[guideLanguage].items.length - 1 };
+  if (event.key in destinations) {
+    event.preventDefault();
+    moveGuideSlide(destinations[event.key]);
+  }
+});
+let guideTouch: { x: number; y: number; id: number } | undefined;
+$("guide-content").addEventListener("pointerdown", event => {
+  if (event.pointerType === "touch" && !(event.target as HTMLElement).closest("button, a"))
+    guideTouch = { x: event.clientX, y: event.clientY, id: event.pointerId };
+});
+$("guide-content").addEventListener("pointerup", event => {
+  if (!guideTouch || event.pointerId !== guideTouch.id) return;
+  const dx = event.clientX - guideTouch.x;
+  const dy = event.clientY - guideTouch.y;
+  guideTouch = undefined;
+  if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5)
+    moveGuideSlide(guideIndex + (dx < 0 ? 1 : -1));
+});
+$("guide-content").addEventListener("pointercancel", () => { guideTouch = undefined; });
 let guideReturnFocus = $("bet-amount");
 function openGuide(trigger: HTMLElement, showTilt = false) {
   guideReturnFocus = trigger;
+  guideReference = false;
+  guideIndex = showTilt ? 1 : 0;
+  updateGuideSlide();
   const guide = $<HTMLDialogElement>("welcome-dialog");
   guide.showModal();
   if (showTilt) {
     const heading = guide.querySelector<HTMLElement>(".tilt-guide")!;
-    heading.scrollIntoView({ block: "start" });
     heading.focus({ preventScroll: true });
   } else guide.scrollTop = 0;
 }
