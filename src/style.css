@@ -749,3 +749,129 @@ dialog::backdrop {
   font-size: 12px;
   line-height: 1.4;
 }
+
+/* The tutorial sits on the real table and gives one control a clear visual lead. */
+.onboard-coach { position: relative; display: flex; flex-direction: column; flex-shrink: 0; min-width: 0; height: 144px; margin: 12px 0 0; padding: 12px 16px 14px; border: 1px solid #fff4cd; border-radius: 8px; background: #f5e8bf; color: #213b2b; box-shadow: 0 3px 0 #10291f55; }
+.onboard-heading { display: flex; align-items: center; flex-shrink: 0; gap: 10px; min-width: 0; height: 30px; }
+#tutorial-label { color: #35503a; font-size: 11px; font-weight: 750; letter-spacing: 1.2px; text-transform: uppercase; }
+#tutorial-progress { flex-shrink: 0; color: #35503a; font-size: 12px; font-weight: 650; font-variant-numeric: tabular-nums; }
+#tutorial-title { flex-shrink: 0; margin: 4px 0; font: 22px/1.2 Georgia, "Noto Serif KR", "AppleMyungjo", serif; color: #183923; }
+.onboard-language { flex-shrink: 0; margin-left: auto; }
+.onboard-language select { width: 96px; height: 30px; padding: 3px 6px; font: inherit; font-size: 12px; border: 1px solid #b5b18b; border-radius: 4px; background: #fff8df; color: #213b2b; }
+#tutorial-skip { width: 30px; height: 30px; padding: 0; flex-shrink: 0; color: #3c5037; background: transparent; font-size: 26px; border-radius: 4px; }
+#tutorial-skip:hover { background: #daca94; color: #183923; }
+#tutorial-finish { min-height: 32px; margin-left: auto; padding: 6px 12px; border-radius: 4px; background: #254b35; color: #fff8df; font-size: 14px; font-weight: 600; }
+.onboard-coach[data-phase="complete"] #tutorial-label { display: none; }
+#tutorial-instruction { flex: 1; min-height: 0; margin: 0; max-height: 46px; overflow: auto; color: #213b2b; font-size: 16px; line-height: 23px; scrollbar-color: #818568 transparent; }
+.onboard-coach :focus-visible { outline: 2px solid #244d34; outline-offset: 2px; }
+#tutorial-progress-track { position: absolute; left: 16px; right: 16px; bottom: 6px; display: flex; gap: 5px; }
+#tutorial-progress-track span { flex: 1; height: 3px; background: #c8c29e; border-radius: 2px; }
+#tutorial-progress-track .current { background: #9a641c; }
+#tutorial-progress-track .passed { background: #426449; }
+.onboard-coach:lang(ko) { word-break: keep-all; overflow-wrap: anywhere; }
+.is-tutorial .tutorial-focus { position: relative; z-index: 7; outline: 3px solid #ffdd82; outline-offset: 4px; animation: tutorial-beacon 1.7s ease-in-out infinite; }
+.is-tutorial .target.tutorial-focus { outline-width: 4px; outline-offset: -6px; color: #fff8dc; background-image: radial-gradient(ellipse, #ffe49730, #ffe4970c); }
+.is-tutorial .actions .tutorial-focus { background: #f5db96; color: #1c3726; border-color: #ffe7a9; font-weight: 650; }
+.is-tutorial .tutorial-context { outline: 1px solid #f2d494b3; outline-offset: 2px; }
+.is-tutorial .target:disabled { cursor: default; }
+.is-tutorial .color-bets { min-height: 45px; }
+.is-tutorial .target:disabled:not(.wagered):not(.hit):not(.paid):not(.covered) { opacity: .38; }
+.tutorial-pointer { position: absolute; z-index: 8; right: -11px; top: calc(50% - 17px); display: grid; place-items: center; width: 34px; height: 34px; padding: 5px; border: 2px solid #fff8d9; border-radius: 50%; background: #ffda78; color: #213c29; box-shadow: 0 2px 8px #112b1ba6; pointer-events: auto; }
+.tutorial-pointer svg { width: 22px; height: 22px; }
+.actions .tutorial-pointer { top: -14px; right: 8px; }
+.is-tutorial .shake-hint, .is-tutorial .messages, .is-tutorial .table-footer { display: none; }
+.is-tutorial .felt { padding-bottom: 10px; }
+.guide-footer-actions { flex-wrap: wrap; }
+@keyframes tutorial-beacon { 0%, 100% { box-shadow: 0 0 0 2px #ffdc8270, 0 0 18px #ffe49422; } 50% { box-shadow: 0 0 0 7px #ffdc8224, 0 0 26px #ffe49455; } }
+@media (min-width: 651px) and (min-height: 501px) {
+  .is-tutorial .playfield { display: flex; flex-direction: column; min-height: 0; height: calc(100dvh - 64px); }
+  .is-tutorial .table-area, .is-tutorial .felt { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+  .is-tutorial .stage { flex-shrink: 0; height: clamp(72px, 12dvh, 120px); }
+  .is-tutorial .board { flex: 1; min-height: 176px; grid-template-rows: 52px repeat(2, minmax(62px, 1fr)); }
+  .is-tutorial .color-bets { flex-shrink: 0; height: clamp(44px, 7dvh, 72px); }
+  .is-tutorial .betting-controls { flex-shrink: 0; }
+}
+@media (min-width: 651px) and (min-height: 501px) and (max-height: 700px) {
+  .is-tutorial { --die-size: 44px; --die-half: 22px; }
+  .is-tutorial .playfield { height: calc(100dvh - 48px); }
+  .is-tutorial .sidebar { min-height: 0; height: calc(100dvh - 48px); }
+  .is-tutorial .sidebar .stat-card { padding: 14px; gap: 8px; }
+  .is-tutorial .sidebar-bottom { padding-top: 16px; }
+  .is-tutorial .stage { height: 64px; }
+  .is-tutorial .die-area { height: 64px; }
+  .is-tutorial .die-mover { top: 6px; }
+  .is-tutorial .die-face { padding: 8px; gap: 4px; border-radius: 7px; }
+  .is-tutorial .die-shadow { top: 48px; }
+  .is-tutorial #table-status { display: none; }
+  .is-tutorial .result-detail { display: none; }
+  .is-tutorial .board { min-height: 132px; grid-template-rows: 44px repeat(2, minmax(44px, 1fr)); }
+  .is-tutorial .color-bets { height: 45px; margin-top: 8px; }
+  .is-tutorial .betting-controls { margin-top: 16px; }
+  .is-tutorial .chip-controls > .control-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .is-tutorial .actions { margin-top: 0; }
+  .is-tutorial .onboard-coach { height: 120px; padding: 8px 12px 12px; margin-top: 8px; }
+  .is-tutorial #tutorial-title { font-size: 20px; margin-block: 2px; }
+  .is-tutorial #tutorial-instruction { font-size: 15px; line-height: 18px; max-height: 36px; }
+}
+@media (max-width: 650px) and (orientation: portrait) {
+  .is-tutorial { --die-size: 40px; --die-half: 20px; }
+  .is-tutorial .result-detail { display: none; }
+  .is-tutorial .stage { height: 58px; }
+  .is-tutorial .die-area { height: 58px; }
+  .is-tutorial .die-mover { top: 5px; }
+  .is-tutorial .die-shadow { top: 45px; }
+  .is-tutorial .table-heading { gap: 0; }
+  .is-tutorial #table-status { font-size: 11px; line-height: 14px; }
+  .is-tutorial .betting-controls { grid-template-columns: minmax(0, 1fr) minmax(0, 1.85fr); grid-template-rows: 44px; gap: 8px; margin-top: 10px; }
+  .is-tutorial .chip-controls { grid-column: 1; grid-row: 1; }
+  .is-tutorial .chip-controls > .control-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .is-tutorial .amount-row { max-width: none; }
+  .is-tutorial .amount-selector { min-width: 0; height: 44px; gap: 0; }
+  .is-tutorial .amount-selector button { width: 24px; min-height: 42px; font-size: 17px; }
+  .is-tutorial .amount-selector input { min-width: 16px; width: 24px; font-size: 16px; }
+  .is-tutorial .recent-amounts { display: none; }
+  .is-tutorial .actions { grid-column: 2; grid-row: 1; align-self: stretch; grid-template-columns: 1.1fr 1fr; gap: 6px; }
+  .is-tutorial.swap-mobile-actions .actions { grid-template-columns: 1fr 1.1fr; }
+  .is-tutorial .actions button { height: 44px; min-width: 0; padding: 0 6px; gap: 4px; font-size: 12px; }
+  .is-tutorial .actions svg { width: 16px; height: 16px; }
+  .is-tutorial .actions kbd { display: none; }
+  .onboard-coach { height: 148px; margin-top: 10px; padding: 8px 10px 12px; }
+  .onboard-heading { gap: 6px; height: 28px; }
+  #tutorial-label { font-size: 10px; letter-spacing: .5px; }
+  #tutorial-title { font-size: 21px; margin: 3px 0; }
+  .onboard-language select { width: 76px; }
+  #tutorial-instruction { font-size: 16px; line-height: 21px; max-height: 63px; }
+  #tutorial-progress-track { left: 10px; right: 10px; }
+  .tutorial-pointer { width: 30px; height: 30px; padding: 4px; top: calc(50% - 15px); right: -10px; }
+}
+@media (max-width: 650px) and (orientation: portrait) and (max-height: 700px) {
+  .is-tutorial { --die-size: 36px; --die-half: 18px; }
+  .is-tutorial .onboard-coach { height: 128px; margin-top: 6px; padding: 6px 8px 12px; }
+  .is-tutorial .onboard-heading { height: 24px; }
+  .is-tutorial #tutorial-title { font-size: 18px; margin: 2px 0; }
+  .is-tutorial #tutorial-instruction { font-size: 14px; line-height: 18px; max-height: 54px; }
+  .is-tutorial .stage, .is-tutorial .die-area { height: 50px; }
+  .is-tutorial .die-mover { top: 7px; }
+  .is-tutorial .die-shadow { top: 35px; height: 12px; }
+  .is-tutorial #table-status { display: none; }
+  .is-tutorial .sidebar .utility-button { min-height: 36px; height: 36px; width: 36px; }
+  .is-tutorial .sidebar .wordmark { font-size: 25px; }
+  .is-tutorial .sidebar .stat-value { font-size: 22px; }
+  .is-tutorial .sidebar .stat-card { padding-block: 3px; }
+}
+@media (orientation: landscape) and (max-height: 500px) and (max-width: 1000px) {
+  .is-tutorial .betting-controls { gap: 4px; }
+  .is-tutorial #table-status { display: none; }
+  .is-tutorial .recent-amounts { display: none; }
+  .is-tutorial .sidebar .utility-button { min-height: 32px; height: 32px; }
+  .onboard-coach { grid-column: 1 / -1; height: 108px; margin: 0; padding: 8px 8px 12px; }
+  .onboard-heading { height: 28px; gap: 4px; }
+  #tutorial-label { font-size: 10px; letter-spacing: 0; }
+  #tutorial-progress { font-size: 11px; }
+  #tutorial-title { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .onboard-language select { width: 52px; padding-inline: 2px; font-size: 10px; }
+  #tutorial-skip { width: 24px; }
+  #tutorial-finish { padding: 6px; font-size: 12px; }
+  #tutorial-instruction { font-size: 14px; line-height: 18px; max-height: 54px; margin-top: 4px; }
+  #tutorial-progress-track { left: 8px; right: 8px; bottom: 5px; }
+}

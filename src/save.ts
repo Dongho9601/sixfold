@@ -1,4 +1,4 @@
-import { CONFIG, TARGET_BY_ID } from "./config.ts";
+import { CONFIG, TARGET_BY_ID, TUTORIAL_VERSION } from "./config.ts";
 import type { Action, PlayerState, Settlement } from "./types.ts";
 import { parseGold, tiltLevel, marker, type Random } from "./game/rules.ts";
 import { browserRandom, runId } from "./game/random.ts";
@@ -13,6 +13,7 @@ export interface Settings {
   swapMobileActions: boolean;
   guideLanguage: string | null;
   guideSeen: boolean;
+  tutorialVersion: number;
   recentAmounts: string[];
 }
 export interface Save {
@@ -48,6 +49,7 @@ function validSettlement(value: unknown): value is Settlement | null {
 }
 function validSettings(p: unknown): p is Settings {
   return object(p) && bool(p.sound) && bool(p.reducedMotion) && bool(p.guideSeen) &&
+    (p.tutorialVersion === undefined || (typeof p.tutorialVersion === "number" && Number.isInteger(p.tutorialVersion) && p.tutorialVersion >= 0 && p.tutorialVersion <= TUTORIAL_VERSION)) &&
     (p.swapMobileActions === undefined || bool(p.swapMobileActions)) &&
     (p.guideLanguage === null || (typeof p.guideLanguage === "string" && ["en", "ko", "ja", "zh", "es", "fr", "de"].includes(p.guideLanguage))) &&
     Array.isArray(p.recentAmounts) && p.recentAmounts.length <= 3 &&
@@ -77,6 +79,7 @@ export function decodeSave(raw: string): Save {
     throw new Error("Invalid personal records.");
   const save = value as unknown as Save;
   save.settings.swapMobileActions ??= false;
+  save.settings.tutorialVersion ??= 0;
   // Earlier v1 saves did not track die arrivals. Begin the counter at the
   // restored bankroll instead of guessing profit from an unknown board history.
   save.state.boardStartingGold ??= save.state.gold;
@@ -108,7 +111,7 @@ export class LocalGame {
     const loaded = this.read();
     this.data = loaded ?? {
       version: 1, revision: "0", state: newRun(this.makeId(), "Player", this.random),
-      settings: { sound: true, reducedMotion: false, swapMobileActions: false, guideLanguage: null, guideSeen: false, recentAmounts: [] },
+      settings: { sound: true, reducedMotion: false, swapMobileActions: false, guideLanguage: null, guideSeen: false, tutorialVersion: 0, recentAmounts: [] },
       records: [],
     };
     // Recovery of a valid completion without a receipt is also idempotent.

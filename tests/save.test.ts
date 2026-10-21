@@ -85,6 +85,20 @@ test("mobile action preference defaults for older saves and validates persisted 
     assert.throws(() => decodeSave(JSON.stringify({ ...legacy, settings: { ...legacySettings, swapMobileActions: invalid } })), /Invalid saved settings/);
 });
 
+test("tutorial preference migrates independently of the guide, persists, and rejects invalid values", async () => {
+  const { game, storage } = fixture();
+  const { tutorialVersion: _preference, ...settings } = game.data.settings;
+  const legacy = { ...game.data, settings: { ...settings, guideSeen: true, tutorialSeen: true } };
+  assert.equal(decodeSave(JSON.stringify(legacy)).settings.tutorialVersion, 0);
+  assert.equal(decodeSave(JSON.stringify({ ...legacy, settings: { ...settings, tutorialVersion: 1 } })).settings.tutorialVersion, 1);
+  await game.updateSettings({ tutorialVersion: 2 });
+  const restored = new LocalGame(() => storage);
+  assert.equal(restored.data.settings.tutorialVersion, 2);
+  assert.equal(restored.data.settings.guideSeen, false);
+  for (const invalid of [null, -1, 3, true, "2", {}])
+    assert.throws(() => decodeSave(JSON.stringify({ ...legacy, settings: { ...settings, tutorialVersion: invalid } })), /Invalid saved settings/);
+});
+
 test("100th roll records the final bankroll exactly once, including after repeated reload", async () => {
   const { storage, game } = fixture();
   game.data.state.rollsUsed = 99;

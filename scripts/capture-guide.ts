@@ -3,7 +3,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { chromium, type Page } from "playwright";
 import { preview } from "vite";
-import { CONFIG } from "../src/config.ts";
+import { CONFIG, TUTORIAL_VERSION } from "../src/config.ts";
 import { newRun } from "../src/game/run.ts";
 import { SAVE_KEY, type Save } from "../src/save.ts";
 
@@ -26,7 +26,7 @@ function fixture(probabilities = [.2, .2, .2, .15, .15, .1]): Save {
   state.probabilities = probabilities;
   return { version: 1, revision: "0", state,
     settings: { sound: false, reducedMotion: true, swapMobileActions: false,
-      guideSeen: true, guideLanguage: "en", recentAmounts: [] }, records: [] };
+      guideSeen: true, tutorialVersion: TUTORIAL_VERSION, guideLanguage: "en", recentAmounts: [] }, records: [] };
 }
 
 async function load(page: Page, save: Save) {

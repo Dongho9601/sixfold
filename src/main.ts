@@ -1,5 +1,5 @@
 import "./style.css";
-import { BOARD, CONFIG, TARGET_BY_ID, TILT_LABELS } from "./config";
+import { BOARD, CONFIG, TARGET_BY_ID, TILT_LABELS, TUTORIAL_VERSION } from "./config";
 import { guideBody, guideLanguages, guides, resolveGuideLanguage, type GuideLanguage } from "./guide";
 import { guideExample, guideSlides, slideGuides } from "./guide-slides";
 import type { Action, PlayerState, Settlement, Wagers } from "./types";
@@ -7,6 +7,9 @@ import { LocalGame, SAVE_KEY, StaleRunError } from "./save";
 import { setupBetKeypad } from "./bet-keypad";
 import { probabilityEntropy, tiltLevel } from "./game/rules";
 import { distributionHint } from "./distribution-hint";
+import { setupTutorial } from "./tutorial";
+import { tutorialCopy } from "./tutorial-copy";
+import { Tutorial } from "./game/tutorial";
 
 const game = new LocalGame();
 
@@ -59,12 +62,17 @@ let audioContext: AudioContext | undefined;
 const audioSources = new Set<AudioScheduledSourceNode>();
 let previousRank: number | undefined;
 let announcement = "";
+let tutorialSession: Tutorial | undefined;
+let tutorialExit = false;
+let tutorialReplay = false;
+let tutorialSnapshot: { id: string; revision: string; draft: Wagers; amount: string; poses: Map<string, ChipPose[]>; status: string } | undefined;
+let tutorialReturnFocus: HTMLElement;
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
 const mobileLayout = matchMedia("(max-width: 650px), (orientation: landscape) and (max-height: 500px) and (max-width: 1000px)");
 let swapMobileActions = game.data.settings.swapMobileActions;
 let manualReducedMotion = game.data.settings.reducedMotion;
 const prefersReducedMotion = () => reducedMotion.matches || manualReducedMotion;
-const shouldReduceMotion = () => document.hidden || prefersReducedMotion();
+const shouldReduceMotion = () => document.hidden || prefersReducedMotion() || tutorialExit;
 document.documentElement.classList.toggle("reduce-motion", manualReducedMotion);
 let guideLanguage = (game.data.settings.guideLanguage as GuideLanguage | null) ?? resolveGuideLanguage(navigator.languages);
 
@@ -92,7 +100,7 @@ app.innerHTML = `
         </section>
         <section class="stat-card remaining-rolls" aria-labelledby="rolls-label"><span id="rolls-label" class="eyebrow">Rolls remaining</span><strong class="stat-value"><span id="rolls-remaining" class="stat-number" aria-live="polite">${CONFIG.rollsPerRun}</span></strong></section>
         <section class="stat-card table-wager" aria-label="On the table"><span class="eyebrow">On the table</span><strong id="draft-total" class="stat-value"><span id="draft-gold" class="stat-number">0</span> <span class="gold-unit">G</span></strong></section>
-        <div class="sidebar-bottom"><div class="header-actions"><button id="leaderboard-open" class="utility-button" aria-label="Open leaderboard" aria-expanded="false">${icon("trophy")}<span>Leaderboard</span></button><button id="guide-open" class="utility-button" aria-label="How to play">${icon("help")}<span>How to play</span></button><button id="settings-open" class="utility-button" aria-label="Settings">${icon("settings")}<span>Settings</span></button></div><a class="site-information" href="${import.meta.env.BASE_URL}about.html">Rules, privacy &amp; credits</a></div>
+        <div class="sidebar-bottom"><div class="header-actions"><button id="leaderboard-open" class="utility-button" aria-label="Open leaderboard" aria-expanded="false">${icon("trophy")}<span>Leaderboard</span></button><button id="guide-open" class="utility-button" aria-label="Help: how to play and tutorial" aria-haspopup="dialog" aria-controls="welcome-dialog">${icon("help")}<span>Help</span></button><button id="settings-open" class="utility-button" aria-label="Settings">${icon("settings")}<span>Settings</span></button></div><a class="site-information" href="${import.meta.env.BASE_URL}about.html">Rules, privacy &amp; credits</a></div>
       </aside>
       <div class="playfield">
         <section class="table-area" aria-label="Betting table">
@@ -157,7 +165,7 @@ app.innerHTML = `
     <span id="guide-step-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></span>
     <div id="guide-content"></div>
     <div id="guide-reference" hidden></div>
-    <footer class="guide-footer"><nav class="guide-navigation"><button id="guide-previous" aria-controls="guide-content"></button><span id="guide-progress" aria-hidden="true"></span><button id="guide-next" aria-controls="guide-content"></button></nav><div class="guide-footer-actions"><button id="guide-rules" aria-controls="guide-reference" aria-expanded="false"></button><button id="welcome-start"></button></div></footer>
+    <footer class="guide-footer"><nav class="guide-navigation"><button id="guide-previous" aria-controls="guide-content"></button><span id="guide-progress" aria-hidden="true"></span><button id="guide-next" aria-controls="guide-content"></button></nav><div class="guide-footer-actions"><button id="guide-rules" aria-controls="guide-reference" aria-expanded="false"></button><button id="tutorial-replay" aria-controls="tutorial-coach"></button><button id="welcome-start"></button></div></footer>
   </dialog>
 `;
 
@@ -692,6 +700,8 @@ function renderRunDialog() {
 }
 function render() {
   if (!state) return;
+  if (busy) $("game").setAttribute("aria-busy", "true");
+  else $("game").removeAttribute("aria-busy");
   const showProbabilities = state.showProbabilities === true;
   showGold(state.gold);
   $("rolls-remaining").textContent = String(CONFIG.rollsPerRun - state.rollsUsed);
@@ -722,7 +732,7 @@ function render() {
         (sum, n) => sum + state!.probabilities[n - 1],
         0,
       );
-      button.disabled = busy || runEnded();
+      button.disabled = busy || runEnded() || (!!tutorialSession && !tutorialSession.canBet(id));
       button.classList.toggle("wagered", placed !== "0");
       if (placed !== "0") button.title = `${target.label} · ${formatGold(placed)} Gold wagered · Hold or right-click to remove`;
       else button.removeAttribute("title");
@@ -741,7 +751,7 @@ function render() {
     });
   for (const id of ["increase", "decrease"])
     $<HTMLButtonElement>(id).disabled = busy || runEnded();
-  $<HTMLButtonElement>("shake").disabled = busy || runEnded() || !state.canShake;
+  $<HTMLButtonElement>("shake").disabled = busy || runEnded() || !state.canShake || (!!tutorialSession && tutorialSession.phase !== "shake");
   $("shake-hint").textContent = busy && activeAction?.kind === "shake"
     ? "Replacing the die and drawing fresh odds…"
     : runEnded()
@@ -751,17 +761,18 @@ function render() {
     : "Shake unlocks after a roll changes your bankroll.";
   $<HTMLInputElement>("bet-amount").disabled = busy || runEnded();
   $<HTMLButtonElement>("roll").disabled =
-    busy || runEnded() || totalDraft() === 0n;
-  $<HTMLButtonElement>("save-nickname").disabled = busy;
+    busy || runEnded() || totalDraft() === 0n || (!!tutorialSession && !tutorialSession.canRoll);
+  $<HTMLButtonElement>("save-nickname").disabled = busy || !!tutorialSession;
   $<HTMLInputElement>("show-probabilities").checked = showProbabilities;
-  $<HTMLInputElement>("show-probabilities").disabled = busy || runEnded();
-  $<HTMLButtonElement>("probabilities-confirm").disabled = busy || runEnded();
+  $<HTMLInputElement>("show-probabilities").disabled = busy || runEnded() || !!tutorialSession;
+  $<HTMLButtonElement>("probabilities-confirm").disabled = busy || runEnded() || !!tutorialSession;
   $("probabilities-status").textContent = state.leaderboardEligible === false
     ? "This run is excluded from personal records. Start a new run to enter a score."
     : "Off at the start of each run. Turning this on excludes this run’s score from personal records.";
   $("roll").querySelector("span")!.textContent = busy ? actionPhase || "Saving…" : "Roll dice";
   for (const id of ["settings-restart", "restart-confirm"])
-    $<HTMLButtonElement>(id).disabled = busy;
+    $<HTMLButtonElement>(id).disabled = busy || !!tutorialSession;
+  $<HTMLButtonElement>("tutorial-replay").disabled = busy;
   $<HTMLButtonElement>("run-confirm").disabled = busy;
   $<HTMLInputElement>("run-nickname").disabled = busy;
   $("run-confirm").textContent = busy ? "Starting new run…" : "Confirm & play again";
@@ -770,6 +781,8 @@ function render() {
   updateHighlight();
   renderRecentAmounts();
   renderRunDialog();
+  if (tutorialSession && !busy) $("table-status").textContent = tutorialCopy[guideLanguage].practice;
+  tutorialUI.render(tutorialSession, busy, tutorialReplay);
 }
 function readAmount(): bigint | null {
   const value = $<HTMLInputElement>("bet-amount").value.trim();
@@ -788,6 +801,7 @@ function readAmount(): bigint | null {
 }
 function addBet(id: string) {
   if (!state || busy || runEnded()) return;
+  if (tutorialSession && !tutorialSession.canBet(id)) return;
   const value = readAmount();
   if (value === null) return;
   if (value + totalDraft() > BigInt(state.gold)) {
@@ -798,9 +812,12 @@ function addBet(id: string) {
     return;
   }
   clearResult();
-  draft[id] = ((draft[id] ? BigInt(draft[id]) : 0n) + value).toString();
+  if (tutorialSession) {
+    tutorialSession.bet(id, value.toString());
+    draft = tutorialSession.wagers;
+  } else draft[id] = ((draft[id] ? BigInt(draft[id]) : 0n) + value).toString();
   recentAmounts = [amount, ...recentAmounts.filter(recent => recent !== amount)].slice(0, 3);
-  saveSettings({ recentAmounts });
+  if (!tutorialSession) saveSettings({ recentAmounts });
   tossChip(id);
   announce("");
   playTone("chip");
@@ -811,7 +828,10 @@ function addBet(id: string) {
 
 function cancelBet(id: string) {
   if (!state || busy || !draft[id]) return;
-  delete draft[id];
+  if (tutorialSession) {
+    tutorialSession.remove(id);
+    draft = tutorialSession.wagers;
+  } else delete draft[id];
   announce("");
   render();
 }
@@ -821,7 +841,7 @@ function stopSound() {
   audioSources.clear();
 }
 function playTone(kind: "chip" | "roll" | "win" | "jackpot") {
-  if (!sound || document.hidden) return;
+  if (!sound || document.hidden || tutorialExit) return;
   try {
     audioContext ||= new AudioContext();
     void audioContext.resume();
@@ -900,6 +920,8 @@ function refreshLeaderboard() {
 
 async function perform(action: Action) {
   if (!state || busy) return;
+  const session = tutorialSession;
+  if (session && !session.canAct(action)) return;
   if (action.kind === "shake" && !state.canShake) return;
   const before = state;
   let committed = false;
@@ -914,7 +936,7 @@ async function perform(action: Action) {
   $("run-error").textContent = "";
   render();
   try {
-    const data = await game.act(before, action);
+    const data = session ? session.act(action) : await game.act(before, action);
     committed = true;
     showSaveWarning();
     // The durable save is settled already; state remains the pre-roll presentation.
@@ -965,10 +987,12 @@ async function perform(action: Action) {
     activeAction = undefined;
     actionPhase = "";
     game.refresh();
-    state = game.data.state;
+    if (session?.phase === "result") session.continue();
+    state = session?.state ?? game.data.state;
     applySavedSettings();
     refreshLeaderboard();
     render();
+    if (session && tutorialExit) finishTutorial();
     if (action.kind === "restart" && committed && !runEnded())
       $("bet-amount").focus({ preventScroll: true });
   }
@@ -1242,6 +1266,7 @@ function renderGuide() {
   // The reference is populated only on request, keeping the slide view concise.
   if (guideReference) $("guide-reference").innerHTML = guideBody(guideLanguage);
   $("welcome-start").textContent = copy.start;
+  $("tutorial-replay").textContent = tutorialCopy[guideLanguage].replay;
   updateGuideSlide();
 }
 renderGuide();
@@ -1321,11 +1346,73 @@ $("welcome-dialog").addEventListener("close", () => {
   saveSettings({ guideSeen: true });
   guideReturnFocus.focus({ preventScroll: true });
 });
-function showFirstGameGuide() {
-  if (!state || runEnded()) return;
-  if (state.lastRoll) saveSettings({ guideSeen: true });
-  if (!state.lastRoll && !game.data.settings.guideSeen)
-    $<HTMLDialogElement>("welcome-dialog").showModal();
+const tutorialUI = setupTutorial({
+  language: () => guideLanguage,
+  setLanguage: language => { guideLanguage = language; saveSettings({ guideLanguage }); renderGuide(); render(); },
+  leave: finishTutorial,
+});
+$("tutorial-replay").addEventListener("click", () => {
+  if (busy) return;
+  $<HTMLDialogElement>("welcome-dialog").close();
+  startTutorial($("guide-open"), true);
+});
+function startTutorial(trigger: HTMLElement, replay = false) {
+  if (!state || busy) return;
+  if (!tutorialSession) tutorialSnapshot = {
+    id: state.id, revision: state.revision, draft: { ...draft }, amount,
+    poses: new Map([...chipPoses].map(([id, poses]) => [id, poses.map(pose => ({ ...pose }))])),
+    status: $("table-status").textContent ?? "Place your bets",
+  };
+  stopBetPress(true);
+  stopMotion();
+  tutorialSession = new Tutorial();
+  tutorialReplay = replay;
+  tutorialExit = false;
+  tutorialReturnFocus = trigger;
+  state = tutorialSession.state;
+  draft = tutorialSession.wagers;
+  recentAmounts = [];
+  chipPoses.clear();
+  hoverTarget = null;
+  displayedTiltState = undefined;
+  displayedTilt = undefined;
+  tiltChangeDescription = "";
+  clearResult();
+  announce("");
+  setDie(1);
+  setAmount(CONFIG.selectedWager);
+  render();
+  targetElement("n3").focus({ preventScroll: true });
+}
+function finishTutorial() {
+  if (!tutorialSession) return;
+  if (busy) { tutorialExit = true; stopBetPress(true); stopMotion(); stopSound(); return; }
+  stopBetPress(true);
+  stopMotion();
+  const previous = tutorialSnapshot;
+  tutorialSession = undefined;
+  tutorialSnapshot = undefined;
+  tutorialExit = false;
+  game.refresh();
+  state = game.data.state;
+  const sameRun = previous?.id === state.id && previous.revision === state.revision;
+  draft = sameRun ? previous.draft : {};
+  chipPoses.clear();
+  if (sameRun) previous.poses.forEach((poses, id) => chipPoses.set(id, poses));
+  clearResult();
+  setDie(state.lastRoll?.outcome ?? 1);
+  applySavedSettings();
+  setAmount(previous?.amount ?? CONFIG.selectedWager);
+  announce("");
+  $("table-status").textContent = sameRun ? previous.status : "Place your bets";
+  render();
+  refreshLeaderboard();
+  saveSettings({ tutorialVersion: TUTORIAL_VERSION });
+  tutorialReturnFocus?.focus({ preventScroll: true });
+}
+function showFirstGameTutorial() {
+  if (!state || runEnded() || game.data.settings.tutorialVersion >= TUTORIAL_VERSION) return;
+  startTutorial($("bet-amount"), state.rollsUsed > 0);
 }
 $("motion").addEventListener("change", () => {
   manualReducedMotion = $<HTMLInputElement>("motion").checked;
@@ -1343,6 +1430,12 @@ reducedMotion.addEventListener("change", () => {
 });
 document.addEventListener("keydown", (event) => {
   const target = event.target;
+  if (event.key === "Escape" && tutorialSession && !document.querySelector("dialog[open]") &&
+      !event.defaultPrevented && !event.isComposing && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    event.preventDefault();
+    finishTutorial();
+    return;
+  }
   if (
     event.defaultPrevented ||
     event.isComposing ||
@@ -1372,7 +1465,10 @@ document.addEventListener("keydown", (event) => {
   event.preventDefault();
   if (!state || busy || runEnded()) return;
   if (key === "q" || key === "escape") {
-    draft = {};
+    if (tutorialSession) {
+      Object.keys(draft).forEach(id => tutorialSession!.remove(id));
+      draft = tutorialSession.wagers;
+    } else draft = {};
     chipPoses.clear();
     announce("");
     render();
@@ -1392,7 +1488,7 @@ function applySavedSettings() {
   sound = settings.sound;
   manualReducedMotion = settings.reducedMotion;
   swapMobileActions = settings.swapMobileActions;
-  recentAmounts = settings.recentAmounts;
+  if (!tutorialSession) recentAmounts = settings.recentAmounts;
   guideLanguage = (settings.guideLanguage as GuideLanguage | null) ?? resolveGuideLanguage(navigator.languages);
   $<HTMLInputElement>("sound").checked = sound;
   $<HTMLInputElement>("motion").checked = prefersReducedMotion();
@@ -1406,6 +1502,12 @@ function applySavedSettings() {
 function syncSavedGame() {
   if (busy || settingsWrites) return;
   game.refresh();
+  if (tutorialSession) {
+    applySavedSettings();
+    render();
+    refreshLeaderboard();
+    return;
+  }
   const latest = game.data.state;
   if (state && (latest.id !== state.id || latest.revision !== state.revision)) {
     draft = {};
@@ -1433,4 +1535,4 @@ setDie(state.lastRoll?.outcome ?? 1);
 applySavedSettings();
 render();
 refreshLeaderboard();
-showFirstGameGuide();
+showFirstGameTutorial();

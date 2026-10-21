@@ -5,10 +5,11 @@ import { preview } from "vite";
 import { newRun } from "../src/game/run.ts";
 import { SAVE_KEY } from "../src/save.ts";
 import { CONFIG, TILT_LABELS } from "../src/config.ts";
-import { probabilityEntropy, settle } from "../src/game/rules.ts";
+import { marker, probabilityEntropy, settle, tiltLevel } from "../src/game/rules.ts";
 import { distributionHint } from "../src/distribution-hint.ts";
 import { guideLanguages, guides } from "../src/guide.ts";
 import { slideGuides } from "../src/guide-slides.ts";
+import { tutorialCopy } from "../src/tutorial-copy.ts";
 
 let browser, vite, origin;
 before(async () => {
@@ -26,11 +27,14 @@ after(async () => {
 function fixture() {
   const state = newRun("a".repeat(32), "Player", () => .1);
   state.probabilities = [.4, .2, .15, .1, .1, .05];
+  state.tiltLevel = tiltLevel(state.probabilities);
+  state.jackpotNumber = marker(state.probabilities);
   return { version: 1, revision: "0", state,
     settings: { sound: false, reducedMotion: true, guideLanguage: null, guideSeen: false, recentAmounts: [] }, records: [] };
 }
 async function game(t, width = 1280, options = {}) {
-  const context = await browser.newContext({ viewport: { width, height: 900 }, ...options });
+  const { tutorial = false, ...contextOptions } = options;
+  const context = await browser.newContext({ viewport: { width, height: 900 }, ...contextOptions });
   const page = await context.newPage();
   const errors = [], api = [];
   page.on("pageerror", error => errors.push(error.message));
@@ -48,15 +52,18 @@ async function game(t, width = 1280, options = {}) {
     };
   }, { key: SAVE_KEY, save: fixture() });
   await page.goto(origin);
-  await page.locator("#welcome-start").click();
-  await page.waitForFunction(() => !document.querySelector("#welcome-dialog").open && document.activeElement.id === "bet-amount");
-  // Guide close saves asynchronously; later fixtures must start after that write.
-  await page.waitForFunction(key => JSON.parse(localStorage.getItem(key)).settings.guideSeen === true, SAVE_KEY);
+  if (!tutorial) {
+    await page.locator("#tutorial-skip").click();
+    await page.waitForFunction(() => !document.querySelector("#game").classList.contains("is-tutorial") && document.activeElement.id === "bet-amount");
+    // Onboarding close saves asynchronously; fixtures start after that write.
+    await page.waitForFunction(key => JSON.parse(localStorage.getItem(key)).settings.tutorialVersion === 2, SAVE_KEY);
+  }
   return page;
 }
 const save = page => page.evaluate(key => JSON.parse(localStorage.getItem(key)), SAVE_KEY);
 const saved = async page => (await save(page)).state;
 async function patchSave(page, state = {}, rest = {}) {
+  if (state.probabilities) state = { ...state, tiltLevel: tiltLevel(state.probabilities), jackpotNumber: marker(state.probabilities) };
   await page.evaluate(({ key, state, rest }) => {
     const save = JSON.parse(localStorage.getItem(key));
     Object.assign(save.state, state);
@@ -88,6 +95,293 @@ async function land(page, outcome) {
 }
 const hintOpacities = page => page.locator(".distribution-square")
   .evaluateAll(squares => squares.map(square => Number(getComputedStyle(square).opacity)));
+
+const tutorialPhase = (page, phase) => page.waitForFunction(phase => document.querySelector("#tutorial-coach").dataset.phase === phase && !document.querySelector("#game").hasAttribute("aria-busy"), phase);
+
+test("first visit teaches directly on the one real board with its actual Roll, Shake, chips and die", async t => {
+  const page = await game(t, 1280, { tutorial: true });
+  const original = await save(page);
+  await page.evaluate(() => { window.actualBoard = document.querySelector("#board"); window.actualRoll = document.querySelector("#roll"); window.actualDie = document.querySelector("#die"); });
+  assert.equal(await page.locator("dialog[open]").count(), 0);
+  assert.equal(await page.locator("#tutorial-dialog, .practice-board, [data-practice-target]").count(), 0);
+  assert.equal(await page.locator("#board").count(), 1);
+  assert.equal(await page.locator("#board [data-target]").count(), 11);
+  assert.equal(await page.locator("#tutorial-title").innerText(), tutorialCopy.en.lessons.number[0]);
+  assert.equal(await page.locator(".tutorial-focus").getAttribute("data-target"), "n3");
+  assert.match(await page.locator('[data-target="n3"]').getAttribute("aria-describedby"), /tutorial-instruction/);
+  assert.equal(await page.locator("#roll").isDisabled(), true);
+  assert.equal(await page.locator('[data-target="n6"]').isDisabled(), true);
+  await page.locator('[data-target="n3"]').focus();
+  await page.keyboard.press("Enter");
+  assert.equal(await page.locator(".tutorial-focus").getAttribute("data-target"), "row0");
+  assert.equal(await page.locator("#draft-gold").innerText(), "10");
+  assert.equal(await page.locator('[data-target="n3"] .table-chip').count(), 1);
+  assert.equal(await page.locator("#roll").isDisabled(), true);
+  for (const [target, coverage] of [["row0", ["n1", "n3", "n5"]], ["col1", ["n3", "n4"]], ["red", ["n1", "n5", "n4"]]]) {
+    await page.locator(`[data-target="${target}"]`).click();
+    assert.deepEqual(await page.locator(".number-target.covered").evaluateAll(nodes => nodes.map(node => node.dataset.target)), coverage);
+    assert.equal(await page.locator("#draft-gold").innerText(), "20");
+    await page.locator(`[data-target="${target}"]`).click({ button: "right" });
+  }
+  await page.locator('[data-target="row0"] .tutorial-pointer').click();
+  assert.equal(await page.locator(".tutorial-focus").getAttribute("id"), "roll");
+  assert.equal(await page.locator("#tutorial-title").innerText(), tutorialCopy.en.rollTitle);
+  assert.match(await page.locator("#tutorial-instruction").innerText(), /20 G on the table/);
+  await page.keyboard.press("r");
+  await tutorialPhase(page, "shake");
+  assert.equal(await page.locator(".tutorial-focus").getAttribute("id"), "shake");
+  assert.equal(await page.locator("#gold").innerText(), "160");
+  assert.equal(await page.locator("#rolls-remaining").innerText(), "99");
+  assert.equal(await page.locator("#board-net").innerText(), "+60 G");
+  assert.equal(await page.locator("#draft-gold").innerText(), "0");
+  assert.match(await page.locator("#die").getAttribute("aria-label"), /showing 3/);
+  assert.match(await page.locator("#tutorial-instruction").innerText(), /20 G bet → 80 G returned/);
+  assert.deepEqual(await saved(page), original.state);
+  await page.screenshot({ path: "test-results/tutorial-board-result-desktop.png" });
+  await page.locator("#shake").click();
+  await tutorialPhase(page, "jackpot");
+  assert.equal(await page.locator(".tutorial-focus").getAttribute("data-target"), "n1");
+  assert.equal(await page.locator("#gold").innerText(), "160");
+  assert.equal(await page.locator("#rolls-remaining").innerText(), "99");
+  assert.equal(await page.locator("#board-net").innerText(), "0 G");
+  await page.locator('[data-target="n1"]').click();
+  assert.equal(await page.locator('[data-target="red"]').isDisabled(), true);
+  await page.locator("#roll .tutorial-pointer").click();
+  await tutorialPhase(page, "complete");
+  assert.equal(await page.locator("#gold").innerText(), "390");
+  assert.equal(await page.locator("#rolls-remaining").innerText(), "98");
+  assert.match(await page.locator("#tutorial-instruction").innerText(), /240 G returned/);
+  await page.locator("#tutorial-finish").click();
+  await page.waitForFunction(key => JSON.parse(localStorage.getItem(key)).settings.tutorialVersion === 2, SAVE_KEY);
+  assert.equal(await page.evaluate(() => document.activeElement.id), "bet-amount");
+  assert.equal(await page.evaluate(() => window.actualBoard === document.querySelector("#board") && window.actualRoll === document.querySelector("#roll") && window.actualDie === document.querySelector("#die")), true);
+  const after = await save(page);
+  assert.deepEqual(after.state, original.state);
+  assert.deepEqual(after.records, original.records);
+  assert.deepEqual(after.settings.recentAmounts, original.settings.recentAmounts);
+  assert.equal(after.settings.guideSeen, false);
+  await page.reload();
+  assert.equal(await page.locator("#tutorial-coach").isVisible(), false);
+  await page.locator('[data-target="n6"]').click();
+  await page.locator("#roll").click();
+  await settled(page, "330");
+});
+
+test("Help replays coaching on the real board, preserves progress and drafts, and returns from the rules", async t => {
+  const page = await game(t, 390, { hasTouch: true });
+  await page.locator('[data-target="n2"]').tap();
+  await page.locator("#roll").tap();
+  await settled(page, "90");
+  await patchSave(page, { bestGold: "250", hasCompletedRun: true }, {
+    records: [{ id: "b".repeat(32), nickname: "Previous run", score: "250", order: "1" }],
+  });
+  await page.locator('[data-target="n5"]').tap();
+  await page.waitForFunction(key => JSON.parse(localStorage.getItem(key)).settings.recentAmounts.length === 1, SAVE_KEY);
+  const original = await save(page);
+  await page.locator("#guide-open").tap();
+  await page.locator("#tutorial-replay").tap();
+  assert.equal(await page.locator("dialog[open]").count(), 0);
+  assert.equal(await page.locator("#gold").innerText(), "100");
+  await page.locator('[data-target="n3"]').tap();
+  await page.locator('[data-target="red"]').tap();
+  await page.locator("#roll").tap();
+  await tutorialPhase(page, "shake");
+  assert.equal(await page.locator("#gold").innerText(), "140");
+  assert.equal(await page.locator('[data-target="red"]').evaluate(e => e.classList.contains("missed")), true);
+  await page.locator("#tutorial-language").selectOption("ko");
+  await page.locator("#guide-open").tap();
+  assert.equal(await page.locator("#welcome-dialog").getAttribute("lang"), "ko");
+  await page.locator("#guide-rules").tap();
+  assert.equal(await page.locator(".guide-shortcuts > div").count(), 6);
+  await page.locator("#welcome-start").tap();
+  assert.equal(await page.locator("#tutorial-coach").getAttribute("data-phase"), "shake");
+  assert.equal(await page.locator("#gold").innerText(), "140");
+  assert.equal(await page.evaluate(() => document.activeElement.id), "guide-open");
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(key => JSON.parse(localStorage.getItem(key)).settings.guideLanguage === "ko", SAVE_KEY);
+  assert.equal(await page.evaluate(() => document.activeElement.id), "guide-open");
+  assert.deepEqual(await saved(page), original.state);
+  assert.deepEqual((await save(page)).records, original.records);
+  assert.deepEqual((await save(page)).settings.recentAmounts, original.settings.recentAmounts);
+  assert.equal(await page.locator('[data-target="n5"]').getAttribute("aria-pressed"), "true");
+  assert.equal(await page.locator("#draft-gold").innerText(), "10");
+  assert.equal(await page.locator("#gold").innerText(), "90");
+  await page.locator("#guide-open").tap();
+  await page.locator("#tutorial-replay").tap();
+  assert.equal(await page.locator("#tutorial-coach").getAttribute("data-phase"), "number");
+  await page.locator("#tutorial-skip").tap();
+});
+
+test("on-board tutorial keeps its guidance prominent and real controls usable in seven languages and eight viewports", async t => {
+  const page = await game(t, 1280, { tutorial: true });
+  async function layout() {
+    const dimensions = await page.evaluate(() => {
+      const coach = document.querySelector("#tutorial-coach");
+      const bounds = coach.getBoundingClientRect();
+      const targets = [...document.querySelectorAll('[data-target], #roll, #shake')].map(element => element.getBoundingClientRect());
+      const language = document.querySelector("#tutorial-language").getBoundingClientRect();
+      const skip = document.querySelector("#tutorial-skip").getBoundingClientRect();
+      const finish = document.querySelector("#tutorial-finish");
+      const instruction = document.querySelector("#tutorial-instruction").getBoundingClientRect();
+      const board = document.querySelector("#board").getBoundingClientRect();
+      const stage = document.querySelector(".stage").getBoundingClientRect();
+      const heading = document.querySelector(".table-heading").getBoundingClientRect();
+      const faces = [...document.querySelectorAll("#die .die-face")].map(face => face.getBoundingClientRect());
+      const primary = document.querySelector(".tutorial-focus");
+      const pointer = primary?.querySelector(".tutorial-pointer");
+      const visible = r => r.top >= -1 && r.bottom <= innerHeight + 1 && r.left >= 0 && r.right <= innerWidth;
+      const lightness = color => {
+        const channels = color.match(/[\d.]+/g).slice(0, 3).map(Number).map(c => c / 255).map(c => c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4);
+        return channels[0] * .2126 + channels[1] * .7152 + channels[2] * .0722;
+      };
+      const surface = lightness(getComputedStyle(coach).backgroundColor);
+      const ink = lightness(getComputedStyle(document.querySelector("#tutorial-instruction")).color);
+      return { overflow: document.documentElement.scrollWidth > innerWidth,
+        actual: document.querySelectorAll("#board").length === 1 && document.querySelectorAll("[data-practice-target], #tutorial-dialog, dialog[open]").length === 0,
+        coachVisible: visible(bounds), actionsVisible: targets.every(visible), targetSize: targets.every(r => r.height >= 44),
+        guidanceAtTop: matchMedia("(orientation: landscape) and (max-height: 500px) and (max-width: 1000px)").matches ? bounds.left > board.right : bounds.bottom <= board.top,
+        instructionFits: instruction.top >= bounds.top && instruction.bottom <= bounds.bottom - 8,
+        tableHeaderClear: heading.top >= stage.top - 1 && heading.bottom <= stage.bottom + 1 && faces.every(face => face.top >= stage.top - 1 && face.bottom <= stage.bottom + 1),
+        textContrast: (Math.max(surface, ink) + .05) / (Math.min(surface, ink) + .05) >= 7,
+        nextActionClear: document.querySelectorAll(".tutorial-focus").length === 1 && parseFloat(getComputedStyle(primary).outlineWidth) >= 3 && (finish.hidden ? !!pointer && visible(pointer.getBoundingClientRect()) : primary === finish),
+        headerClear: finish.hidden ? language.right <= skip.left || language.left >= skip.right || language.bottom <= skip.top || language.top >= skip.bottom : visible(finish.getBoundingClientRect()) };
+    });
+    const context = await page.locator("#tutorial-coach").evaluate(coach => `${innerWidth}×${innerHeight}, ${coach.lang}, ${coach.dataset.phase}`);
+    assert.deepEqual(dimensions, { overflow: false, actual: true, coachVisible: true, actionsVisible: true, targetSize: true, guidanceAtTop: true, instructionFits: true, tableHeaderClear: true, textContrast: true, nextActionClear: true, headerClear: true }, context);
+    assert.equal(await page.locator("#tutorial-instruction").evaluate(e => { e.scrollTop = e.scrollHeight; return e.scrollTop + e.clientHeight >= e.scrollHeight - 1; }), true);
+  }
+  for (const [width, height] of [[1280, 900], [1280, 700], [1280, 600], [390, 844], [375, 667], [320, 568], [568, 320], [932, 430]]) {
+    await page.setViewportSize({ width, height });
+    for (const [language] of guideLanguages) {
+      await page.locator("#tutorial-language").selectOption(language);
+      assert.equal(await page.locator("#tutorial-title").innerText(), tutorialCopy[language].lessons.number[0]);
+      assert.equal(await page.locator("#tutorial-coach").getAttribute("lang"), language);
+      await layout();
+    }
+    await page.locator("#tutorial-language").selectOption("en");
+    await page.screenshot({ path: `test-results/tutorial-board-start-${width}x${height}.png` });
+    await page.locator('[data-target="n3"]').click();
+    await page.locator('[data-target="row0"]').click();
+    await page.locator("#roll").click();
+    await tutorialPhase(page, "shake");
+    for (const [language] of guideLanguages) { await page.locator("#tutorial-language").selectOption(language); await layout(); }
+    await page.locator("#shake").click();
+    await tutorialPhase(page, "jackpot");
+    await layout();
+    await page.locator('[data-target="n1"]').click();
+    await page.locator("#roll").click();
+    await tutorialPhase(page, "complete");
+    // The language preference remains editable through Help at completion.
+    for (const [language] of guideLanguages) {
+      await page.locator("#guide-open").click();
+      await page.locator("#guide-language").selectOption(language);
+      await page.locator("#welcome-start").click();
+      await layout();
+    }
+    await page.screenshot({ path: `test-results/tutorial-board-complete-${width}x${height}.png` });
+    await page.locator("#tutorial-finish").click();
+    await page.locator("#guide-open").click();
+    await page.locator("#tutorial-replay").click();
+  }
+});
+
+test("the more visible tutorial is offered once after an earlier dismissal without changing saved progress", async t => {
+  const page = await game(t);
+  const settings = { ...(await save(page)).settings, guideSeen: true, tutorialVersion: 1 };
+  await patchSave(page, { gold: "180", rollsUsed: 12 }, { settings });
+  const original = await save(page);
+  assert.equal(await page.locator("#tutorial-coach").isVisible(), true);
+  assert.equal(await page.locator("#gold").innerText(), "100");
+  assert.equal(await page.locator("dialog[open]").count(), 0);
+  await page.locator("#tutorial-skip").click();
+  await page.waitForFunction(key => JSON.parse(localStorage.getItem(key)).settings.tutorialVersion === 2, SAVE_KEY);
+  assert.deepEqual(await saved(page), original.state);
+  assert.equal(await page.locator("#gold").innerText(), "180");
+  assert.equal(await page.locator("#rolls-remaining").innerText(), "88");
+  await page.reload();
+  assert.equal(await page.locator("#tutorial-coach").isVisible(), false);
+  assert.deepEqual(await saved(page), original.state);
+});
+
+test("skipping on-board coaching is remembered, refresh restarts practice, and unavailable storage remains playable", async t => {
+  const page = await game(t, 390, { tutorial: true });
+  const original = await saved(page);
+  await page.locator('[data-target="n3"]').click();
+  await page.reload();
+  assert.equal(await page.locator("#tutorial-coach").getAttribute("data-phase"), "number");
+  assert.deepEqual(await saved(page), original);
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(key => JSON.parse(localStorage.getItem(key)).settings.tutorialVersion === 2, SAVE_KEY);
+  await page.reload();
+  assert.equal(await page.locator("#tutorial-coach").isVisible(), false);
+  await page.addInitScript(() => Object.defineProperty(window, "localStorage", { configurable: true, get() { throw new DOMException("Blocked", "SecurityError"); } }));
+  await page.reload();
+  await page.locator('[data-target="n3"]').click();
+  await page.locator('[data-target="row0"]').click();
+  await page.locator("#roll").click();
+  await tutorialPhase(page, "shake");
+  assert.equal(await page.locator("#gold").innerText(), "160");
+  await page.locator("#tutorial-skip").click();
+  assert.equal(await page.locator("#gold").innerText(), "100");
+  assert.match(await page.locator("#save-notice").innerText(), /cannot be saved/);
+});
+
+test("coaching uses normal chip removal and live die motion, and safely exits an in-flight roll", async t => {
+  const page = await game(t, 390, { tutorial: true, hasTouch: true });
+  await patchSave(page, {}, { settings: { ...(await save(page)).settings, reducedMotion: false } });
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.locator('[data-target="n3"]').tap();
+  const group = page.locator('[data-target="row0"]');
+  const position = await group.boundingBox();
+  await group.tap(); await group.tap();
+  assert.equal(await page.locator("#draft-gold").innerText(), "30");
+  assert.deepEqual(await group.boundingBox(), position);
+  await group.click({ delay: 650 });
+  assert.equal(await page.locator("#draft-gold").innerText(), "10");
+  assert.deepEqual(await group.boundingBox(), position);
+  await group.tap(); await group.focus(); await page.keyboard.press("Delete");
+  assert.equal(await page.locator("#roll").isDisabled(), true);
+  await group.tap();
+  const session = await page.context().newCDPSession(page);
+  const bounds = await group.boundingBox();
+  await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2, id: 1 }] });
+  await page.waitForFunction(() => document.querySelector("#draft-gold").textContent === "10");
+  await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  assert.equal(await page.locator("#draft-gold").innerText(), "10");
+  await session.detach();
+  await group.tap();
+  await page.locator("#roll").tap();
+  assert.equal(await page.locator("#roll").isDisabled(), true);
+  assert.equal(await page.locator("#die").evaluate(e => e.getAnimations().length > 0), true);
+  await page.keyboard.press("Escape");
+  await page.waitForFunction(() => document.querySelector("#tutorial-coach").hidden);
+  assert.equal(await page.locator("#gold").innerText(), "100");
+  await page.locator("#guide-open").tap(); await page.locator("#tutorial-replay").tap();
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  assert.equal(await page.locator(".tutorial-focus").evaluate(element => element.getAnimations().length), 0);
+  await page.locator('[data-target="n3"]').tap(); await group.tap(); await page.locator("#roll").tap();
+  await tutorialPhase(page, "shake");
+  assert.equal(await page.locator("#die").evaluate(die => die.getAnimations().length), 0);
+  assert.equal((await saved(page)).gold, "100");
+});
+
+test("another tab's progress survives coaching and replaces an outdated preserved draft on exit", async t => {
+  const page = await game(t);
+  await page.locator('[data-target="n5"]').click();
+  await page.locator("#guide-open").click(); await page.locator("#tutorial-replay").click();
+  const other = await page.context().newPage();
+  await other.goto(origin);
+  await land(other, 1);
+  await other.locator('[data-target="n2"]').click();
+  await other.locator("#roll").click();
+  await settled(other, "90");
+  const expected = await saved(other);
+  assert.equal(await page.locator("#gold").innerText(), "100");
+  await page.locator("#tutorial-skip").click();
+  await settled(page, "90");
+  assert.equal(await page.locator("#draft-gold").innerText(), "0");
+  assert.deepEqual(await saved(page), expected);
+});
 
 test("columns show ordinal pairs and rows show Odds/Evens at desktop and mobile widths", async t => {
   const page = await game(t);
@@ -314,7 +608,7 @@ test("left clicks and taps on chips add bets; right-click and keyboard remove wa
   });
   const touch = await touchContext.newPage();
   await touch.goto(origin);
-  await touch.locator("#welcome-start").tap();
+  await touch.locator("#tutorial-skip").tap();
   const touchTarget = touch.locator('[data-target="row0"]');
   await touchTarget.tap();
   assert.equal(await touch.locator("#draft-total").textContent(), "10 G");
@@ -1187,7 +1481,9 @@ test("all seven slide guides keep readable content and navigation within desktop
   t.after(() => context.close());
   const localized = await context.newPage();
   await localized.goto(origin);
-  await localized.waitForSelector("#welcome-dialog[open]");
+  await localized.waitForSelector("#tutorial-coach:not([hidden])");
+  assert.equal(await localized.locator("#tutorial-title").innerText(), tutorialCopy.ja.lessons.number[0]);
+  await localized.locator("#guide-open").click();
   assert.equal(await localized.locator("#guide-language").inputValue(), "ja");
   assert.equal(await localized.locator("#welcome-title").innerText(), titles.ja);
 });
@@ -1424,7 +1720,7 @@ test("malformed saves recover, preserve the unreadable value, and leave neighbor
     localStorage.setItem(key, "{broken");
   }, SAVE_KEY);
   await page.reload();
-  await page.locator("#welcome-start").click();
+  await page.locator("#tutorial-skip").click();
   assert.match(await page.locator("#save-notice").innerText(), /could not be read/);
   assert.equal(await page.evaluate(() => localStorage.getItem("sixfold:save:recovery")), "{broken");
   await page.locator('[data-target="red"]').click();
@@ -1447,7 +1743,7 @@ test("blocked storage and quota failures explain unsaved progress while permitti
       else Storage.prototype.setItem = () => { throw new DOMException("Full", "QuotaExceededError"); };
     }, failure);
     await page.reload();
-    if (failure === "getter") await page.locator("#welcome-start").click();
+    if (failure === "getter") await page.locator("#tutorial-skip").click();
     await page.locator("#settings-open").click();
     await page.locator("#motion").check();
     await page.keyboard.press("Escape");

@@ -1,3 +1,6 @@
+/** Re-offer materially improved coaching once, without changing saved runs. */
+export const TUTORIAL_VERSION = 2;
+
 /** Prototype defaults. Gold values are decimal strings so no Number conversion loses precision. */
 export const CONFIG = {
   title: "Sixfold",
