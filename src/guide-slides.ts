@@ -1,6 +1,6 @@
 import { CONFIG } from "./config";
 import { guideImages } from "./guide-images";
-import type { GuideLanguage } from "./guide";
+import { guides, type GuideLanguage } from "./guide";
 
 type Slide = readonly [title: string, explanation: string, continuation: string];
 type CoverageExample = readonly [label: string, caption: string];
@@ -179,7 +179,7 @@ export function guideSlides(language: GuideLanguage): string {
   return copy.items.map(([title, explanation, continuation], index) => `
     <section class="guide-slide" data-guide-slide="${index}" role="group" aria-labelledby="guide-heading-${index}" hidden>
       <h3 id="guide-heading-${index}" ${index === 1 ? 'class="tilt-guide"' : ""} tabindex="-1">${title}</h3>
-      <div class="guide-slide-copy"><p>${escape(explanation)}</p>
+      <div class="guide-slide-copy"><p>${escape(explanation)}${index === 1 ? ` ${escape(guides[language].freshBoardRule)}` : ""}</p>
       <figure class="guide-figure">
         ${index === 3 ? `<div class="guide-examples" role="group" aria-label="${escape(copy.coverageLabel)}">${copy.coverage.map(([label], example) => `<button type="button" data-guide-example="${example}" aria-pressed="${example === 0}" aria-controls="guide-coverage-image guide-coverage-caption">${escape(label)}</button>`).join("")}</div><div id="guide-coverage-image">${illustration(index, language)}</div>` : illustration(index, language)}
         <figcaption ${index === 3 ? 'id="guide-coverage-caption" aria-live="polite" aria-atomic="true"' : ""}>${escape(index === 3 ? copy.coverage[0][1] : copy.captions[index])}</figcaption>

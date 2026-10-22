@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { LocalGame, SAVE_KEY, RECOVERY_KEY, SETTINGS_JOURNAL_KEY, decodeSave, StaleRunError } from "../src/save.ts";
 import { compareRecords, recordCompletion, transition, type PersonalRecord } from "../src/game/run.ts";
 import { browserRandom } from "../src/game/random.ts";
+import { biasedRandom } from "./random.ts";
 
 class MemoryStorage {
   values = new Map<string, string>();
@@ -14,7 +15,7 @@ function fixture() {
   const storage = new MemoryStorage();
   let ids = 0;
   const makeId = () => (++ids).toString(16).padStart(32, "0");
-  const game = new LocalGame(() => storage, () => .1, makeId);
+  const game = new LocalGame(() => storage, biasedRandom(), makeId);
   game.data.state.probabilities = [.4, .2, .15, .1, .1, .05];
   return { storage, game, makeId };
 }
@@ -42,7 +43,7 @@ test("board net accumulates gains and losses, survives reload, and resets on die
   assert.equal(net(game.data.state), 6n);
   await game.act(game.data.state, { kind: "roll", wagers: { red: "1", black: "1" } });
   assert.equal(net(game.data.state), 6n);
-  const reopened = new LocalGame(() => storage, () => .1, makeId);
+  const reopened = new LocalGame(() => storage, biasedRandom(), makeId);
   assert.equal(net(reopened.data.state), 6n);
   await reopened.act(reopened.data.state, { kind: "shake" });
   assert.equal(reopened.data.state.gold, "106");
@@ -191,7 +192,12 @@ test("Shake entitlement survives break-even rolls and return to old bankroll; Ja
   assert.equal(lost.canShake, true);
   const even = transition(lost, { kind: "roll", wagers: { red: "1", black: "1" } }, () => .1, lost.id).state;
   assert.equal(even.canShake, true);
-  const jackpot = transition(original, { kind: "roll", wagers: { n6: "1" } }, () => .99, original.id).state;
+  let first = true;
+  const random = biasedRandom();
+  const jackpot = transition(original, { kind: "roll", wagers: { n6: "1" } }, () => {
+    if (first) { first = false; return .99; }
+    return random();
+  }, original.id).state;
   assert.equal(jackpot.lastRoll?.jackpot, true);
   assert.equal(jackpot.canShake, false);
 });
@@ -227,7 +233,7 @@ test("unavailable getters, reads and quota-limited writes leave the game playabl
     () => ({ getItem: () => { throw new Error("blocked"); }, setItem: () => {} }),
     () => ({ getItem: () => null, setItem: () => { throw new Error("quota"); } }),
   ]) {
-    const game = new LocalGame(access, () => .1);
+    const game = new LocalGame(access, biasedRandom());
     await game.act(game.data.state, { kind: "roll", wagers: { red: "1", black: "1" } });
     assert.equal(game.data.state.rollsUsed, 1);
     assert.match(game.warning, /cannot be saved/);

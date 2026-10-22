@@ -13,6 +13,7 @@ interface GuideCopy {
   payoutNote: string;
   boardNet: Section;
   tilt: Section;
+  freshBoardRule: string;
   tiltHint: string;
   shake: Section;
   jackpot: Section;
@@ -53,6 +54,7 @@ const jackpotReturn = 10 * CONFIG.multipliers.jackpot;
 // Authored copy only: no user-provided text is interpolated into guide markup.
 export const guides: Record<GuideLanguage, GuideCopy> = {
   en: {
+    freshBoardRule: "New runs, Shake, and Jackpot create boards at Tilt 3–6. Only ordinary paying rolls can bring a board to Tilt 1 or 2.",
     title: "How to play", close: "Close gameplay guide", language: "Language", start: "Let’s play",
     intro: `Start with ${CONFIG.startingGold} G. Your Gold after ${CONFIG.rollsPerRun} rolls is your score. Reach 0 G earlier and the run ends without a score.`,
     steps: [
@@ -78,6 +80,7 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
     ],
   },
   ko: {
+    freshBoardRule: "새 게임, Shake, Jackpot으로 받는 보드는 Tilt 3–6에서 시작합니다. Tilt 1이나 2에는 일반 베팅이 적중해 확률이 바뀌어야 도달할 수 있습니다.",
     title: "게임 방법", close: "게임 안내 닫기", language: "언어", start: "시작하기",
     intro: `${CONFIG.startingGold} G로 시작합니다. ${CONFIG.rollsPerRun}번째 굴림 후 남은 Gold가 점수입니다. 그 전에 0 G가 되면 점수 없이 끝납니다.`,
     steps: [
@@ -103,6 +106,7 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
     ],
   },
   ja: {
+    freshBoardRule: "新しいゲーム、Shake、Jackpotで受け取るボードはTilt 3〜6で始まります。Tilt 1や2には、通常のベットが当たり、確率が変化することでのみ到達できます。",
     title: "遊び方", close: "遊び方を閉じる", language: "言語", start: "始める",
     intro: `${CONFIG.startingGold} Gで始めます。${CONFIG.rollsPerRun}回目の後に残ったGoldがスコアです。それより前に0 Gになると、スコアを残さず終了します。`,
     steps: [
@@ -128,6 +132,7 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
     ],
   },
   zh: {
+    freshBoardRule: "新一局、Shake和Jackpot生成的局面都从Tilt 3–6开始。只有普通下注命中后引起的概率变化，才可能使局面达到Tilt 1或2。",
     title: "玩法说明", close: "关闭玩法说明", language: "语言", start: "开始游戏",
     intro: `以${CONFIG.startingGold} G开始。第${CONFIG.rollsPerRun}次掷骰后剩余的Gold就是得分。提前归零则本局结束，不计分。`,
     steps: [
@@ -153,6 +158,7 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
     ],
   },
   es: {
+    freshBoardRule: "Las partidas nuevas, Shake y Jackpot crean tableros con Tilt 3–6. Solo las tiradas con un pago ordinario pueden llevar el tablero a Tilt 1 o 2.",
     title: "Cómo jugar", close: "Cerrar la guía", language: "Idioma", start: "Jugar",
     intro: `Empieza con ${CONFIG.startingGold} G. Tu Gold tras ${CONFIG.rollsPerRun} tiradas es tu puntuación. Si llegas a 0 G antes, la partida acaba sin puntuación.`,
     steps: [
@@ -178,6 +184,7 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
     ],
   },
   fr: {
+    freshBoardRule: "Une nouvelle partie, Shake et Jackpot créent des plateaux au Tilt 3–6. Seuls les lancers avec un gain ordinaire peuvent amener le plateau au Tilt 1 ou 2.",
     title: "Comment jouer", close: "Fermer le guide", language: "Langue", start: "Jouer",
     intro: `Commencez avec ${CONFIG.startingGold} G. Votre Gold après ${CONFIG.rollsPerRun} lancers est votre score. Si vous atteignez 0 G avant, la partie se termine sans score.`,
     steps: [
@@ -203,6 +210,7 @@ export const guides: Record<GuideLanguage, GuideCopy> = {
     ],
   },
   de: {
+    freshBoardRule: "Neue Durchläufe, Shake und Jackpot erzeugen Spielfelder mit Tilt 3–6. Nur Würfe mit einer gewöhnlichen Auszahlung können das Spielfeld zu Tilt 1 oder 2 bringen.",
     title: "Spielanleitung", close: "Spielanleitung schließen", language: "Sprache", start: "Losspielen",
     intro: `Beginne mit ${CONFIG.startingGold} G. Dein Gold nach ${CONFIG.rollsPerRun} Würfen ist dein Ergebnis. Erreichst du vorher 0 G, endet der Durchlauf ohne Ergebnis.`,
     steps: [
@@ -241,7 +249,7 @@ export function guideBody(language: GuideLanguage): string {
       <h3>${copy.payoutsTitle}</h3>
       <dl class="guide-payouts">${copy.payouts.map((label, index) => `<div><dt>${label}</dt><dd>×${multipliers[index]}</dd></div>`).join("")}</dl>
       <p>${copy.payoutNote}</p>
-      <h3 class="guide-reference-tilt">${copy.tilt[0]}</h3><p>${copy.tilt[1]} ${copy.tiltHint}</p>
+      <h3 class="guide-reference-tilt">${copy.tilt[0]}</h3><p>${copy.tilt[1]} ${copy.freshBoardRule} ${copy.tiltHint}</p>
       ${section(copy.shake)}${section(copy.jackpot)}${section(copy.boardNet)}
       <h3>${copy.keysTitle}</h3>
       <dl class="guide-shortcuts">${copy.keys.map((label, index) => `<div><dt><kbd>${keys[index]}</kbd></dt><dd>${label}</dd></div>`).join("")}</dl>

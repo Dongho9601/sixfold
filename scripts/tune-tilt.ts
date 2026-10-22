@@ -24,7 +24,7 @@ const frequencies = Array(CONFIG.transferRates.length).fill(0);
 const distributionRandom = seeded(20261010);
 for (let trial = 0; trial < 100000; trial++) frequencies[tiltLevel(freshProbabilities(distributionRandom)) - 1]++;
 console.log("Fresh-board Tilt distribution:", frequencies.map(count => percent(count, 100000)).join(", "));
-console.log(`${trials.toLocaleString()} identical seeded starts per profile/policy; all starting levels; ${horizon} rolls; no Shake.`);
+console.log(`${trials.toLocaleString()} identical seeded starts per profile/policy; starting Tilt ${CONFIG.minimumFreshTilt}–6; ${horizon} rolls; no Shake.`);
 console.log("Groups: cycle the seven groups every three rolls. Coverage: bet every face, so every roll pays.");
 console.log("Strongest: keep betting the initially strongest face (an informed stress test, not a hidden-odds strategy).");
 console.log("Chances = rolls through the first change from the starting Tilt, including the roll that changes it.");

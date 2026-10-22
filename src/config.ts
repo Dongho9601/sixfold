@@ -9,6 +9,7 @@ export const CONFIG = {
   minimumWager: "1",
   selectedWager: "10",
   probabilityFloor: 0.02,
+  minimumFreshTilt: 3,
   // Indexed by the board's Tilt before the roll, from level 1 through 6.
   // Tuned with scripts/tune-tilt.ts; see docs/PROBABILITY_MODEL.md.
   transferRates: [

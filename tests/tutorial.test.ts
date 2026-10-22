@@ -6,6 +6,7 @@ import { TARGETS } from "../src/config.ts";
 test("practice covers every group, pays real overlapping bets and charges one turn", () => {
   for (const group of TARGETS.filter(target => target.kind !== "number")) {
     const tutorial = new Tutorial();
+    assert.ok(tutorial.state.tiltLevel >= 3);
     tutorial.bet("n3");
     tutorial.bet(group.id);
     assert.equal(tutorial.canRoll, true);
@@ -30,6 +31,7 @@ test("guided Shake costs no Gold or turn, resets net, and the solo rare bet real
   const before = structuredClone(tutorial.state);
   tutorial.continue();
   tutorial.shake();
+  assert.ok(tutorial.state.tiltLevel >= 3);
   assert.equal(tutorial.phase, "jackpot");
   assert.equal(tutorial.state.gold, before.gold);
   assert.equal(tutorial.state.rollsUsed, before.rollsUsed);
@@ -42,6 +44,7 @@ test("guided Shake costs no Gold or turn, resets net, and the solo rare bet real
   assert.deepEqual(tutorial.wagers, { [`n${rare}`]: "10" });
   tutorial.roll();
   assert.equal(tutorial.phase, "complete");
+  assert.ok(tutorial.state.tiltLevel >= 3);
   assert.equal(tutorial.result?.jackpot, true);
   assert.equal(tutorial.result?.totalReturn, "240");
   assert.equal(tutorial.state.gold, "390");

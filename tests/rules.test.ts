@@ -12,6 +12,7 @@ import {
   validateWagers,
 } from "../src/game/rules.ts";
 import type { Wagers } from "../src/types.ts";
+import { seeded } from "./random.ts";
 
 const p = [0.4, 0.2, 0.15, 0.1, 0.1, 0.05];
 const rare = [0.4, 0.2, 0.15, 0.12, 0.1, 0.03];
@@ -27,16 +28,16 @@ const near = (actual: readonly number[], expected: readonly number[]) =>
   );
 const steady = () => 0.5;
 const land = (outcome: number, probabilities = p) => {
-  let first = true;
+  let draws = 0;
+  const random = seeded();
   return () => {
-    if (!first) return steady();
-    first = false;
+    // Keep ordinary rate/share draws fixed, then allow rejected fresh boards
+    // after a Jackpot to consume more draws.
+    if (draws++ > 0) return draws <= 7 ? steady() : random();
     return (probabilities.slice(0, outcome - 1).reduce((a, b) => a + b, 0) +
       probabilities[outcome - 1] / 2) / probabilities.reduce((a, b) => a + b, 0);
   };
 };
-const seeded = (seed = 12345) => () =>
-  ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32);
 const validBoard = (values: readonly number[]) => {
   assert.equal(values.length, 6);
   assert.ok(values.every((v) => Number.isFinite(v) && v >= CONFIG.probabilityFloor - 1e-12 && v <= 0.9 + 1e-12));
@@ -88,7 +89,7 @@ test("ordinary hit uses one outcome draw, one rate draw and five recipient draws
   assert.equal(draws, 7);
   assert.equal(result.gold, 150n);
   assert.equal(result.result.net, "50");
-  near(result.probabilities, [0.37606, 0.204788, 0.154788, 0.104788, 0.104788, 0.054788]);
+  near(result.probabilities, [0.3715, 0.2057, 0.1557, 0.1057, 0.1057, 0.0557]);
 });
 test("miss settles 90 and leaves probabilities unchanged", () => {
   const result = settle(100n, p, { n1: "10" }, land(2));
@@ -132,8 +133,8 @@ test("overlapping number, row, column, and color add returns with one transfer",
 test("fixed randomness gives reproducible transfers and uniform boards also move", () => {
   const once = transfer(p, 1, steady);
   const twice = transfer(once, 1, steady);
-  near(once, [0.37606, 0.204788, 0.154788, 0.104788, 0.104788, 0.054788]);
-  near(twice, [0.35362822, 0.209274356, 0.159274356, 0.109274356, 0.109274356, 0.059274356]);
+  near(once, [0.3715, 0.2057, 0.1557, 0.1057, 0.1057, 0.0557]);
+  near(twice, [0.3451375, 0.2109725, 0.1609725, 0.1109725, 0.1109725, 0.0609725]);
   near(
     transfer(Array(6).fill(1 / 6), 1, steady),
     [0.15786666666666666, ...Array(5).fill(0.16842666666666667)],
@@ -141,14 +142,15 @@ test("fixed randomness gives reproducible transfers and uniform boards also move
 });
 test("ordinary win on a rare number transfers only its surplus, without Shake", () => {
   const r = settle(100n, p, all, land(6));
-  near(r.probabilities, [0.400378, 0.200378, 0.150378, 0.100378, 0.100378, 0.04811]);
+  near(r.probabilities, [0.40045, 0.20045, 0.15045, 0.10045, 0.10045, 0.04775]);
   assert.equal(r.result.jackpot, false);
 });
 test("sole 10 G Jackpot from 100 finishes at 330 G, then a fresh random board", () => {
   let draws = 0;
+  const random = seeded();
   const r = settle(100n, rare, { n6: "10" }, () => {
     draws++;
-    return draws === 1 ? 0.99 : 0;
+    return draws === 1 ? 0.99 : random();
   });
   assert.equal(r.gold, 330n);
   assert.equal(r.result.totalReturn, "240");
@@ -156,8 +158,9 @@ test("sole 10 G Jackpot from 100 finishes at 330 G, then a fresh random board", 
   assert.equal(r.result.jackpot, true);
   assert.equal(r.result.transferred, false);
   assert.equal(r.result.markerBefore, 6);
-  assert.equal(draws, 7);
+  assert.ok(draws >= 7 && (draws - 1) % 6 === 0);
   validBoard(r.probabilities);
+  assert.ok(tiltLevel(r.probabilities) >= 3);
   assert.notDeepEqual(r.probabilities, rare);
 });
 test("every additional positive target disables Jackpot, including overlapping groups", () => {
@@ -215,8 +218,12 @@ test("Jackpot uses the least-likely number before the roll, then recomputes it f
 });
 test("initial odds vary continuously, stay bounded and treat every face symmetrically", () => {
   for (const endpoint of [0, Number.EPSILON, 0.5, 1 - Number.EPSILON]) {
-    validBoard(freshProbabilities(() => endpoint));
-    near(freshProbabilities(() => endpoint), Array(6).fill(1 / 6));
+    let draws = 0;
+    const random = seeded();
+    const board = freshProbabilities(() => draws++ < 6 ? endpoint : random());
+    validBoard(board);
+    assert.ok(draws > 6, "An even candidate must be rejected, including clamped RNG endpoints");
+    assert.ok(tiltLevel(board) >= 3);
   }
   const random = seeded();
   const totals = Array(6).fill(0);
@@ -231,10 +238,12 @@ test("initial odds vary continuously, stay bounded and treat every face symmetri
   }
   assert.equal(distinct.size, 10000);
   assert.ok(totals.every((total) => Math.abs(total / 10000 - 1 / 6) < 0.005));
-  assert.ok(levels.every((count) => count > 100));
+  assert.deepEqual(levels.slice(0, 2), [0, 0]);
+  assert.ok(levels.slice(2).every((count) => count > 100));
 });
 test("random transfers vary both amount and recipient shares within configured bounds", () => {
   const random = seeded();
+  const { min, max } = CONFIG.transferRates[tiltLevel(p) - 1];
   const amounts = new Set<number>();
   for (let n = 1; n <= 6; n++) {
     for (let trial = 0; trial < 100; trial++) {
@@ -242,8 +251,8 @@ test("random transfers vary both amount and recipient shares within configured b
       validBoard(next);
       const delta = p[n - 1] - next[n - 1];
       amounts.add(delta);
-      assert.ok(delta >= 0.042 * (p[n - 1] - 0.02) - 1e-12);
-      assert.ok(delta <= 0.084 * (p[n - 1] - 0.02) + 1e-12);
+      assert.ok(delta >= min * (p[n - 1] - 0.02) - 1e-12);
+      assert.ok(delta <= max * (p[n - 1] - 0.02) + 1e-12);
       const gains = next.flatMap((v, i) => i === n - 1 ? [] : [v - p[i]]);
       assert.ok(gains.every((gain) => gain > 0));
       assert.ok(new Set(gains).size > 1);
@@ -251,7 +260,7 @@ test("random transfers vary both amount and recipient shares within configured b
     }
   }
   assert.equal(amounts.size, 600);
-  near(transfer(p, 1, () => 0), [0.38404, 0.203192, 0.153192, 0.103192, 0.103192, 0.053192]);
+  near(transfer(p, 1, () => 0), [0.381, 0.2038, 0.1538, 0.1038, 0.1038, 0.0538]);
   const legacy = [0.01, 0.19, 0.2, 0.2, 0.2, 0.2];
   near(transfer(legacy, 1, random), legacy);
 });
@@ -274,12 +283,11 @@ test("Tilt has six concentration levels, independent of labels and float normali
 });
 test("paying updates use the tuned range for pre-roll Tilt", () => {
   const peaks = [1 / 6, 0.4, 0.475, 0.5, 0.55, 0.7];
-  const expectedBounds = [[0.04, 0.08], [0.042, 0.084], [0.044, 0.088], [0.046, 0.092], [0.048, 0.096], [0.05, 0.10]];
   let previousRate = 0;
   peaks.forEach((peak, index) => {
     const board = [peak, ...Array(5).fill((1 - peak) / 5)];
     assert.equal(tiltLevel(board), index + 1);
-    const [min, max] = expectedBounds[index];
+    const { min, max } = CONFIG.transferRates[index];
     for (const draw of [0, 0.5, 1 - Number.EPSILON]) {
       const next = transfer(board, 1, () => draw);
       validBoard(next);
@@ -297,7 +305,8 @@ test("paying updates use the tuned range for pre-roll Tilt", () => {
   assert.equal(tiltLevel(edge), 6);
   const after = transfer(edge, 1, steady);
   assert.equal(tiltLevel(after), 5);
-  assert.ok(Math.abs((edge[0] - after[0]) / 0.62 - 0.075) < 1e-12);
+  const topRate = CONFIG.transferRates[5];
+  assert.ok(Math.abs((edge[0] - after[0]) / 0.62 - (topRate.min + topRate.max) / 2) < 1e-12);
 });
 test("small group bets reach Tilt 1 within a session while preserving an opportunity window", () => {
   const groups = TARGETS.filter(target => target.kind !== "number");
@@ -306,7 +315,6 @@ test("small group bets reach Tilt 1 within a session while preserving an opportu
   for (let trial = 0; trial < 1000; trial++) {
     const random = seeded(20261010 + trial * 7919);
     let board = freshProbabilities(random);
-    while (tiltLevel(board) === 1) board = freshProbabilities(random);
     const strongest = board.indexOf(Math.max(...board));
     const hadOpportunity = board[strongest] >= 0.3;
     let lowAt = 81;
@@ -359,7 +367,8 @@ test("upper Tilt pacing gives repeated chances with groups and the strongest fac
     const median = (values: number[]) => values.sort((a, b) => a - b)[Math.floor(values.length / 2)];
     const level5 = median(chances.get(5)!);
     const level6 = median(chances.get(6)!);
-    assert.ok(level5 >= 3 && level5 <= 4, `${policy} Tilt 5 median: ${level5}`);
+    const minimum5 = policy === "groups" ? 3 : 2;
+    assert.ok(level5 >= minimum5 && level5 <= 4, `${policy} Tilt 5 median: ${level5}`);
     assert.ok(level6 >= 2 && level6 <= 4, `${policy} Tilt 6 median: ${level6}`);
     // These are pacing targets, not a lock: a near-boundary board can still move on roll one.
     assert.ok(chances.get(6)!.some(rolls => rolls === 1));

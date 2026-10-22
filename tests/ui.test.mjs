@@ -10,6 +10,7 @@ import { distributionHint } from "../src/distribution-hint.ts";
 import { guideLanguages, guides } from "../src/guide.ts";
 import { slideGuides } from "../src/guide-slides.ts";
 import { tutorialCopy } from "../src/tutorial-copy.ts";
+import { biasedRandom } from "./random.ts";
 
 let browser, vite, origin;
 before(async () => {
@@ -25,7 +26,7 @@ after(async () => {
 });
 
 function fixture() {
-  const state = newRun("a".repeat(32), "Player", () => .1);
+  const state = newRun("a".repeat(32), "Player", biasedRandom());
   state.probabilities = [.4, .2, .15, .1, .1, .05];
   state.tiltLevel = tiltLevel(state.probabilities);
   state.jackpotNumber = marker(state.probabilities);
@@ -46,7 +47,8 @@ async function game(t, width = 1280, options = {}) {
     const original = crypto.getRandomValues.bind(crypto);
     crypto.getRandomValues = array => {
       if (array.length !== 6) return original(array);
-      let value = Math.floor((draws++ === 0 ? .99 : .1) * 2 ** 48);
+      // Include concentrated candidates so fresh-board rejection can finish.
+      let value = Math.floor((draws++ % 12 === 0 ? .99 : .1) * 2 ** 48);
       for (let i = 5; i >= 0; i--) { array[i] = value % 256; value = Math.floor(value / 256); }
       return array;
     };
@@ -82,12 +84,11 @@ async function land(page, outcome) {
   const { probabilities } = await saved(page);
   await page.evaluate(({ probabilities, outcome }) => {
     const sample = probabilities.slice(0, outcome - 1).reduce((a, b) => a + b, 0) + probabilities[outcome - 1] / 2;
-    let first = true;
+    let draws = 0;
     const original = crypto.getRandomValues.bind(crypto);
     crypto.getRandomValues = array => {
       if (array.length !== 6) return original(array);
-      let value = Math.floor((first ? sample : .1) * 2 ** 48);
-      first = false;
+      let value = Math.floor((draws++ === 0 ? sample : draws % 12 === 0 ? .99 : .1) * 2 ** 48);
       for (let i = 5; i >= 0; i--) { array[i] = value % 256; value = Math.floor(value / 256); }
       return array;
     };
@@ -426,8 +427,10 @@ test("click a bet then R settles exactly once; uppercase R works too", async t =
   assert.equal((await saved(page)).revision, "1");
   assert.equal((await saved(page)).lastRoll.jackpot, true);
   assert.equal(await page.locator("#draft-total").textContent(), "0 G");
-  assert.equal(await page.locator("#tilt-number").innerText(), "Tilt 1");
-  assert.equal(await page.locator("#tilt-level").innerText(), "NEARLY EVEN");
+  const replacement = await saved(page);
+  assert.ok(replacement.tiltLevel >= 3);
+  assert.equal(await page.locator("#tilt-number").innerText(), `Tilt ${replacement.tiltLevel}`);
+  assert.equal(await page.locator("#tilt-level").innerText(), TILT_LABELS[replacement.tiltLevel - 1]);
   assert.equal(await page.locator("#tilt-change").innerText(), "-");
   assert.equal(await page.locator("#board-net").innerText(), "0 G");
   await page.locator('[data-target="n2"]').click();
@@ -481,7 +484,7 @@ test("Space respects the lock and shakes from a focused target without placing a
   assert.equal(state.revision, "2");
   assert.equal(state.gold, "110");
   assert.equal(state.canShake, false);
-  assert.equal(state.tiltLevel, 1);
+  assert.ok(state.tiltLevel >= 3);
   assert.equal(await page.locator("#shake").isDisabled(), true);
 });
 
@@ -1060,11 +1063,10 @@ test("distribution hint waits for reveal and follows redistribution, Shake, Jack
   const sample = jackpotProbabilities.slice(0, marked - 1).reduce((a, b) => a + b, 0) + jackpotProbabilities[marked - 1] / 2;
   await page.evaluate(sample => {
     const original = crypto.getRandomValues.bind(crypto);
-    let first = true;
+    let draws = 0;
     crypto.getRandomValues = array => {
       if (array.length !== 6) return original(array);
-      let value = Math.floor((first ? sample : .1) * 2 ** 48);
-      first = false;
+      let value = Math.floor((draws++ === 0 ? sample : draws % 12 === 0 ? .99 : .1) * 2 ** 48);
       for (let i = 5; i >= 0; i--) { array[i] = value % 256; value = Math.floor(value / 256); }
       return array;
     };
@@ -1077,11 +1079,13 @@ test("distribution hint waits for reveal and follows redistribution, Shake, Jack
   assert.equal(committed.showProbabilities, false);
   assert.equal(committed.leaderboardEligible, true);
   assert.equal((await save(page)).records.length, 1);
-  assert.deepEqual(await hintOpacities(page), Array(6).fill(.49));
+  assert.ok(committed.tiltLevel >= 3);
+  const replacementHint = distributionHint(committed.probabilities).opacities;
+  assert.deepEqual(await hintOpacities(page), replacementHint);
   await page.reload();
   await page.locator("#run-dialog[open]").waitFor();
   assert.deepEqual(await saved(page), committed);
-  assert.deepEqual(await hintOpacities(page), Array(6).fill(.49));
+  assert.deepEqual(await hintOpacities(page), replacementHint);
 });
 
 test("the table and guide display all six Tilt levels", async t => {
@@ -1198,13 +1202,13 @@ test("Tilt arrows track actual rolls and reset after unchanged rolls, Shake, and
   assert.equal(await page.locator("#tilt-change").innerText(), "▼");
   await page.locator("#shake").click();
   await settled(page, "145");
-  assert.equal(await page.locator("#tilt-number").innerText(), "Tilt 1");
+  assert.ok((await saved(page)).tiltLevel >= 3);
   assert.equal(await page.locator("#tilt-change").innerText(), "-");
   await page.locator('[data-target="row0"]').click();
   await page.locator("#roll").click();
   await settled(page, "155");
   assert.equal(await page.locator("#tilt-change").innerText(), "▲");
-  assert.match(await page.locator("#tilt-info").getAttribute("aria-label"), /Bias increased \(entropy decreased\).*Tilt remains at level 1/);
+  assert.match(await page.locator("#tilt-info").getAttribute("aria-label"), /Bias increased \(entropy decreased\).*Tilt remains at level [3-6]/);
   await page.locator("#shake").click();
   await settled(page, "155");
   assert.equal(await page.locator("#tilt-change").innerText(), "-");
@@ -1412,11 +1416,16 @@ test("all seven slide guides keep readable content and navigation within desktop
     await page.setViewportSize({ width, height });
     for (const [code, title] of Object.entries(titles)) {
       await page.locator("#guide-language").selectOption(code);
+      // Persisting a language refreshes the guide; wait before focusing a
+      // heading so that refresh cannot detach the keyboard event target.
+      await page.waitForFunction(({ key, code }) =>
+        JSON.parse(localStorage.getItem(key)).settings.guideLanguage === code,
+      { key: SAVE_KEY, code });
       assert.equal(await page.locator("#welcome-title").innerText(), title);
       assert.equal(await page.locator("#welcome-dialog").getAttribute("lang"), code);
       await page.locator(".guide-slide:not([hidden]) h3").focus();
       await page.keyboard.press("Home");
-      assert.equal(await page.locator("#guide-previous").isDisabled(), true);
+      assert.equal(await page.locator("#guide-previous").isDisabled(), true, `${code}, ${width} × ${height}: Home returns to the first slide`);
       for (let index = 0; index < slideGuides[code].items.length; index++) {
         const slide = page.locator(".guide-slide:not([hidden])");
         assert.equal(await slide.count(), 1);

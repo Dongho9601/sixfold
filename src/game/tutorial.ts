@@ -5,6 +5,12 @@ import type { Action, PlayerState, Settlement, Wagers } from "../types.ts";
 
 export type TutorialPhase = "number" | "coverage" | "result" | "shake" | "jackpot" | "complete";
 
+function practiceRandom() {
+  const draws = [.2, .35, .97, .4, .65, .5];
+  let i = 0;
+  return () => draws[i++ % draws.length];
+}
+
 /** A disposable practice run. It never receives a saved player or writes a record. */
 export class Tutorial {
   phase: TutorialPhase = "number";
@@ -16,7 +22,7 @@ export class Tutorial {
   readonly stake = CONFIG.selectedWager;
 
   constructor() {
-    this.state = newRun("practice", "Practice", () => .5);
+    this.state = newRun("practice", "Practice", practiceRandom());
     this.state.probabilities = [.03, .05, .68, .08, .07, .09];
     this.state.tiltLevel = tiltLevel(this.state.probabilities);
     this.state.jackpotNumber = marker(this.state.probabilities);
@@ -77,9 +83,10 @@ export class Tutorial {
     // go through the same rules as the real game, without consuming its RNG.
     const draw = p.slice(0, outcome - 1).reduce((sum, value) => sum + value, 0) + p[outcome - 1] / 2;
     let first = true;
+    const replacementRandom = practiceRandom();
     const next = transition(this.state, { kind: "roll", wagers: this.wagers }, () => {
       if (first) { first = false; return draw; }
-      return .5;
+      return jackpot ? replacementRandom() : .5;
     }, this.state.id);
     this.state = next.state;
     this.result = next.result;
@@ -94,9 +101,7 @@ export class Tutorial {
 
   shake() {
     if (this.phase !== "shake") return;
-    const draws = [.2, .35, .8, .4, .65, .5];
-    let i = 0;
-    this.state = transition(this.state, { kind: "shake" }, () => draws[i++ % draws.length], this.state.id).state;
+    this.state = transition(this.state, { kind: "shake" }, practiceRandom(), this.state.id).state;
     this.result = null;
     this.phase = "jackpot";
   }

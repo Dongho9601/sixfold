@@ -22,7 +22,8 @@ const manifest: Record<string, unknown> = {};
 const dimensions: Record<string, { width: number; height: number }> = {};
 
 function fixture(probabilities = [.2, .2, .2, .15, .15, .1]): Save {
-  const state = newRun("a".repeat(32), "Player", () => .1);
+  let draws = 0;
+  const state = newRun("a".repeat(32), "Player", () => ++draws % 6 === 0 ? .99 : .1);
   state.probabilities = probabilities;
   return { version: 1, revision: "0", state,
     settings: { sound: false, reducedMotion: true, swapMobileActions: false,
@@ -45,11 +46,10 @@ async function roll(page: Page, outcome: number, gold: string) {
     const { probabilities } = JSON.parse(localStorage.getItem(key)!).state;
     const draw = probabilities.slice(0, outcome - 1).reduce((sum: number, value: number) => sum + value, 0) + probabilities[outcome - 1] / 2;
     const original = crypto.getRandomValues.bind(crypto);
-    let first = true;
+    let draws = 0;
     crypto.getRandomValues = (array => {
       if (!(array instanceof Uint8Array) || array.length !== 6) return original(array);
-      let value = Math.floor((first ? draw : .1) * 2 ** 48);
-      first = false;
+      let value = Math.floor((draws++ === 0 ? draw : draws % 12 === 0 ? .99 : .1) * 2 ** 48);
       const bytes = array;
       for (let i = 5; i >= 0; i--) { bytes[i] = value % 256; value = Math.floor(value / 256); }
       return array;

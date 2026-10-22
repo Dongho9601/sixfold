@@ -19,7 +19,13 @@ function randomShares(count: number, random: Random): number[] {
 
 export function freshProbabilities(random: Random): number[] {
   const floor = CONFIG.probabilityFloor;
-  return randomShares(6, random).map((share) => floor + (1 - 6 * floor) * share);
+  // Condition the existing symmetric distribution on Tilt 3–6. The lower
+  // levels are reached by playing a board, never by replacing it.
+  let probabilities: number[];
+  do {
+    probabilities = randomShares(6, random).map((share) => floor + (1 - 6 * floor) * share);
+  } while (tiltLevel(probabilities) < CONFIG.minimumFreshTilt);
+  return probabilities;
 }
 
 export function probabilityEntropy(p: readonly number[]): number {

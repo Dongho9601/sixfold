@@ -83,7 +83,9 @@ w[i] = x[i] / sum(x)
 p[i] = 0.02 + 0.88 × w[i]
 ```
 
-All six probabilities vary. There is no fixed template or favored face. Each fresh probability is at least 2% and can approach 90%; their sum is 1, subject to floating-point roundoff. The generator clamps only RNG endpoints to avoid degenerate exponential weights. The browser uses Web Crypto to draw on the same uniform 48-bit grid as the former server generator.
+Compute Tilt from the candidate’s floored probabilities. If it is 1 or 2, discard the candidate and repeat all six draws until Tilt is at least 3. Every fresh board therefore starts at **Tilt 3, 4, 5, or 6**. This conditions the existing distribution on the allowed levels, without choosing those levels with equal frequency or favoring a particular face. Tilt 1 and 2 remain reachable through ordinary paying rolls; transfers are not subject to the fresh-board restriction.
+
+All six probabilities vary. There is no fixed template or favored face. Each fresh probability is at least 2% and can approach 90%; their sum is 1, subject to floating-point roundoff. The generator clamps only RNG endpoints to avoid degenerate exponential weights. The browser uses Web Crypto to draw on the same uniform 48-bit grid as the former server generator. Reopening a saved board preserves its odds, including a saved Tilt of 1 or 2.
 
 Old local databases and backups are preserved outside version control and are not read or imported by this build. Browser saves persist across refreshes and reopening. The transfer function defensively supports probabilities below the floor by preventing those faces from donating probability.
 
@@ -111,7 +113,7 @@ N = exp(H)
 
 Higher Tilt means concentration on fewer faces. Relabeling faces does not change it. Tilt does not identify those faces, group odds, Jackpot odds, or expected profit. A paying update may change the hidden odds without crossing a level boundary; Tilt can rise, fall, or stay the same.
 
-The control displays two stacked lines: a smaller white Tilt N heading above a larger gold uppercase description, for example Tilt 2 above SLIGHT BIAS. It sits to the left of the die, keeps each line intact on phones, opens How to Play at its Tilt explanation, and regains focus when closed. No adjacent Guide text is shown. Label changes fade and slide into place over 650 ms; system or manual reduced motion skips the effect. “NEARLY EVEN” means similar chances, not an exactly fair die. Low levels receive gentler transfers to preserve continuity after the board becomes more even. The old middle band is split at N = 4.5; old levels 4 and 5 become 5 and 6 without changing their boundaries. The fresh-board generator is unchanged.
+The control displays two stacked lines: a smaller white Tilt N heading above a larger gold uppercase description, for example Tilt 2 above SLIGHT BIAS. It sits to the left of the die, keeps each line intact on phones, opens How to Play at its Tilt explanation, and regains focus when closed. No adjacent Guide text is shown. Label changes fade and slide into place over 650 ms; system or manual reduced motion skips the effect. “NEARLY EVEN” means similar chances, not an exactly fair die. Low levels receive gentler transfers to preserve continuity after the board becomes more even. The old middle band is split at N = 4.5; old levels 4 and 5 become 5 and 6 without changing their boundaries. All six levels remain in use, while fresh boards are restricted to levels 3–6.
 
 The adjacent arrow compares Shannon entropy before and after the latest ordinary roll, using the same normalized, unrounded probabilities as Tilt. Lower entropy displays ▲ for increased bias; higher entropy displays ▼ for decreased bias, even when both boards have the same Tilt level. A difference within eight times `Number.EPSILON` is treated as floating-point noise and displays -. The tooltip and accessible label explain the bias direction and whether the Tilt level changed or stayed the same. Draft edits and other ordinary renders retain the latest indicator; a complete miss displays -, and Shake, Jackpot, restart, and reload reset it to -.
 
@@ -144,7 +146,7 @@ pNext[i] = p[i] - delta
 pNext[j] = p[j] + delta × q[j]       for each j ≠ i
 ```
 
-The rate applies to the rolled face's probability above the floor, not to the whole board and not as a percentage-point subtraction. The other five receive random shares, with an expected share of one fifth each. Ordinary settlement uses one outcome draw, one rate draw, and five recipient draws. Misses use only the outcome draw; a Jackpot instead uses six fresh-board draws after its outcome.
+The rate applies to the rolled face's probability above the floor, not to the whole board and not as a percentage-point subtraction. The other five receive random shares, with an expected share of one fifth each. Ordinary settlement uses one outcome draw, one rate draw, and five recipient draws. Misses use only the outcome draw; a Jackpot instead draws fresh-board candidates in batches of six after its outcome, until Tilt is at least 3.
 
 The transfer preserves total probability and the floor on current-model boards. It does not force every face toward 1/6. A rare paying face becomes rarer, and an exactly even board also changes after a payout.
 
@@ -161,6 +163,8 @@ For `[40, 20, 15, 10, 10, 5]%` (Tilt 2), an ordinary payout on face 1 at the mea
 Actual play draws a new rate and recipient shares each time. This example fixes randomness to demonstrate arithmetic.
 
 ### 5.4 Pacing rationale
+
+The numerical comparison in this section records the earlier transfer tuning and unrestricted fresh-board generator. Fresh boards now start at Tilt 3–6; run `npm run test:balance` for measurements with that restriction and the transfer rates in `CONFIG`.
 
 The six-level curve narrows the difference in mean transfer speed from 7.2–21.6% on the former five-level scale to 6–7.5%. The former highest level becomes Tilt 6 and its mean transfer rate falls from 21.6% to 7.5%; old Tilt 4 becomes Tilt 5 and falls from 18% to 7.2%. This extends the chance to use concentrated boards while continuing to update odds after every ordinary paying roll.
 

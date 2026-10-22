@@ -2,6 +2,8 @@
 
 ## Current competition rules
 
+The strategy results and transfer-pacing figures below are historical snapshots from before the Tilt 3 minimum for fresh boards and the current configured transfer rates. The fresh-board frequencies in the Tilt section have been rerun for the new starting rule. Run `npm run audit:strategies` and `npm run test:balance` for current strategy and pacing measurements.
+
 Each run starts with 100 G and allows exactly 100 dice rolls. Losses and break-even wagers count; manual Shake changes neither the count nor its limit. The browser records final Gold only on roll 100 and keeps its best 10 eligible completed runs in a personal leaderboard. Early bankruptcy ends without posting. New run is available after either ending; it preserves completed records and resets Gold, odds, and the roll counter. The browser save uses a new versioned localStorage key; old server databases and backups are not read, imported, or deleted.
 
 Ordinary singles retain ×6. A winning sole wager on the least likely face pays Jackpot ×24 **on every board**, regardless of that face’s probability. The target stays hidden in the normal UI, and the lowest numerical face breaks exact ties. Any other positive wager removes eligibility. Full coverage remains legal and costs a roll, making preparation compete with opportunities to score. A Jackpot’s automatic reset never restores the roll budget.
@@ -23,6 +25,8 @@ p[i] = 0.02 + 0.88 × w[i]
 ```
 
 Every fresh probability is at least 2%, and the six sum to 100%. A face can approach 90%, since the remaining five each retain 2%. Reserving this floor keeps rare outcomes attainable without imposing a fixed set of starting values. The floor is a game-design choice, not a requirement of the Dirichlet distribution. Random draws come from the browser’s Web Crypto generator, on the same uniform 48-bit grid as the former server; rounding for display never feeds back into settlement.
+
+Calculate Tilt after applying the floor. Reject any candidate at Tilt 1 or 2 and repeat all six draws. New runs, Shake, and Jackpot replacements therefore start only at Tilt 3–6. This is the existing distribution conditioned on the higher levels, so face symmetry and continuous variation remain; the four allowed levels are not equally likely. Ordinary paying transfers can still take a board to Tilt 2 or 1. Loading a saved board preserves its committed probabilities at any Tilt.
 
 ## What changes after a paying roll?
 
@@ -77,7 +81,7 @@ Entropy reaches its maximum at equal probabilities. [NIST’s Shannon index refe
 | 3.6 to below 4.2 | 5 |
 | Below 3.6 | 6 |
 
-These are fixed design thresholds, not percentiles recalculated from other players. Splitting the former middle band adds detail without changing which boards belong to the old highest two bands: old Tilt 4 is now 5, and old Tilt 5 is now 6. A deterministic simulation of 100,000 fresh boards produced frequencies of 9.8%, 36.2%, 19.5%, 14.9%, 15.0%, and 4.6%. The generator itself is unchanged.
+These are fixed design thresholds, not percentiles recalculated from other players. Splitting the former middle band adds detail without changing which boards belong to the old highest two bands: old Tilt 4 is now 5, and old Tilt 5 is now 6. With the Tilt 3 minimum, a deterministic simulation of 100,000 fresh boards produced frequencies of 0%, 0%, 35.8%, 27.7%, 28.0%, and 8.5%.
 
 Recompute Tilt from every settled board, including after Shake and Jackpot. A transfer can change hidden odds without crossing a level boundary. The Show probabilities switch remains separate from Tilt and does not change settlement, but enabling it excludes the current run’s score from the leaderboard.
 
@@ -97,7 +101,7 @@ Roll keeps its tumbling die animation. Manual Shake and the automatic reset afte
 
 The six-level tuning targets roughly three to four chances at the former Tilt 4 (now 5) and at least two at the former Tilt 5 (now 6). These are pacing targets, not a guaranteed lock on the odds. A chance means a roll through the first change from the starting Tilt, including the roll that changes it. A board close to a boundary can still move after one paying roll.
 
-`npm run test:balance` compares the previous and configured transfer curves on 10,000 identical seeded fresh starts per policy over 80 rolls without Shake. All starting levels are included; the upper-band measurements use only starts in that band. Both profiles use the new display bands; assigning the previous middle rate to both new middle levels reproduces the old transfer behavior. Every roll consumes a paired tape of seven random draws, including unused transfer draws on a miss. The policies are:
+`npm run test:balance` compares the previous and configured transfer curves on 10,000 identical seeded fresh starts per policy over 80 rolls without Shake. Starts now span Tilt 3–6; the upper-band measurements use only starts in that band. Both profiles use the new display bands; assigning the previous middle rate to both new middle levels reproduces the old transfer behavior. Every roll consumes a paired tape of seven random draws, including unused transfer draws on a miss. The policies are:
 
 - **Group exploration:** cycle all seven groups every three rolls. This uses no hidden odds.
 - **Full coverage:** bet every face so every roll pays and transfers. This stresses repeated board updates.
